@@ -1,9 +1,11 @@
 # SkillDipz — Updated Feature & Flow Spec
+
 ## Sidebar Navigation · Real-Time Flows · No Mock Data
 
 **Document Version:** 3.0 (Replaces/Extends v2.0)  
 **Date:** July 17, 2026  
 **Changes in this version:**
+
 - Code Practice + Skill Tests → **MERGED** (Codeforces API + open sets)
 - Projects → **Company-assigned** model (companies upload, students submit)
 - Video/Learning → **3-source model** (YouTube API + Company Upload + Creator Marketplace)
@@ -61,7 +63,7 @@ GET /students/me/skill-gap?role={primaryRoleId}
 → Profile Service reads:
     StudentSkillLevel (current levels per skill, from assessments + resume parse)
     RoleSkillBenchmark (required levels per skill for role)
-    
+
 → Computes gap on-the-fly:
     gap_per_skill = required_level - current_level
     sorted by largest gap first
@@ -196,7 +198,7 @@ SOURCE 1 — YouTube API (Free, Auto-fetched per skill gap)
 ─────────────────────────────────────────────────────────────────
 
   When a student opens a roadmap skill item (e.g., "Microservices"):
-  
+
   [LMS Service]
       └──→ [YouTube Data API v3]
               GET https://www.googleapis.com/youtube/v3/search
@@ -208,16 +210,16 @@ SOURCE 1 — YouTube API (Free, Auto-fetched per skill gap)
                 relevanceLanguage = en
                 maxResults = 5
                 key = YOUTUBE_API_KEY
-              
+
               ← Response: [{videoId, title, thumbnail, channelName, duration}]
-  
+
   → Stored in Redis cache (key: yt_results:{skill}:{role}, TTL: 6 hours)
   → Student sees embedded YouTube players (iframe) in the roadmap item
   → NO video storage on our end — YouTube serves it
   → Free tier: 10,000 units/day (YouTube API quota)
-  
+
   Fallback: if quota exhausted → serve cached results from MongoDB
-  
+
   Content fetched is SPECIFIC to the student's gap skill, not generic.
 
 
@@ -229,7 +231,7 @@ SOURCE 2 — Company-Uploaded Courses (Free to Students)
   VISIBILITY: All students OR only shortlisted/hired students (company chooses)
   COST TO STUDENT: Free
   COST TO COMPANY: Free (included in company plan)
-  
+
   Company Upload Flow:
   [Company Portal → Courses tab]
       │
@@ -256,7 +258,7 @@ SOURCE 2 — Company-Uploaded Courses (Free to Students)
       │           └──→ [PostgreSQL] INSERT CompanyCourse, CompanyModule rows
       │
       └── Course published → auto-attached to roadmap items matching skills_covered
-  
+
   How company courses appear in student roadmap:
     [LMS Service] on roadmap generation:
     → For each skill gap item → SELECT CompanyCourses WHERE skills_covered includes skill
@@ -271,14 +273,14 @@ SOURCE 3 — Creator Marketplace (Paid — Revenue Model)
   PURPOSE: Skill-specific paid courses (like Udemy, but inside SkillDipz)
   COST TO STUDENT: Course price set by creator (e.g., ₹499, ₹999, ₹1999)
   REVENUE SPLIT: Creator 70% / SkillDipz 30%
-  
+
   CREATOR ONBOARDING:
   [Creator Registration — separate portal /creator]
       POST /creator/register
         Body: { name, email, expertise[], bio, linkedin, sample_video_url }
       → Admin review (manual or auto-approve if linkedin verified)
       → Creator account created (role: CREATOR)
-  
+
   CREATOR COURSE UPLOAD FLOW:
   [Creator Dashboard]
       │
@@ -304,7 +306,7 @@ SOURCE 3 — Creator Marketplace (Paid — Revenue Model)
       │     → Course published in marketplace
       │
       └── Course live → auto-attached to matching roadmap skill items
-  
+
   STUDENT PURCHASE FLOW:
   [Student — clicks "Buy" on a marketplace course inside their roadmap]
       │
@@ -329,7 +331,7 @@ SOURCE 3 — Creator Marketplace (Paid — Revenue Model)
       └── Student gets access:
             GET /marketplace/courses/:courseId/modules/:moduleId
             → Signed CDN URL (expires in 4 hours, only for enrolled student)
-  
+
   VIDEO SECURITY (Paid content):
     ├── AWS S3 bucket: private (no public access)
     ├── CDN signed URLs: generated per request, 4h expiry, student-specific
@@ -516,7 +518,7 @@ GET /students/me/activity?page=1&limit=20
     - ProjectSubmissions (projects submitted)
     - Shortlists (companies that shortlisted)
     - AIInterviewSessions (mock interviews done)
-  
+
   Response: [
     { type: "submission", title: "Solved Two Sum", detail: "Accepted · 24ms", time: "2h ago" },
     { type: "assessment", title: "Backend Quiz — 8/10", detail: "+0.4 conceptual score", time: "5h ago" },
@@ -643,7 +645,7 @@ Student applies to a job:
   → [PostgreSQL] INSERT Shortlist { jobId, studentId, funnel_status: 'Applied' }
   → [Message Queue] PUBLISH job.applied
   → Company notified: "Arjun Sharma (Score: 88, Match: 85%) applied for Java Backend Dev"
-  
+
   If NOT eligible (score too low):
   → Button shows: "Improve score by 7 pts to apply" (disabled)
   → Links to roadmap items to close the gap
@@ -765,7 +767,7 @@ GET /companies/me/projects/:projectId/submissions
           demo_url: "https://order-api.railway.app",   ← optional
           notes: "Implemented JWT auth, pagination, and input validation"
         }
-        
+
         → [Profile Service]
               ├──→ [PostgreSQL] INSERT StudentProjectSubmission
               └──→ [Message Queue] PUBLISH project.submitted
@@ -794,7 +796,7 @@ GET /companies/me/projects/:projectId/submissions
                                     [WebSocket Gw]   [Notif Service]
                                     (score gauge      "Your project scored
                                      animates)         87% — +2.3 pts!")
-        
+
         Company also gets notified:
         → [Notif Service] → Company push: "Arjun Sharma submitted 'Order Management API'"
 ```
@@ -851,7 +853,7 @@ PROBLEM FETCH FLOW:
       │
       │   Response: {
       │     problems: [
-      │       { contestId: 1234, index: "A", name: "Two Pointers", 
+      │       { contestId: 1234, index: "A", name: "Two Pointers",
       │         rating: 800, tags: ["implementation","two pointers"] }
       │     ],
       │     problemStatistics: [{ contestId, index, solvedCount }]
@@ -875,14 +877,14 @@ SUBMISSION FLOW (two options):
     → Student writes code in Monaco editor
     → POST /submissions { code, language, cf_problem_id }
     → [Coding Judge] → Sandbox Worker runs against our mirrored test cases
-    
+
     Getting test cases from Codeforces:
     → Codeforces has public test cases for many problems via:
        https://codeforces.com/contest/{contestId}/problem/{index}
        (first few test cases visible, others from community)
     → We mirror visible test cases + community-contributed ones in MongoDB
     → Sandbox execution same as before
-  
+
   Option B — Redirect to Codeforces (lower infra cost):
     → "Solve on Codeforces →" button opens Codeforces in new tab
     → Student solves there, gets submission ID
@@ -899,7 +901,7 @@ OTHER OPEN PROBLEM SOURCES (for variety):
   │   → Statement shown, submission redirected to LeetCode
   ├── AtCoder (atcoder.jp, open problems, similar redirect model)
   └── Project Euler (mathematical/algorithmic, open license)
-  
+
   License check per source:
   ├── Codeforces: problems freely accessible, attribution required ✓
   ├── LeetCode: display OK, submission verification harder (no public API)
@@ -1034,12 +1036,12 @@ Student Side — Attend Interview:
   │     Every violation logged in real-time:
   │     POST /interviews/:sessionId/violation
   │       Body: { type: "tab_switch" | "fullscreen_exit" | "copy_attempt", timestamp }
-  │     
+  │
   │     Violation limits:
   │       tab_switch: 3 violations → session auto-terminated
   │       fullscreen_exit: 2 violations → session auto-terminated
   │       copy_paste: logged but session continues (warning shown)
-  │     
+  │
   │     Student sees warning:
   │       "⚠️ Tab switch detected! Violation 1/3. Session will end at 3."
   │
@@ -1174,12 +1176,12 @@ ASSIGNMENT GENERATION (Server-side, runs daily at midnight IST)
 [Cron Job — Daily Assignment Generator]
   ├── For each active student:
   │     GET student.role, student.skill_gaps, student.last_activity
-  │     
+  │
   │     Generate 3 tasks:
   │     ├── Task 1 (MCQ): Pick a quiz topic from top skill gap
   │     ├── Task 2 (Code): Pick a Codeforces problem matching gap skill
   │     └── Task 3 (Video): Pick a YouTube video for current roadmap week
-  │     
+  │
   │     → [PostgreSQL] INSERT DailyAssignment { studentId, date, tasks: JSONB }
   │     → [Message Queue] PUBLISH daily_assignments.generated
   │            │
@@ -1291,10 +1293,10 @@ Elasticsearch Implementation:
     from: (page - 1) * 50,
     size: 50
   }
-  
+
   For "my rank" computation:
   {
-    query: { 
+    query: {
       bool: {
         filter: [
           { term: { role: "backend" } },
@@ -1463,7 +1465,7 @@ Dashboard UI Layout:
 ```
 GET /companies/me/leaderboard?specialty={roleId}
     → Fetches real-time ranked list of all registered students from Elasticsearch.
-    
+
     Response: {
         candidates: [
             {
@@ -1515,7 +1517,7 @@ Jobs Center UI Layout:
 ```
 Company searches candidates directory:
     → GET /companies/me/database?search={string}&page=1
-    
+
     Response: {
         results: [
             {
@@ -1554,7 +1556,7 @@ Triggered when clicking a candidate from Dashboard, Leaderboard, or Database.
 
 GET /companies/candidates/:studentId
     → Fetches live candidate data.
-    
+
     Response: {
         student_id: "string",
         name: "string",
@@ -1588,7 +1590,7 @@ Candidate Detail Popup UI:
 ```
 GET /companies/me/browse?role={string}&min_score={string}&min_projects={string}&search={string}
     → Fetches candidate grid data based on filters.
-    
+
     Response: {
         candidates: [
             {
@@ -1717,9 +1719,9 @@ JobApplication:
 
 ---
 
-*SkillDipz Feature Spec v3.0 — Updated with real-time flows, merged Skill Tests + Code Practice,*  
-*Company-assigned Projects, 3-source Video model, Creator Marketplace revenue system.*  
-*No mock data. All flows wire to real APIs and real databases.*
+_SkillDipz Feature Spec v3.0 — Updated with real-time flows, merged Skill Tests + Code Practice,_  
+_Company-assigned Projects, 3-source Video model, Creator Marketplace revenue system._  
+_No mock data. All flows wire to real APIs and real databases._
 
 ---
 
@@ -1774,5 +1776,209 @@ JWT_ACCESS_EXPIRATION_MINUTES=30
 ```
 
 ### Schema Implementation Notes:
+
 - **MongoDB:** Collections defined in Section 17 must be implemented using `Pydantic` models (if FastAPI) or `Mongoose` schemas (if NestJS), with strict type enforcement.
 - **Code Execution:** If utilizing a sandbox (like Judge0) for Code Practice instead of purely relying on Codeforces, a `JUDGE0_API_URL` and `JUDGE0_API_KEY` will be required.
+
+---
+
+## 19. Authentication & Onboarding — Full Spec
+
+### 19.1 Onboarding Page (`/` or `/onboarding`)
+
+The first page all users land on. It is a **marketing + platform entry** page.
+
+**Content:**
+- Animated hero section (`"Build a Career That Matches Your True Potential"`)
+- Auto-sliding image carousel (5-second interval, 5 slides)
+- Platform stats — fetched **real-time** from `GET /v1/stats/platform`
+- Role pills (Frontend, Backend, Data Scientist, etc.)
+- **"Sign In"** button → navigates to `/login`
+- **"Get Started"** button → navigates to `/register`
+
+**Real-Time Stats API:**
+```
+GET /v1/stats/platform
+← {
+    active_learners: 1240,
+    problems_solved: 84320,
+    interview_success_rate: 78
+  }
+```
+
+---
+
+### 19.2 Auth Routes
+
+| Route | Purpose |
+|---|---|
+| `/login` | Email/password + Google OAuth — for Students & Companies |
+| `/register` | Registration form — Student tab or Company tab |
+
+---
+
+### 19.3 Full Authentication Flow
+
+```
+[Onboarding Page /]
+  │
+  ├── "Sign In" → /login
+  │     ├── Tab: 🎓 Student  |  Tab: 🏢 Company
+  │     ├── Google OAuth button
+  │     │     → Google Consent Screen
+  │     │     → GET https://www.googleapis.com/oauth2/v3/userinfo
+  │     │     → POST /v1/auth/google { id_token }
+  │     │     → Auto-creates account if new user (role = STUDENT)
+  │     │
+  │     └── Email + Password form
+  │           → POST /v1/auth/login { email, password, role }
+  │
+  └── "Get Started" → /register
+        ├── Tab: 🎓 Student
+        │     Fields: full_name, email, password, college, phone
+        │     → POST /v1/auth/register { role: "STUDENT", ... }
+        │
+        └── Tab: 🏢 Company
+              Fields: full_name, email, password, company_name, industry
+              → POST /v1/auth/register { role: "COMPANY", ... }
+
+On success (both login & register):
+  ← { user, access_token, refresh_token }
+  → Save to Zustand store (persisted to localStorage)
+  → Redirect:
+      STUDENT → /student/overview
+      COMPANY → /company/dashboard
+      ADMIN   → /admin/dashboard
+```
+
+---
+
+### 19.4 Backend API Endpoints
+
+| Method | Endpoint | Auth | Description |
+|---|---|---|---|
+| POST | `/v1/auth/register` | ❌ | Create Student or Company account |
+| POST | `/v1/auth/login` | ❌ | Login with email + password + role |
+| POST | `/v1/auth/google` | ❌ | Google OAuth — login or auto-register |
+| POST | `/v1/auth/refresh` | ❌ | Get new access token via refresh token |
+| POST | `/v1/auth/logout` | ❌ | Clears session (client deletes token) |
+| GET | `/v1/auth/me` | ✅ Bearer | Get current user from token |
+
+---
+
+### 19.5 Google OAuth Flow
+
+```
+Frontend
+  → @react-oauth/google → useGoogleLogin()
+  → Google consent screen
+  → Returns access_token (Google OAuth token)
+  → POST /v1/auth/google { id_token: "<google_access_token>" }
+
+Backend
+  → GET https://www.googleapis.com/oauth2/v3/userinfo (with token)
+  → Extracts: sub (google_id), email, name, picture
+  → If user exists in MongoDB → login → return JWT pair
+  → If new user → INSERT users doc (role=STUDENT, is_verified=true)
+  → Return { user, access_token, refresh_token }
+```
+
+---
+
+### 19.6 Token Strategy
+
+```
+Access Token:   JWT · HS256 · signed with JWT_SECRET_KEY · expires 30 min
+Refresh Token:  JWT · HS256 · signed with JWT_SECRET_KEY · expires 7 days
+
+Frontend Storage:
+  - Zustand store (in-memory during session)
+  - Persisted to localStorage via zustand/middleware persist
+  - Cookie also set for Next.js middleware SSR route guards
+
+Auto-Refresh (Axios Interceptor):
+  - Response 401 → POST /v1/auth/refresh { refresh_token }
+  - New access token saved → original request retried
+  - If refresh also fails → clearAuth() → redirect /login
+```
+
+---
+
+### 19.7 Route Guards (Next.js Middleware `src/middleware.ts`)
+
+```
+/student/*  → requires role = STUDENT
+/company/*  → requires role = COMPANY
+/admin/*    → requires role = ADMIN
+/login      → if already logged in → redirect to dashboard
+/register   → if already logged in → redirect to dashboard
+```
+
+---
+
+### 19.8 MongoDB — `users` Collection Schema
+
+```json
+{
+  "_id": "ObjectId",
+  "email": "string — unique, required",
+  "password_hash": "string | null — null for Google-only accounts",
+  "role": "STUDENT | COMPANY | CREATOR | ADMIN",
+  "full_name": "string",
+  "avatar_url": "string | null",
+  "is_verified": "boolean — default false, true for Google signups",
+  "google_id": "string | null — populated on Google login",
+  "college": "string | null — Student only",
+  "phone": "string | null — Student only",
+  "company_name": "string | null — Company only",
+  "industry": "string | null — Company only",
+  "created_at": "datetime — UTC"
+}
+```
+
+**Indexes:**
+```
+db.users.createIndex({ email: 1 }, { unique: true })
+db.users.createIndex({ google_id: 1 }, { sparse: true })
+```
+
+---
+
+### 19.9 Frontend File Map (Auth)
+
+```
+src/
+├── app/
+│   ├── (auth)/
+│   │   ├── onboarding/page.tsx   ← Landing + hero + carousel + stats
+│   │   ├── login/page.tsx        ← Student/Company tabs, Google + Email login
+│   │   └── register/page.tsx     ← Student/Company registration form
+│   ├── layout.tsx                ← Wrapped with <GoogleOAuthProvider>
+│   └── middleware.ts             ← Route guards by role
+├── store/
+│   └── authStore.ts              ← Zustand: user, accessToken, refreshToken
+├── lib/
+│   ├── api.ts                    ← Axios instance with JWT interceptor + auto-refresh
+│   └── auth.ts                   ← loginWithCredentials(), registerUser(), loginWithGoogle(), logout()
+└── hooks/
+    └── useAuth.ts                ← useAuth() — isAuthenticated, handleLogout, redirectAfterLogin
+```
+
+---
+
+### 19.10 Backend File Map (Auth)
+
+```
+backend/app/
+├── api/routes/auth.py            ← All 6 auth endpoints
+├── core/
+│   ├── config.py                 ← Pydantic settings from .env
+│   ├── security.py               ← hash_password, verify_password, create_access_token, create_refresh_token, decode_token
+│   └── database.py               ← Motor async MongoDB client + Beanie init
+├── models/user.py                ← Beanie Document model (users collection)
+└── schemas/auth_schema.py        ← Pydantic request/response schemas
+```
+
+> **Full code in separate files:**
+> - Frontend: `notes/Auth_Frontend_Code.md`
+> - Backend: `notes/Auth_Backend_Code.md`

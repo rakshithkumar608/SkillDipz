@@ -111,6 +111,7 @@ export default function OnboardingPage() {
               height={45}
               className="w-24 sm:w-[150px] h-auto"
               priority
+              style={{height:"auto", width: "auto"}}
             />
           </a>
 
@@ -173,6 +174,7 @@ export default function OnboardingPage() {
                   fill
                   className="object-cover"
                   priority={index === 0}
+                  sizes="(max-width: 768px) 100vw, 900px"
                 />
                 <div className="absolute inset-0 bg-linear-to-t from-black/90 via-black/40 to-transparent"></div>
                 
