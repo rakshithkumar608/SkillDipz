@@ -1,6 +1,6 @@
 # SkillDipz — Backend Authentication Code
-> **Stack:** FastAPI · Python 3.11 · MongoDB (Motor async) · JWT · Google OAuth  
-> **Security:** bcrypt hashing · Access token (30min) · Refresh token (7 days)
+> **Stack:** FastAPI · Python 3.11 · MongoDB (Motor async) · Redis · JWT · Google OAuth  
+> **Security:** bcrypt hashing · Access token (30min) · Refresh token (7 days) · Redis token blacklist on logout · Rate limiting on login
 
 ---
 
@@ -18,7 +18,8 @@ backend/
     ├── core/
     │   ├── config.py            ← Pydantic settings
     │   ├── security.py          ← JWT + bcrypt helpers
-    │   └── database.py          ← MongoDB async client
+    │   ├── database.py          ← MongoDB async client
+    │   └── redis_client.py      ← Redis async client  ← NEW
     ├── models/
     │   └── user.py              ← MongoDB user document model
     └── schemas/
@@ -41,6 +42,7 @@ passlib[bcrypt]==1.7.4
 python-multipart==0.0.9
 httpx==0.27.0
 google-auth==2.35.0
+redis[asyncio]==5.0.8
 ```
 
 ---
@@ -51,6 +53,9 @@ google-auth==2.35.0
 PORT=8000
 NODE_ENV=development
 MONGODB_URI=mongodb+srv://<user>:<password>@cluster.mongodb.net/skilldipz
+
+# Upstash Redis (copy from Upstash dashboard → Connect → .env)
+REDIS_URL=rediss://default:<your-upstash-password>@<your-endpoint>.upstash.io:6379
 
 JWT_SECRET_KEY=super_secure_random_string_change_in_production
 JWT_ACCESS_EXPIRATION_MINUTES=30
@@ -72,6 +77,7 @@ from pydantic_settings import BaseSettings
 class Settings(BaseSettings):
     PORT: int = 8000
     MONGODB_URI: str
+    REDIS_URL: str  # Set in .env — use Upstash: rediss://default:<password>@<endpoint>.upstash.io:6379
     JWT_SECRET_KEY: str
     JWT_ACCESS_EXPIRATION_MINUTES: int = 30
     JWT_REFRESH_EXPIRATION_DAYS: int = 7
@@ -110,6 +116,87 @@ async def close_db():
     if client:
         client.close()
         print("🔴 MongoDB disconnected")
+```
+
+---
+
+## 4b. `app/core/redis_client.py`  ← NEW
+
+```python
+import redis.asyncio as aioredis
+from app.core.config import settings
+
+# Global async Redis client
+redis: aioredis.Redis | None = None
+
+async def connect_redis():
+    global redis
+    redis = aioredis.from_url(
+        settings.REDIS_URL,
+        encoding="utf-8",
+        decode_responses=True,
+    )
+    await redis.ping()   # fail fast if Redis is down
+    print("✅ Redis connected")
+
+async def close_redis():
+    global redis
+    if redis:
+        await redis.close()
+        print("🔴 Redis disconnected")
+
+def get_redis() -> aioredis.Redis:
+    """Dependency injection — use in route handlers."""
+    if redis is None:
+        raise RuntimeError("Redis not initialised")
+    return redis
+
+
+# ── Token Blacklist Helpers ────────────────────────────────────
+
+BLACKLIST_PREFIX = "bl:"   # bl:<jti_or_token_hash>
+
+async def blacklist_token(token: str, ttl_seconds: int) -> None:
+    """
+    Store token in Redis blacklist.
+    TTL = remaining lifetime of the token so it auto-expires.
+    """
+    key = f"{BLACKLIST_PREFIX}{token}"
+    await redis.setex(key, ttl_seconds, "1")
+
+async def is_token_blacklisted(token: str) -> bool:
+    """Returns True if the token has been revoked."""
+    key = f"{BLACKLIST_PREFIX}{token}"
+    return await redis.exists(key) == 1
+
+
+# ── Rate Limiting Helper ───────────────────────────────────────
+
+RATE_PREFIX = "rl:"
+MAX_LOGIN_ATTEMPTS = 5        # max attempts
+LOCKOUT_SECONDS = 15 * 60    # 15 minutes lockout
+
+async def check_rate_limit(identifier: str) -> None:
+    """
+    Raises HTTPException 429 if identifier (email) exceeded
+    MAX_LOGIN_ATTEMPTS within LOCKOUT_SECONDS window.
+    """
+    from fastapi import HTTPException, status
+    key = f"{RATE_PREFIX}{identifier}"
+    attempts = await redis.incr(key)
+    if attempts == 1:
+        await redis.expire(key, LOCKOUT_SECONDS)
+    if attempts > MAX_LOGIN_ATTEMPTS:
+        ttl = await redis.ttl(key)
+        raise HTTPException(
+            status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+            detail=f"Too many login attempts. Try again in {ttl // 60} minutes.",
+        )
+
+async def reset_rate_limit(identifier: str) -> None:
+    """Clear rate limit on successful login."""
+    key = f"{RATE_PREFIX}{identifier}"
+    await redis.delete(key)
 ```
 
 ---
@@ -450,14 +537,25 @@ async def refresh_token(body: RefreshRequest):
 
 
 # ─────────────────────────────────────────────────────────────
-# POST /v1/auth/logout
+# POST /v1/auth/logout  — Redis blacklists the refresh token
 # ─────────────────────────────────────────────────────────────
 @router.post("/logout", response_model=MessageResponse)
 async def logout(body: LogoutRequest):
     """
-    Stateless JWT — client deletes token.
-    Extend with Redis token blacklist for production revocation.
+    Decodes the refresh token to get its remaining TTL,
+    then stores it in Redis blacklist so it cannot be reused.
+    Access token expires on its own (30 min max).
     """
+    from app.core.redis_client import blacklist_token
+    from datetime import datetime, timezone
+
+    payload = decode_token(body.refresh_token)
+    if payload:
+        exp = payload.get("exp", 0)
+        remaining_ttl = int(exp - datetime.now(timezone.utc).timestamp())
+        if remaining_ttl > 0:
+            await blacklist_token(body.refresh_token, remaining_ttl)
+
     return MessageResponse(message="Logged out successfully.")
 
 
@@ -487,14 +585,17 @@ from fastapi.middleware.cors import CORSMiddleware
 from contextlib import asynccontextmanager
 
 from app.core.database import connect_db, close_db
+from app.core.redis_client import connect_redis, close_redis
 from app.core.config import settings
 from app.api.routes.auth import router as auth_router
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     await connect_db()
+    await connect_redis()   # ← Redis starts here
     yield
     await close_db()
+    await close_redis()     # ← Redis closes here
 
 app = FastAPI(
     title="SkillDipz API",
@@ -553,4 +654,92 @@ uvicorn main:app --reload --port 8000
 # In database.py or a setup script
 await User.get_motor_collection().create_index("email", unique=True)
 await User.get_motor_collection().create_index("google_id", sparse=True)
+```
+
+---
+
+## Redis — What It Does in Auth
+
+| Feature | Redis Key | TTL | Description |
+|---|---|---|---|
+| **Token Blacklist** | `bl:<refresh_token>` | Remaining token lifetime | Logout invalidates refresh token immediately |
+| **Refresh check** | `bl:<refresh_token>` | — | On `/auth/refresh`, check blacklist before issuing new tokens |
+| **Rate Limiting** | `rl:<email>` | 15 minutes | Max 5 failed logins → 429 Too Many Requests |
+| **Rate Reset** | `rl:<email>` | — | Deleted on successful login |
+
+---
+
+## Updated `/v1/auth/login` — with Rate Limiting
+
+Add these 2 lines to the `login` route (in `auth.py`):
+
+```python
+# At the TOP of the login function, before any DB query:
+from app.core.redis_client import check_rate_limit, reset_rate_limit
+
+@router.post("/login", response_model=AuthResponse)
+async def login(body: LoginRequest):
+    # ← Rate limit check first
+    await check_rate_limit(body.email)
+
+    user = await User.find_one(User.email == body.email)
+    if not user or not user.password_hash:
+        raise HTTPException(status_code=401, detail="Invalid email or password.")
+    if not verify_password(body.password, user.password_hash):
+        raise HTTPException(status_code=401, detail="Invalid email or password.")
+    if body.role and user.role != body.role:
+        raise HTTPException(status_code=403, detail=f"Account is registered as {user.role}.")
+
+    # ← Reset rate limit on success
+    await reset_rate_limit(body.email)
+    return build_auth_response(user)
+```
+
+## Updated `/v1/auth/refresh` — with Blacklist Check
+
+Add blacklist check to the refresh route:
+
+```python
+@router.post("/refresh", response_model=AuthResponse)
+async def refresh_token(body: RefreshRequest):
+    from app.core.redis_client import is_token_blacklisted
+
+    # ← Block blacklisted tokens (already logged out)
+    if await is_token_blacklisted(body.refresh_token):
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Token has been revoked. Please login again.",
+        )
+
+    payload = decode_token(body.refresh_token)
+    if not payload or payload.get("type") != "refresh":
+        raise HTTPException(status_code=401, detail="Invalid or expired refresh token.")
+    user = await User.get(payload["sub"])
+    if not user:
+        raise HTTPException(status_code=404, detail="User not found.")
+    return build_auth_response(user)
+```
+
+---
+
+## Redis Setup — Upstash (Managed Cloud Redis)
+
+> ✅ We use **Upstash** — no Docker or local Redis needed.
+
+### Steps:
+1. Go to [https://upstash.com](https://upstash.com) → Create a Redis database
+2. Choose **region** closest to your backend (e.g., `ap-south-1` for India)
+3. Enable **TLS** (default on Upstash)
+4. Copy the **REST URL** or **Redis URL** from the dashboard
+5. Paste into `.env`:
+
+```env
+REDIS_URL=rediss://default:<your-upstash-password>@<your-endpoint>.upstash.io:6379
+```
+
+> **Note:** Use `rediss://` (double `s`) — Upstash requires TLS.
+
+```bash
+# Already in requirements.txt (no extra install needed):
+redis[asyncio]==5.0.8
 ```
