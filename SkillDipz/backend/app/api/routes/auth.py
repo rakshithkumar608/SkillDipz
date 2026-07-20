@@ -1,5 +1,6 @@
-from app.core.redis_client import reset_rate_limit
-from app.core.redis_client import check_rate_limit
+import random
+import logging
+from app.core.redis_client import reset_rate_limit, check_rate_limit
 from fastapi import APIRouter, HTTPException, status, Depends
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from typing import Optional
@@ -7,7 +8,8 @@ import httpx
 
 from app.schemas.auth_schema import (
     RegisterRequest, LoginRequest, GoogleLoginRequest,
-    RefreshRequest, LogoutRequest, AuthResponse, UserOut, MessageResponse
+    RefreshRequest, LogoutRequest, AuthResponse, UserOut,
+    MessageResponse, VerifyOTPRequest, ResendOTPRequest
 )
 from app.models.user import User
 from app.core.security import (
@@ -15,12 +17,19 @@ from app.core.security import (
     create_access_token, create_refresh_token, decode_token
 )
 from app.core.config import settings
+from app.core.email_service import send_otp_email
+from app.core.redis_client import store_otp, verify_otp, delete_otp
 
+logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/auth", tags=["Authentication"])
 bearer_scheme = HTTPBearer()
 
 
-def build_auth_response(user: User) -> AuthResponse:
+def generate_otp() -> str:
+    return str(random.randint(100000, 999999))
+
+
+def build_auth_response(user: User, needs_verification: bool = False) -> AuthResponse:
     token_data = {"sub": str(user.id), "role": user.role, "email": user.email}
     return AuthResponse(
         user=UserOut(
@@ -38,6 +47,7 @@ def build_auth_response(user: User) -> AuthResponse:
         ),
         access_token=create_access_token(token_data),
         refresh_token=create_refresh_token(token_data),
+        needs_verification=needs_verification,
     )
 
 
@@ -59,16 +69,38 @@ async def get_current_user(
     return user
 
 
-#  Register
+# ── Register ──────────────────────────────────────────────────────────────────
 
 @router.post("/register", response_model=AuthResponse, status_code=201)
 async def register(body: RegisterRequest):
     existing = await User.find_one(User.email == body.email)
+
     if existing:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="An account with this email already exists",
-        )
+        if existing.is_verified:
+            # Fully verified account — block registration
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="An account with this email already exists. Please log in.",
+            )
+        # Unverified account (e.g. previous registration where OTP failed)
+        # Update their details and resend OTP
+        existing.password_hash = hash_password(body.password)
+        existing.full_name = body.full_name
+        existing.role = body.role
+        existing.college = body.college
+        existing.phone = body.phone
+        existing.company_name = body.company_name
+        existing.industry = body.industry
+        await existing.save()
+
+        otp = generate_otp()
+        stored = await store_otp(body.email, otp)
+        if stored:
+            send_otp_email(body.email, otp, existing.full_name)
+        else:
+            logger.warning(f"Could not store OTP for {body.email} — Redis down.")
+
+        return build_auth_response(existing, needs_verification=True)
 
     if len(body.password) < 8:
         raise HTTPException(
@@ -88,10 +120,78 @@ async def register(body: RegisterRequest):
         is_verified=False,
     )
     await user.insert()
+
+    # Generate & send OTP
+    otp = generate_otp()
+    stored = await store_otp(body.email, otp)
+    if stored:
+        send_otp_email(body.email, otp, body.full_name)
+    else:
+        logger.warning(f"Could not store OTP for {body.email} — Redis down.")
+
+    return build_auth_response(user, needs_verification=True)
+
+
+# ── Verify OTP ────────────────────────────────────────────────────────────────
+
+@router.post("/verify-otp", response_model=AuthResponse)
+async def verify_otp_route(body: VerifyOTPRequest):
+    user = await User.find_one(User.email == body.email)
+    if not user:
+        raise HTTPException(status_code=404, detail="User not found.")
+
+    if user.is_verified:
+        # Already verified — just return tokens
+        return build_auth_response(user)
+
+    matched = await verify_otp(body.email, body.otp)
+    if not matched:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Invalid or expired OTP. Please try again or request a new code.",
+        )
+
+    user.is_verified = True
+    await user.save()
     return build_auth_response(user)
 
 
-# Login
+# ── Resend OTP ────────────────────────────────────────────────────────────────
+
+@router.post("/resend-otp", response_model=MessageResponse)
+async def resend_otp(body: ResendOTPRequest):
+    from app.core.redis_client import redis as _redis, OTP_PREFIX
+    user = await User.find_one(User.email == body.email)
+    if not user:
+        raise HTTPException(status_code=404, detail="User not found.")
+    if user.is_verified:
+        raise HTTPException(status_code=400, detail="Email already verified.")
+
+    # Simple 60-second cooldown using a separate Redis key
+    if _redis:
+        cooldown_key = f"otp_cd:{body.email}"
+        try:
+            if await _redis.exists(cooldown_key):
+                raise HTTPException(
+                    status_code=429,
+                    detail="Please wait 60 seconds before requesting another code.",
+                )
+            await _redis.setex(cooldown_key, 60, "1")
+        except HTTPException:
+            raise
+        except Exception:
+            pass
+
+    await delete_otp(body.email)
+    otp = generate_otp()
+    stored = await store_otp(body.email, otp)
+    if stored:
+        send_otp_email(body.email, otp, user.full_name)
+    return MessageResponse(message="A new verification code has been sent to your email.")
+
+
+# ── Login ─────────────────────────────────────────────────────────────────────
+
 @router.post("/login", response_model=AuthResponse)
 async def login(body: LoginRequest):
     await check_rate_limit(body.email)
@@ -115,11 +215,23 @@ async def login(body: LoginRequest):
             status_code=status.HTTP_403_FORBIDDEN,
             detail=f"This account is registered as {user.role}, not {body.role}.",
         )
+
+    if not user.is_verified:
+        # Resend OTP automatically on login attempt
+        otp = generate_otp()
+        stored = await store_otp(body.email, otp)
+        if stored:
+            send_otp_email(body.email, otp, user.full_name)
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Email not verified. A new verification code has been sent to your email.",
+        )
+
     await reset_rate_limit(body.email)
     return build_auth_response(user)
 
-# Google
 
+# ── Google ────────────────────────────────────────────────────────────────────
 
 @router.post("/google", response_model=AuthResponse)
 async def google_login(body: GoogleLoginRequest):
@@ -144,7 +256,7 @@ async def google_login(body: GoogleLoginRequest):
                 status_code=status.HTTP_400_BAD_REQUEST,
                 detail=f"Failed to verify Google token: {error_msg}"
             )
-            
+
         google_data = resp.json()
 
     google_id = google_data.get("sub")
@@ -161,8 +273,9 @@ async def google_login(body: GoogleLoginRequest):
         if not user.google_id:
             user.google_id = google_id
             user.avatar_url = user.avatar_url or avatar_url
+            # Google-verified emails are trusted
+            user.is_verified = True
             await user.save()
-
     else:
         user = User(
             email=email,
@@ -170,20 +283,19 @@ async def google_login(body: GoogleLoginRequest):
             full_name=full_name,
             avatar_url=avatar_url,
             role="STUDENT",
-            is_verified=True,
+            is_verified=True,   # Google already verified the email
         )
         await user.insert()
 
     return build_auth_response(user)
 
-#  refresh
 
+# ── Refresh ───────────────────────────────────────────────────────────────────
 
 @router.post("/refresh", response_model=AuthResponse)
 async def refresh_token(body: RefreshRequest):
     from app.core.redis_client import is_token_blacklisted
 
-    #  Block blacklisted tokens (already logged out)
     if await is_token_blacklisted(body.refresh_token):
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
@@ -202,10 +314,10 @@ async def refresh_token(body: RefreshRequest):
     return build_auth_response(user)
 
 
-# Logout - Redis blacklists the refresh token
+# ── Logout ────────────────────────────────────────────────────────────────────
+
 @router.post("/logout", response_model=MessageResponse)
 async def logout(body: LogoutRequest):
-
     from app.core.redis_client import blacklist_token
     from datetime import datetime, timezone
 
@@ -216,10 +328,10 @@ async def logout(body: LogoutRequest):
         if remaining_ttl > 0:
             await blacklist_token(body.refresh_token, remaining_ttl)
 
-    return MessageResponse(message="Logged out successfullt.")
+    return MessageResponse(message="Logged out successfully.")
 
 
-# me
+# ── Me ────────────────────────────────────────────────────────────────────────
 
 @router.get("/me", response_model=UserOut)
 async def get_me(current_user: User = Depends(get_current_user)):
@@ -236,3 +348,4 @@ async def get_me(current_user: User = Depends(get_current_user)):
         company_name=current_user.company_name,
         industry=current_user.industry,
     )
+

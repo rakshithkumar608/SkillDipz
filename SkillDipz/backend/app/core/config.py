@@ -10,6 +10,8 @@ class Settings(BaseSettings):
     GOOGLE_CLIENT_ID: str
     GOOGLE_CLIENT_SECRET: str
     FRONTEND_URL: str = "http://localhost:3000"
+    SMTP_EMAIL: str          # Your Gmail address
+    SMTP_PASSWORD: str       # Gmail App Password (not your real password)
 
     class Config:
         env_file = ".env"

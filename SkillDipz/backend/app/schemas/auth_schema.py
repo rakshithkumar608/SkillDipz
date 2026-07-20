@@ -30,6 +30,13 @@ class RefreshRequest(BaseModel):
 class LogoutRequest(BaseModel):
     refresh_token: str
 
+class VerifyOTPRequest(BaseModel):
+    email: EmailStr
+    otp: str
+
+class ResendOTPRequest(BaseModel):
+    email: EmailStr
+
 # ── Responses
 
 class UserOut(BaseModel):
@@ -50,6 +57,7 @@ class AuthResponse(BaseModel):
     access_token: str
     refresh_token: str
     token_type: str = "bearer"
+    needs_verification: bool = False   # True → redirect to /verify-otp
 
 class MessageResponse(BaseModel):
     message: str

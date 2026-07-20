@@ -151,7 +151,7 @@ NEXT_PUBLIC_GOOGLE_CLIENT_ID=your_google_client_id_here
 import { create } from "zustand";
 import { persist } from "zustand/middleware";
 
-export type UserRole = "STUDENT" | "COMPANY" | "CREATOR" | "ADMIN";
+export type UserRole = "STUDENT" | "COMPANY";
 
 export interface AuthUser {
   id: string;
