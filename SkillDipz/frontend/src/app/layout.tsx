@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import { Outfit } from "next/font/google";
 import "./globals.css";
+import Providers from "./providers";
 
 const outfit = Outfit({
   subsets: ["latin"],
@@ -23,7 +24,12 @@ export default function RootLayout({
       suppressHydrationWarning
       className={`${outfit.variable} font-sans bg-slate-950 text-slate-50 antialiased`}
     >
-      <body suppressHydrationWarning>{children}</body>
+      <body suppressHydrationWarning>
+        <Providers>
+          {children}
+        </Providers>
+        
+        </body>
     </html>
   );
 }

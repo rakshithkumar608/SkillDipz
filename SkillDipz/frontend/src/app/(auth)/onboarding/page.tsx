@@ -4,6 +4,7 @@
 import { HoverBorderGradient } from "@/components/ui/hover-border-gradient";
 import { ArrowRight, BrainCircuit, Briefcase, Cloud, Database, Layers, MonitorSmartphone, Paintbrush, Server, ChevronLeft, ChevronRight } from "lucide-react";
 import Image from "next/image";
+import Link from "next/link";
 import { useEffect, useState } from "react";
 
 const slides = [
@@ -116,16 +117,22 @@ export default function OnboardingPage() {
           </a>
 
           <div className="flex items-center gap-2 sm:gap-3">
-            <button className="px-2 sm:px-4 py-2 text-xs sm:text-sm font-medium text-neutral-300 transition hover:text-white whitespace-nowrap">
+            <Link
+            href={"/login"}
+             className="px-2 sm:px-4 py-2 text-xs sm:text-sm font-medium text-neutral-300 transition hover:text-white whitespace-nowrap">
               Sign in
-            </button>
+            </Link>
 
-            <HoverBorderGradient
+
+          <Link href="/register">
+           <HoverBorderGradient
               containerClassName="cursor-pointer"
               className="flex items-center gap-2 text-xs sm:text-sm font-medium whitespace-nowrap px-4 py-2"
             >
               Get Started <ArrowRight className="h-3 w-3 sm:h-4 sm:w-4" />
             </HoverBorderGradient>
+          </Link>
+           
           </div>
         </nav>
       </header>
@@ -145,12 +152,16 @@ export default function OnboardingPage() {
             </p>
 
             <div className="mt-8 sm:mt-12 flex justify-center gap-4 sm:gap-6">
+
+              <Link href="/register">
               <HoverBorderGradient
                 containerClassName="cursor-pointer"
                 className="flex items-center gap-2 text-sm sm:text-base font-medium px-6 py-3 whitespace-nowrap"
               >
                 Start Your Journey <ArrowRight className="h-4 w-4" />
               </HoverBorderGradient>
+              </Link>
+              
             </div>
         </div>
       </section>
