@@ -3,14 +3,24 @@
 import { DotPattern } from "@/components/ui/dot-pattern";
 import { useRouter } from "next/navigation";
 import { InteractiveHoverButton } from "@/components/ui/interactive-hover-button";
+import { useAuthStore } from "@/store/authStore";
+import { getRedirectPath } from "@/lib/auth";
 
 export default function Home() {
   const router = useRouter();
+  const { user, accessToken } = useAuthStore();
+
+  const isAuthenticated = !!accessToken && !!user;
 
   const handleStart = () => {
     // Wait 300ms for the button animation to complete before routing
     setTimeout(() => {
-      router.push("/onboarding");
+      if (isAuthenticated) {
+        // Already logged in — go straight to their dashboard
+        router.push(getRedirectPath(user.role));
+      } else {
+        router.push("/onboarding");
+      }
     }, 300);
   };
 

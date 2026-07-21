@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import { Outfit } from "next/font/google";
 import "./globals.css";
 import Providers from "./providers";
+import { Toaster } from "sonner";
 
 const outfit = Outfit({
   subsets: ["latin"],
@@ -27,6 +28,7 @@ export default function RootLayout({
       <body suppressHydrationWarning>
         <Providers>
           {children}
+          <Toaster richColors position="top-right"/>
         </Providers>
         
         </body>
