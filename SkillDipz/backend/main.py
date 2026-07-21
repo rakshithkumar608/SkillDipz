@@ -8,7 +8,8 @@ from app.core.redis_client import connect_redis, close_redis
 from app.core.config import settings
 
 from app.api.routes.auth import router as auth_router
-
+from app.api.routes.students import router as students_router
+from app.api.routes.ws import router as ws_router
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
@@ -34,6 +35,10 @@ app.add_middleware(
 
 # Routers
 app.include_router(auth_router, prefix="/v1")
+app.include_router(students_router, prefix="/v1")
+
+# WebSocket router (no /v1 prefix — path: /ws/student/{id})
+app.include_router(ws_router)
 
 @app.get("/health")
 async def health_check():
