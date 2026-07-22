@@ -13,6 +13,7 @@ from app.models.roadmap import StudentRoadmap
 from app.models.notification import Notification
 from app.models.activity_log import ActivityLog
 from app.models.student_streak import StudentStreak
+from app.models.skill_gap import StudentSkillLevel, RoleSkillBenchmark
 from app.core.ws_manager import ws_manager
 
 logger = logging.getLogger(__name__)
@@ -77,6 +78,20 @@ class StreakOut(BaseModel):
     current_streak: int
     longest_streak: int
     last_active: Optional[str]
+
+
+class SkillGapItem(BaseModel):
+    skill: str
+    current: int
+    required: int
+    gap: int
+    priority: int
+
+class SkillGapOut(BaseModel):
+    role: str
+    acquired_skills: List[str]
+    skill_gaps: List[SkillGapItem]
+    overall_match_pct: float
 
 
 #  Score
@@ -183,7 +198,7 @@ async def get_roadmap_summary(current_user: User = Depends(get_current_user)):
         last_regenerated=doc.last_regenerated,
     )
 
-# ─── Resume Upload ────────────────────────────────────────────────────────────
+#  Resume Upload 
 
 ALLOWED_RESUME_TYPES = {
     "application/pdf",
@@ -342,4 +357,85 @@ async def get_streak(current_user: User = Depends(get_current_user)):
         current_streak=doc.current_streak,
         longest_streak=doc.longest_streak,
         last_active=str(doc.last_active) if doc.last_active else None,
+    )
+
+
+# Skill Gap Analysis 
+
+@router.get("/me/skill-gap", response_model=SkillGapOut)
+async def get_skill_gap(current_user: User = Depends(get_current_user)):
+    """
+    Computes the student's skill gaps against their target role.
+    Returns acquired skills and remaining gaps sorted by priority.
+    """
+    student_id = str(current_user.id)
+
+    # 1. Get student's target role from their score document
+    score_doc = await EmployabilityScore.get_or_create(student_id)
+    roadmap_doc = await StudentRoadmap.get_or_create(student_id)
+
+    target_role = score_doc.target_role or roadmap_doc.role
+    if not target_role:
+        return SkillGapOut(
+            role="No target role set",
+            acquired_skills=[],
+            skill_gaps=[],
+            overall_match_pct=0.0,
+        )
+
+    # 2. Fetch all student skill levels
+    student_skills = await StudentSkillLevel.find(
+        StudentSkillLevel.student_id == student_id
+    ).to_list()
+    skill_map = {s.skill.lower(): s.current_level for s in student_skills}
+
+    # 3. Fetch all role benchmarks for the target role
+    benchmarks = await RoleSkillBenchmark.find(
+        RoleSkillBenchmark.role == target_role
+    ).sort(RoleSkillBenchmark.priority).to_list()
+
+    if not benchmarks:
+        # No benchmarks defined yet for this role
+        return SkillGapOut(
+            role=target_role,
+            acquired_skills=list(skill_map.keys()),
+            skill_gaps=[],
+            overall_match_pct=0.0,
+        )
+
+    # 4. Compute gaps
+    acquired = []
+    gaps = []
+
+    total_required = 0
+    total_current = 0
+
+    for bm in benchmarks:
+        current = skill_map.get(bm.skill.lower(), 0)
+        gap = max(0, bm.required_level - current)
+        total_required += bm.required_level
+        total_current += min(current, bm.required_level)
+
+        if gap == 0:
+            acquired.append(bm.skill)
+        else:
+            gaps.append(SkillGapItem(
+                skill=bm.skill,
+                current=current,
+                required=bm.required_level,
+                gap=gap,
+                priority=bm.priority,
+            ))
+
+    # Sort gaps: largest gap first, then by priority
+    gaps.sort(key=lambda g: (-g.gap, g.priority))
+
+    # Overall match percentage
+    match_pct = round((total_current / total_required) * 100, 1) if total_required > 0 else 0.0
+
+    return SkillGapOut(
+        role=target_role,
+        acquired_skills=acquired,
+        skill_gaps=gaps,
+        overall_match_pct=match_pct,
     )
