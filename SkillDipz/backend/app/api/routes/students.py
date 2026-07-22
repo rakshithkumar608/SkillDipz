@@ -198,7 +198,7 @@ async def get_roadmap_summary(current_user: User = Depends(get_current_user)):
         last_regenerated=doc.last_regenerated,
     )
 
-#  Resume Upload 
+# Resume Upload & Skill Analysis
 
 ALLOWED_RESUME_TYPES = {
     "application/pdf",
@@ -213,6 +213,51 @@ class ResumeUploadOut(BaseModel):
     message: str
     file_name: str
     resume_uploaded: bool
+    skills_extracted: List[str]
+
+
+def _extract_skills_from_text(text: str) -> List[str]:
+    import re
+    known_skills = [
+        "React", "React.js", "Next.js", "Vue", "Angular", "JavaScript", "TypeScript",
+        "Node.js", "Express", "Python", "FastAPI", "Django", "Flask", "Java", "Spring",
+        "C++", "C#", ".NET", "Go", "Rust", "PHP", "Laravel", "HTML", "CSS", "Tailwind",
+        "SQL", "PostgreSQL", "MySQL", "MongoDB", "Redis", "GraphQL", "REST API",
+        "Docker", "Kubernetes", "AWS", "Azure", "GCP", "Git", "GitHub", "CI/CD",
+        "Linux", "Data Structures", "Algorithms", "Machine Learning", "TensorFlow",
+        "PyTorch", "Pandas", "NumPy", "System Design", "Agile"
+    ]
+    text_lower = text.lower()
+    found = []
+    for skill in known_skills:
+        pattern = r"(?:\b|_)" + re.escape(skill.lower()) + r"(?:\b|_)"
+        if re.search(pattern, text_lower):
+            found.append(skill)
+    return found
+
+
+def _parse_resume_text(contents: bytes, filename: str) -> str:
+    import io
+    text = ""
+    ext = Path(filename).suffix.lower()
+    if ext == ".pdf":
+        try:
+            import pypdf
+            reader = pypdf.PdfReader(io.BytesIO(contents))
+            for page in reader.pages:
+                text += page.extract_text() or ""
+        except Exception:
+            text = contents.decode("latin-1", errors="ignore")
+    elif ext in [".docx", ".doc"]:
+        try:
+            import docx
+            doc = docx.Document(io.BytesIO(contents))
+            text = "\n".join([p.text for p in doc.paragraphs])
+        except Exception:
+            text = contents.decode("utf-8", errors="ignore")
+    else:
+        text = contents.decode("utf-8", errors="ignore")
+    return text
 
 
 @router.post("/me/resume", response_model=ResumeUploadOut)
@@ -222,42 +267,106 @@ async def upload_resume(
 ):
     """
     Upload a student resume (PDF / DOC / DOCX, max 5 MB).
-    Saves to disk under uploads/resumes/ and marks resume_uploaded=True.
+    Saves to disk and extracts real skills into database.
     """
-    # Validate content-type
     if file.content_type not in ALLOWED_RESUME_TYPES:
         raise HTTPException(
             status_code=400,
             detail="Only PDF or Word (.doc / .docx) files are accepted.",
         )
 
-    # Read and validate size
     contents = await file.read()
     if len(contents) > MAX_RESUME_SIZE:
         raise HTTPException(status_code=400, detail="File must be under 5 MB.")
 
-    # Build a safe file name: <student_id>_<uuid>.<ext>
     ext = Path(file.filename or "resume").suffix.lower() or ".pdf"
     safe_name = f"{current_user.id}_{uuid.uuid4().hex}{ext}"
 
-    # Ensure directory exists
     RESUME_DIR.mkdir(parents=True, exist_ok=True)
     dest = RESUME_DIR / safe_name
-
     dest.write_bytes(contents)
     logger.info(f"Resume saved: {dest}")
 
-    # Update roadmap document
+    # Real text extraction and skill analysis
+    raw_text = _parse_resume_text(contents, file.filename or "resume.pdf")
+    extracted_skills = _extract_skills_from_text(raw_text)
+
     student_id = str(current_user.id)
+
+    # Save real extracted skills into database
+    for skill_name in extracted_skills:
+        existing = await StudentSkillLevel.find_one(
+            StudentSkillLevel.student_id == student_id,
+            StudentSkillLevel.skill == skill_name
+        )
+        if not existing:
+            new_skill = StudentSkillLevel(
+                student_id=student_id,
+                skill=skill_name,
+                current_level=3,  # Baseline level parsed from resume
+                source="resume"
+            )
+            await new_skill.insert()
+
+    # Update roadmap document
     roadmap = await StudentRoadmap.get_or_create(student_id)
     roadmap.resume_uploaded = True
     roadmap.resume_file_path = str(dest)
+    if extracted_skills:
+        roadmap.completed_skills = len(extracted_skills)
     await roadmap.save()
 
+    # Update resume_quality score based on real extracted skills count
+    score_doc = await EmployabilityScore.get_or_create(student_id)
+    quality_score = min(100.0, float(len(extracted_skills) * 15 + 40)) if extracted_skills else 50.0
+    score_doc.components.resume_quality = quality_score
+    new_overall = score_doc.compute_overall()
+    score_doc.overall_score = new_overall
+    score_doc.last_updated = datetime.now(timezone.utc)
+    await score_doc.save()
+
+    # Log Activity
+    activity_detail = f"Extracted {len(extracted_skills)} skills: {', '.join(extracted_skills[:4])}" if extracted_skills else "Resume parsed."
+    await ActivityLog(
+        student_id=student_id,
+        type="submission",
+        title="Resume Parsed & Analyzed",
+        detail=activity_detail
+    ).insert()
+
+    # Create Notification
+    await Notification(
+        student_id=student_id,
+        title="Resume Processing Complete",
+        body=f"Your resume was processed. Found {len(extracted_skills)} skills.",
+        action_url="/student/skill-gap"
+    ).insert()
+
+    # Push real-time WS updates
+    await ws_manager.broadcast(
+        student_id,
+        "score_update",
+        {
+            "overall_score": new_overall,
+            "components": score_doc.components.model_dump(),
+            "last_updated": score_doc.last_updated.isoformat(),
+        },
+    )
+
+    await ws_manager.broadcast(
+        student_id,
+        "skill_gap_update",
+        {
+            "skills_extracted": extracted_skills,
+            "count": len(extracted_skills)
+        }
+    )
+
     return ResumeUploadOut(
-        message="Resume uploaded successfully.",
+        message="Resume uploaded and analyzed successfully.",
         file_name=safe_name,
         resume_uploaded=True,
+        skills_extracted=extracted_skills,
     )
 
 
@@ -365,16 +474,16 @@ async def get_streak(current_user: User = Depends(get_current_user)):
 @router.get("/me/skill-gap", response_model=SkillGapOut)
 async def get_skill_gap(current_user: User = Depends(get_current_user)):
     """
-    Computes the student's skill gaps against their target role.
-    Returns acquired skills and remaining gaps sorted by priority.
+    Computes the student's real skill gaps against role benchmarks.
+    Queries pure database records with no mock data.
     """
     student_id = str(current_user.id)
 
-    # 1. Get student's target role from their score document
+    # 1. Get student's target role
     score_doc = await EmployabilityScore.get_or_create(student_id)
     roadmap_doc = await StudentRoadmap.get_or_create(student_id)
 
-    target_role = score_doc.target_role or roadmap_doc.role
+    target_role = getattr(current_user, "target_role", None) or score_doc.target_role or roadmap_doc.role
     if not target_role:
         return SkillGapOut(
             role="No target role set",
@@ -383,27 +492,28 @@ async def get_skill_gap(current_user: User = Depends(get_current_user)):
             overall_match_pct=0.0,
         )
 
-    # 2. Fetch all student skill levels
+    # 2. Fetch all real student skill levels from DB
     student_skills = await StudentSkillLevel.find(
         StudentSkillLevel.student_id == student_id
     ).to_list()
+
     skill_map = {s.skill.lower(): s.current_level for s in student_skills}
 
-    # 3. Fetch all role benchmarks for the target role
+    # 3. Fetch real role benchmarks from DB
+    import re
     benchmarks = await RoleSkillBenchmark.find(
-        RoleSkillBenchmark.role == target_role
+        {"role": {"$regex": f"^{re.escape(target_role)}$", "$options": "i"}}
     ).sort(RoleSkillBenchmark.priority).to_list()
 
     if not benchmarks:
-        # No benchmarks defined yet for this role
         return SkillGapOut(
             role=target_role,
-            acquired_skills=list(skill_map.keys()),
+            acquired_skills=[s.skill for s in student_skills],
             skill_gaps=[],
             overall_match_pct=0.0,
         )
 
-    # 4. Compute gaps
+    # 4. Compute gaps from real data
     acquired = []
     gaps = []
 
@@ -416,7 +526,7 @@ async def get_skill_gap(current_user: User = Depends(get_current_user)):
         total_required += bm.required_level
         total_current += min(current, bm.required_level)
 
-        if gap == 0:
+        if gap == 0 and current > 0:
             acquired.append(bm.skill)
         else:
             gaps.append(SkillGapItem(
@@ -427,10 +537,9 @@ async def get_skill_gap(current_user: User = Depends(get_current_user)):
                 priority=bm.priority,
             ))
 
-    # Sort gaps: largest gap first, then by priority
-    gaps.sort(key=lambda g: (-g.gap, g.priority))
+    # Sort gaps: priority first, then largest gap
+    gaps.sort(key=lambda g: (g.priority, -g.gap))
 
-    # Overall match percentage
     match_pct = round((total_current / total_required) * 100, 1) if total_required > 0 else 0.0
 
     return SkillGapOut(
@@ -439,3 +548,4 @@ async def get_skill_gap(current_user: User = Depends(get_current_user)):
         skill_gaps=gaps,
         overall_match_pct=match_pct,
     )
+
