@@ -9,6 +9,7 @@ from app.core.config import settings
 
 from app.api.routes.auth import router as auth_router
 from app.api.routes.students import router as students_router
+from app.api.routes.student_profile import router as student_profile_router
 from app.api.routes.ws import router as ws_router
 
 @asynccontextmanager
@@ -36,6 +37,7 @@ app.add_middleware(
 # Routers
 app.include_router(auth_router, prefix="/v1")
 app.include_router(students_router, prefix="/v1")
+app.include_router(student_profile_router, prefix="/v1")
 
 # WebSocket router (no /v1 prefix — path: /ws/student/{id})
 app.include_router(ws_router)

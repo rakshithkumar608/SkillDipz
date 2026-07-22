@@ -6,6 +6,7 @@ from typing import List, Optional
 from fastapi import APIRouter, Depends, File, HTTPException, Query, UploadFile
 from pydantic import BaseModel
 
+
 from app.api.routes.auth import get_current_user
 from app.models.user import User
 from app.models.employability_score import EmployabilityScore, ScoreHistory
@@ -21,9 +22,11 @@ router = APIRouter(prefix="/students", tags=["Students"])
 
 # Response schemas
 
+
 class ScoreHistoryItem(BaseModel):
     score: float
     recorded_at: datetime
+
 
 class ScoreComponentsOut(BaseModel):
     resume_quality: float
@@ -31,6 +34,7 @@ class ScoreComponentsOut(BaseModel):
     project_strength: float
     interview_readiness: float
     activity_consistency: float
+
 
 class ScoreOut(BaseModel):
     student_id: str
@@ -51,6 +55,7 @@ class RoadmapSummaryOut(BaseModel):
     completed_skills: int
     next_skill: Optional[str]
     last_regenerated: Optional[datetime]
+
 
 class NotificationItem(BaseModel):
     id: str
@@ -86,6 +91,7 @@ class SkillGapItem(BaseModel):
     required: int
     gap: int
     priority: int
+
 
 class SkillGapOut(BaseModel):
     role: str
@@ -318,7 +324,8 @@ async def upload_resume(
 
     # Update resume_quality score based on real extracted skills count
     score_doc = await EmployabilityScore.get_or_create(student_id)
-    quality_score = min(100.0, float(len(extracted_skills) * 15 + 40)) if extracted_skills else 50.0
+    quality_score = min(100.0, float(len(extracted_skills)
+                        * 15 + 40)) if extracted_skills else 50.0
     score_doc.components.resume_quality = quality_score
     new_overall = score_doc.compute_overall()
     score_doc.overall_score = new_overall
@@ -469,7 +476,7 @@ async def get_streak(current_user: User = Depends(get_current_user)):
     )
 
 
-# Skill Gap Analysis 
+# Skill Gap Analysis
 
 @router.get("/me/skill-gap", response_model=SkillGapOut)
 async def get_skill_gap(current_user: User = Depends(get_current_user)):
@@ -483,7 +490,8 @@ async def get_skill_gap(current_user: User = Depends(get_current_user)):
     score_doc = await EmployabilityScore.get_or_create(student_id)
     roadmap_doc = await StudentRoadmap.get_or_create(student_id)
 
-    target_role = getattr(current_user, "target_role", None) or score_doc.target_role or roadmap_doc.role
+    target_role = getattr(current_user, "target_role",
+                          None) or score_doc.target_role or roadmap_doc.role
     if not target_role:
         return SkillGapOut(
             role="No target role set",
@@ -540,7 +548,8 @@ async def get_skill_gap(current_user: User = Depends(get_current_user)):
     # Sort gaps: priority first, then largest gap
     gaps.sort(key=lambda g: (g.priority, -g.gap))
 
-    match_pct = round((total_current / total_required) * 100, 1) if total_required > 0 else 0.0
+    match_pct = round((total_current / total_required) *
+                      100, 1) if total_required > 0 else 0.0
 
     return SkillGapOut(
         role=target_role,
@@ -548,4 +557,3 @@ async def get_skill_gap(current_user: User = Depends(get_current_user)):
         skill_gaps=gaps,
         overall_match_pct=match_pct,
     )
-
