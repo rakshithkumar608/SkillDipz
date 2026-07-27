@@ -44,6 +44,12 @@ export function SectionHeader({
     );
 }
 
+export function Skeleton({ className = "" }: { className?: string }) {
+  return (
+    <div className={`bg-slate-800/60 rounded-xl animate-pulse ${className}`} />
+  );
+}
+
 export function Badge({
   children,
   color = "sky",

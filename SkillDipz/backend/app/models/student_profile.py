@@ -72,7 +72,7 @@ class StudentProfile(Document):
         doc = await cls.find_one(cls.student_id == student_id)
         if not doc:
             doc = cls(student_id=student_id, email=email, name=name)
-            await doc.intsert()
+            await doc.insert()
         return doc
 
     def compute_completeness(self) -> int:

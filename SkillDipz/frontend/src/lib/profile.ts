@@ -103,7 +103,7 @@ export async function uploadResume(file:File): Promise<ResumeAnalysisResult> {
     const form = new FormData();
     form.append("file",file);
 
-    const {data} = await api.post<ResumeAnalysisResult>("/students/me/resume/upload",form,{headers:{"Content-Type":"multipart/form-data"}});
+    const {data} = await api.put<ResumeAnalysisResult>("/students/me/resume",form,{headers:{"Content-Type":"multipart/form-data"}});
     return data;
 }
 

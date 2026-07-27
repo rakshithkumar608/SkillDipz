@@ -157,7 +157,7 @@ def _build_profile_out(
         github=profile.github,
         linkedin=profile.linkedin,
         cf_handle=profile.cf_handle,
-        target_role=profile.target_role or score_doc.target_role,
+        target_role=profile.target_roles or score_doc.target_role,
         target_company=profile.target_company,
         skills=profile.skills,
         visibility_setting=profile.visibility_setting,
@@ -174,7 +174,7 @@ def _build_profile_out(
                 pdf_url=f"/students/me/certificates/{c.cert_id}/pdf"
                 if c.pdf_path else None,
             )
-            for c in profile.certificates
+            for c in profile.certificate
         ],
         enrolled_courses=[
             EnrolledCourseOut(
@@ -288,7 +288,7 @@ async def update_my_profile(
     if body.linkedin is not None:
         profile.linkedin = body.linkedin
     if body.target_role is not None:
-        profile.target_role = body.target_role
+        profile.target_roles = body.target_role
         score_doc = await EmployabilityScore.get_or_create(student_id)
         score_doc.target_role = body.target_role
         await score_doc.save()
@@ -309,7 +309,7 @@ async def update_my_profile(
     # ── Recompute completeness → sync to EmployabilityScore ──
     profile.completeness_score = profile.compute_completeness()
     completeness_pct = round(profile.completeness_score / 10 * 100, 1)
-    profile.updated_at = datetime.now(timezone.utc)
+    profile.update_at = datetime.now(timezone.utc)
     await profile.save()
 
     score_doc = await _sync_completeness_to_score(student_id, completeness_pct)
