@@ -13,6 +13,7 @@ from app.api.routes.auth import router as auth_router
 from app.api.routes.students import router as students_router
 from app.api.routes.student_profile import router as student_profile_router
 from app.api.routes.ws import router as ws_router
+from app.api.routes.roadmap import router as roadmap_router
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
@@ -43,7 +44,7 @@ app.add_middleware(
 app.include_router(auth_router, prefix="/v1")
 app.include_router(students_router, prefix="/v1")
 app.include_router(student_profile_router, prefix="/v1")
-
+app.include_router(roadmap_router, prefix="/v1")
 # WebSocket router — path: /v1/ws/student/{id}
 app.include_router(ws_router, prefix="/v1")
 
