@@ -8,7 +8,7 @@ import {
 } from "@/store/dashboardStore";
 import { useCallback, useEffect, useRef, useState } from "react";
 
-const WS_BASE = process.env.NEXT_PUBLIC_WS_URL || "ws://localhost:8000";
+const WS_BASE = (process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000/v1").replace(/^http/, "ws");
 
 interface WsState {
   isConnected: boolean;
