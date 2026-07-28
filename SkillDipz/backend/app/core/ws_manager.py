@@ -22,7 +22,7 @@ class WebSocketManager:
         ws = self._connections.get(student_id)
         if ws:
             try:
-                await ws._send_text(json.dumps({
+                await ws.send_text(json.dumps({
                     "type": event_type,
                     "payload": payload
                 }))
