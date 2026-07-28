@@ -1,7 +1,9 @@
+
 from beanie import Document
 from pydantic import Field
-from typing import Optional
+from typing import Optional, List, Any
 from datetime import datetime, timezone
+
 
 class StudentRoadmap(Document):
     student_id: str
@@ -12,7 +14,8 @@ class StudentRoadmap(Document):
     next_skill: Optional[str] = None
     last_regenerated: Optional[datetime] = None
     resume_uploaded: bool = False
-    resume_file_path: Optional[str] = None  # relative path under uploads/resumes/
+    resume_file_path: Optional[str] = None
+    phases: List[Any] = Field(default_factory=list)
 
     class Settings:
         name = "student_roadmaps"
@@ -24,4 +27,3 @@ class StudentRoadmap(Document):
             doc = cls(student_id=student_id)
             await doc.insert()
         return doc
-        
