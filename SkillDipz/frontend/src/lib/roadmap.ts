@@ -6,6 +6,7 @@ export interface YoutubeVideo {
     channel: string;
     thumbnail: string;
     duration_label: string;
+    watched?: boolean;
 }
 
 export interface RoadmapItemContent {
@@ -74,5 +75,15 @@ export async function fetchSkillVideos(skill: string): Promise<YoutubeVideo[]> {
 
 export async function regenerateRoadmap(): Promise<RoadmapData> {
   const { data } = await api.post<RoadmapData>("/roadmap/me/regenerate");
+  return data;
+}
+
+export async function markVideoWatched(
+  skill: string,
+  youtube_id: string
+): Promise<{ progress_pct: number; status: string; overall_progress_pct: number }> {
+  const { data } = await api.post(`/roadmap/me/skills/${encodeURIComponent(skill)}/watch-video`, {
+    youtube_id,
+  });
   return data;
 }

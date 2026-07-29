@@ -15,6 +15,7 @@ from app.models.notification import Notification
 from app.models.activity_log import ActivityLog
 from app.models.student_streak import StudentStreak
 from app.models.skill_gap import StudentSkillLevel, RoleSkillBenchmark
+from app.models.student_profile import StudentProfile
 from app.core.ws_manager import ws_manager
 
 logger = logging.getLogger(__name__)
@@ -225,18 +226,38 @@ class ResumeUploadOut(BaseModel):
 def _extract_skills_from_text(text: str) -> List[str]:
     import re
     known_skills = [
-        "React", "React.js", "Next.js", "Vue", "Angular", "JavaScript", "TypeScript",
-        "Node.js", "Express", "Python", "FastAPI", "Django", "Flask", "Java", "Spring",
+        "React", "Next.js", "Vue", "Angular", "JavaScript", "TypeScript",
+        "Node.js", "Express", "Python", "FastAPI", "Django", "Flask", "Java", "Spring Boot",
         "C++", "C#", ".NET", "Go", "Rust", "PHP", "Laravel", "HTML", "CSS", "Tailwind",
         "SQL", "PostgreSQL", "MySQL", "MongoDB", "Redis", "GraphQL", "REST API",
         "Docker", "Kubernetes", "AWS", "Azure", "GCP", "Git", "GitHub", "CI/CD",
         "Linux", "Data Structures", "Algorithms", "Machine Learning", "TensorFlow",
-        "PyTorch", "Pandas", "NumPy", "System Design", "Agile"
+        "PyTorch", "Pandas", "NumPy", "System Design", "Agile", "Kotlin", "Swift",
+        "Flutter", "React Native", "Firebase", "Scikit-learn", "Spark",
     ]
+    # Special patterns for skills that break simple word-boundary regex
+    special_patterns: dict[str, str] = {
+        "C++":     r"c\+\+",
+        "C#":      r"c#",
+        ".NET":    r"\.net",
+        "CI/CD":   r"ci/cd",
+        "REST API": r"rest\s+api",
+        "Node.js": r"node\.js",
+        "Next.js": r"next\.js",
+        "React Native": r"react\s+native",
+        "Spring Boot": r"spring\s+boot",
+        "Data Structures": r"data\s+structures",
+        "Machine Learning": r"machine\s+learning",
+        "System Design": r"system\s+design",
+        "Scikit-learn": r"scikit[- ]learn",
+    }
     text_lower = text.lower()
     found = []
     for skill in known_skills:
-        pattern = r"(?:\b|_)" + re.escape(skill.lower()) + r"(?:\b|_)"
+        if skill in special_patterns:
+            pattern = special_patterns[skill]
+        else:
+            pattern = r"(?<![a-zA-Z])" + re.escape(skill.lower()) + r"(?![a-zA-Z])"
         if re.search(pattern, text_lower):
             found.append(skill)
     return found
@@ -299,27 +320,36 @@ async def upload_resume(
 
     student_id = str(current_user.id)
 
-    # Save real extracted skills into database
-    for skill_name in extracted_skills:
-        existing = await StudentSkillLevel.find_one(
-            StudentSkillLevel.student_id == student_id,
-            StudentSkillLevel.skill == skill_name
-        )
-        if not existing:
-            new_skill = StudentSkillLevel(
-                student_id=student_id,
-                skill=skill_name,
-                current_level=3,  # Baseline level parsed from resume
-                source="resume"
-            )
-            await new_skill.insert()
+    # Replace skills entirely — delete old resume skills, insert fresh ones
+    await StudentSkillLevel.find(
+        StudentSkillLevel.student_id == student_id,
+        StudentSkillLevel.source == "resume",
+    ).delete()
 
-    # Update roadmap document
+    for skill_name in extracted_skills:
+        await StudentSkillLevel(
+            student_id=student_id,
+            skill=skill_name,
+            current_level=3,  # Baseline level parsed from resume
+            source="resume"
+        ).insert()
+
+    # Also replace the skills list on the profile document
+    profile = await StudentProfile.find_one(StudentProfile.student_id == student_id)
+    if profile:
+        profile.skills = list(extracted_skills)
+        await profile.save()
+
+    # Update roadmap document — reset phases so roadmap rebuilds from new resume
     roadmap = await StudentRoadmap.get_or_create(student_id)
     roadmap.resume_uploaded = True
     roadmap.resume_file_path = str(dest)
-    if extracted_skills:
-        roadmap.completed_skills = len(extracted_skills)
+    roadmap.phases = []
+    roadmap.last_regenerated = None
+    roadmap.progress_pct = 0
+    roadmap.completed_skills = 0
+    roadmap.total_skills = 0
+    roadmap.next_skill = None
     await roadmap.save()
 
     # Update resume_quality score based on real extracted skills count
@@ -476,6 +506,7 @@ async def get_streak(current_user: User = Depends(get_current_user)):
     )
 
 
+
 # Skill Gap Analysis
 
 @router.get("/me/skill-gap", response_model=SkillGapOut)
@@ -507,11 +538,9 @@ async def get_skill_gap(current_user: User = Depends(get_current_user)):
 
     skill_map = {s.skill.lower(): s.current_level for s in student_skills}
 
-    # 3. Fetch real role benchmarks from DB
-    import re
-    benchmarks = await RoleSkillBenchmark.find(
-        {"role": {"$regex": f"^{re.escape(target_role)}$", "$options": "i"}}
-    ).sort(RoleSkillBenchmark.priority).to_list()
+    # 3. Fetch benchmarks from DB or generate real-time with Groq API
+    from app.core.groq_service import get_or_generate_benchmarks
+    benchmarks = await get_or_generate_benchmarks(target_role)
 
     if not benchmarks:
         return SkillGapOut(

@@ -1,8 +1,12 @@
-"use client";
+import RoadmapPage from "./RoadmapPage";
 
-import { ComingSoon } from "@/components/student/ComingSoon";
-import { Map } from "lucide-react";
-export default function RoadmapPage() {
-  return <ComingSoon title="Learning Roadmap" icon={Map}
-    description="Your AI-generated, week-by-week personalised learning plan based on your skill gaps and target role." />;
+
+export const metadata = {
+  title: "Learning Roadmap | SkillDipz",
+   description:
+    "Your personalised, AI-generated learning roadmap based on your resume skill gaps and target role.",
+};
+
+export default function Page() {
+  return <RoadmapPage />;
 }
