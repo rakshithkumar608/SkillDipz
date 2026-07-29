@@ -472,6 +472,13 @@ async def upload_and_analyze_resume(
     roadmap = await StudentRoadmap.get_or_create(student_id)
     roadmap.resume_uploaded = True
     roadmap.resume_file_path = str(dest)
+    # Reset phases so the roadmap is rebuilt fresh from the new resume's skills
+    roadmap.phases = []
+    roadmap.last_regenerated = None
+    roadmap.progress_pct = 0
+    roadmap.completed_skills = 0
+    roadmap.total_skills = 0
+    roadmap.next_skill = None
     await roadmap.save()
 
     profile = await StudentProfile.get_or_create(
@@ -481,22 +488,18 @@ async def upload_and_analyze_resume(
     profile.resume_parsed_at = datetime.now(timezone.utc)
     profile.resume_parse_summary = parse_summary
 
-    existing_lower = {s.lower() for s in profile.skills}
-    for sk in extracted_skills:
-        if sk.lower() not in existing_lower:
-            profile.skills.append(sk)
-            existing_lower.add(sk.lower())
+    # Replace skills entirely — wipe old resume skills so new resume is the source of truth
+    await StudentSkillLevel.find(
+        StudentSkillLevel.student_id == student_id,
+        StudentSkillLevel.source == "resume",
+    ).delete()
+    profile.skills = list(extracted_skills)  # replace, not append
 
     for sk in extracted_skills:
-        existing_level = await StudentSkillLevel.find_one(
-            StudentSkillLevel.student_id == student_id,
-            StudentSkillLevel.skill == sk.lower(),
-        )
-        if not existing_level:
-            await StudentSkillLevel(
-                student_id=student_id, skill=sk.lower(),
-                current_level=1, source="resume"
-            ).insert()
+        await StudentSkillLevel(
+            student_id=student_id, skill=sk.lower(),
+            current_level=1, source="resume"
+        ).insert()
 
     profile.completeness_score = profile.compute_completeness()
     completeness_pct = round(profile.completeness_score / 10 * 100, 1)
@@ -646,12 +649,41 @@ TECH_SKILLS = [
     "FastAPI", "Django", "Flask", "Spring Boot", "Express", "SQL", "PostgreSQL",
     "MySQL", "MongoDB", "Redis", "Docker", "Kubernetes", "AWS", "GCP", "Azure",
     "Git", "REST API", "GraphQL", "Microservices", "CI/CD", "Linux", "Nginx",
-    "C++", "C", "Go", "Rust", "Kotlin", "Swift", "Flutter", "React Native",
+    "C++", "C#", ".NET", "Go", "Rust", "Kotlin", "Swift", "Flutter", "React Native",
     "TensorFlow", "PyTorch", "Scikit-learn", "Pandas", "NumPy", "Spark",
     "Kafka", "RabbitMQ", "Elasticsearch", "Terraform", "Ansible", "Jenkins",
     "HTML", "CSS", "Tailwind", "Material UI", "Figma", "System Design",
     "Data Structures", "Algorithms", "Machine Learning", "Deep Learning",
+    "Vue", "Angular", "PHP", "Laravel", "Ruby", "Rails", "Scala",
+    "Jetpack Compose", "SwiftUI", "Firebase", "Supabase", "Prisma",
+    "OpenAI", "LangChain", "Hugging Face", "BERT", "GPT",
 ]
+
+# Skills that need a special regex (not simple word boundaries)
+_SPECIAL_SKILL_PATTERNS: dict[str, str] = {
+    "C++":     r"c\+\+",
+    "C#":      r"c#",
+    ".NET":    r"\.net",
+    "CI/CD":   r"ci/cd",
+    "REST API": r"rest\s+api",
+    "Node.js": r"node\.js",
+    "Next.js": r"next\.js",
+    "React.js": r"react\.js",
+    "Vue.js":  r"vue\.js",
+    "Express.js": r"express\.js",
+    "Scikit-learn": r"scikit[- ]learn",
+    "React Native": r"react\s+native",
+    "Spring Boot": r"spring\s+boot",
+    "Material UI": r"material\s+ui",
+    "Data Structures": r"data\s+structures",
+    "Deep Learning": r"deep\s+learning",
+    "Machine Learning": r"machine\s+learning",
+    "System Design": r"system\s+design",
+    "Jetpack Compose": r"jetpack\s+compose",
+    "Hugging Face": r"hugging\s+face",
+    "LangChain": r"langchain",
+    "OpenAI": r"openai",
+}
 
 
 def _parse_pdf_skills(content: bytes) -> tuple[list[str], str]:
@@ -685,7 +717,11 @@ def _extract_skills_from_text(text: str) -> tuple[list[str], str]:
     found: list[str] = []
     text_lower = text.lower()
     for skill in TECH_SKILLS:
-        pattern = r"\b" + re.escape(skill.lower()) + r"\b"
+        # Use special pattern if defined, otherwise word boundaries
+        if skill in _SPECIAL_SKILL_PATTERNS:
+            pattern = _SPECIAL_SKILL_PATTERNS[skill]
+        else:
+            pattern = r"\b" + re.escape(skill.lower()) + r"\b"
         if re.search(pattern, text_lower):
             found.append(skill)
 

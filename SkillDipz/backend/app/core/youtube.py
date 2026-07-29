@@ -53,11 +53,12 @@ async def fetch_youtube_videos(skill: str, role: str) -> list[dict]:
     # --- Call 1: search.list (find video IDs + snippets) ---
     search_params = {
         "part": "snippet",
-        "q": f"{skill} tutorial {role}",
+        "q": f"{skill} full course complete tutorial {role}",
         "type": "video",
-        "videoDuration": "medium",
+        "videoDuration": "long",          # >20 min — catches 1h, 2h, 4h full courses
         "relevanceLanguage": "en",
-        "maxResults": 5,
+        "maxResults": 4,
+        "order": "relevance",
         "key": settings.YOUTUBE_API_KEY,
     }
 

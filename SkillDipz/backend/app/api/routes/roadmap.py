@@ -5,6 +5,7 @@ from typing import Any, List, Optional
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 from app.api.routes.auth import get_current_user
+from app.core.groq_service import get_or_generate_benchmarks
 from app.core.youtube import fetch_youtube_videos
 from app.models.employability_score import EmployabilityScore
 from app.models.roadmap import StudentRoadmap
@@ -72,12 +73,9 @@ async def _build_phases(role: str, student_id: str, existing_phases: list) -> li
         StudentSkillLevel.student_id == student_id
     ).to_list()
     skill_map = {s.skill.lower(): s.current_level for s in student_skills}
-    benchmarks = await RoleSkillBenchmark.find(
-        {"role": {"$regex": f"^{re.escape(role)}$", "$options": "i"}}
-    ).sort(RoleSkillBenchmark.priority).to_list()
 
-    if not benchmarks:
-        return []
+    # 1. Fetch from DB or generate real-time with Groq API
+    benchmarks = await get_or_generate_benchmarks(role)
 
     skill_data = []
     for bm in benchmarks:
@@ -241,7 +239,89 @@ async def get_skill_videos(skill: str, current_user: User = Depends(get_current_
     score_doc = await EmployabilityScore.get_or_create(student_id)
     role = roadmap.role or score_doc.target_role or "software engineer"
     videos = await fetch_youtube_videos(skill, role)
+    # Attach watched status
+    watched = set(roadmap.watched_videos.get(skill.lower(), []))
+    for v in videos:
+        v["watched"] = v["youtube_id"] in watched
     return {"skill": skill, "videos": videos}
+
+
+class WatchVideoBody(BaseModel):
+    youtube_id: str
+
+
+@router.post("/me/skills/{skill}/watch-video")
+async def mark_video_watched(
+    skill: str,
+    body: WatchVideoBody,
+    current_user: User = Depends(get_current_user),
+):
+    """Mark a YouTube video as watched for a skill. Updates skill progress_pct."""
+    student_id = str(current_user.id)
+    roadmap = await StudentRoadmap.get_or_create(student_id)
+
+    skill_key = skill.lower()
+    watched = list(set(roadmap.watched_videos.get(skill_key, [])))
+    if body.youtube_id not in watched:
+        watched.append(body.youtube_id)
+    roadmap.watched_videos[skill_key] = watched
+
+    # Update progress_pct for this skill in the phases
+    # Each watched video = 25% progress (4 videos = 100%)
+    new_pct = min(100, len(watched) * 25)
+    new_status = "completed" if new_pct >= 100 else "in_progress"
+
+    for phase in roadmap.phases:
+        for item in phase.get("items", []):
+            if item.get("type") == "project":
+                continue
+            if item.get("skill", "").lower() == skill_key:
+                item["progress_pct"] = new_pct
+                item["status"] = new_status
+
+    # Sequential unlocking: if current skill completed, unlock the very next locked skill
+    if new_status == "completed":
+        all_skills = [
+            item for p in roadmap.phases
+            for item in p.get("items", [])
+            if item.get("type") != "project"
+        ]
+        for i, item in enumerate(all_skills):
+            if item.get("skill", "").lower() == skill_key:
+                # Find the next locked skill
+                if i + 1 < len(all_skills) and all_skills[i + 1].get("status") == "locked":
+                    all_skills[i + 1]["status"] = "in_progress"
+                break
+
+        # Check if ALL skills completed — unlock Capstone Project!
+        if all(s.get("status") == "completed" for s in all_skills):
+            for p in roadmap.phases:
+                for item in p.get("items", []):
+                    if item.get("type") == "project":
+                        item["status"] = "unlocked"
+
+    # Recount overall progress (exclude capstone)
+    skill_items = [
+        item for p in roadmap.phases
+        for item in p.get("items", [])
+        if item.get("type") != "project"
+    ]
+    completed = sum(1 for i in skill_items if i.get("status") == "completed")
+    total = len(skill_items)
+    roadmap.total_skills = total
+    roadmap.completed_skills = completed
+    roadmap.progress_pct = round(completed / total * 100) if total else 0
+
+    await roadmap.save()
+
+    return {
+        "skill": skill,
+        "youtube_id": body.youtube_id,
+        "watched_count": len(watched),
+        "progress_pct": new_pct,
+        "status": new_status,
+        "overall_progress_pct": roadmap.progress_pct,
+    }
 
     
 @router.post("/me/regenerate", response_model=RoadmapOut)
@@ -254,6 +334,14 @@ async def regenerate_roadmap(current_user: User = Depends(get_current_user)):
         raise HTTPException(status_code=400, detail="No target role set.")
     if not roadmap.resume_uploaded:
         raise HTTPException(status_code=400, detail="Please upload your resume first.")
+    # Auto-clean garbage skills (single/double char noise like "c", "go" exceptions aside)
+    all_skill_docs = await StudentSkillLevel.find(
+        StudentSkillLevel.student_id == student_id
+    ).to_list()
+    for s in all_skill_docs:
+        if len(s.skill.strip()) <= 2:
+            await s.delete()
+
     phases = await _build_phases(role, student_id, roadmap.phases)
     roadmap.phases = phases
     roadmap.last_regenerated = datetime.now(timezone.utc)

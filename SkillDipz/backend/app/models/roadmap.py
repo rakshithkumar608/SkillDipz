@@ -16,6 +16,8 @@ class StudentRoadmap(Document):
     resume_uploaded: bool = False
     resume_file_path: Optional[str] = None
     phases: List[Any] = Field(default_factory=list)
+    # Maps skill name (lowercase) → list of watched youtube_ids
+    watched_videos: dict = Field(default_factory=dict)
 
     class Settings:
         name = "student_roadmaps"

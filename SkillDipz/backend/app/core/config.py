@@ -13,6 +13,7 @@ class Settings(BaseSettings):
     SMTP_EMAIL: str          # Your Gmail address
     SMTP_PASSWORD: str       # Gmail App Password (not your real password)
     YOUTUBE_API_KEY: str = ""
+    GROQ_API_KEY: str = ""
 
     class Config:
         env_file = ".env"
