@@ -3,10 +3,10 @@ from typing import Optional, List
 from datetime import datetime
 from app.models.target_company import EligibilityStatus, InterviewRound
 
-class SelecteCompanyRequest(BaseModel):
+class SelectCompanyRequest(BaseModel):
     company_id: str = Field(..., description="Slug ID of the company e.g. 'razorpay")
 
-class UnselecteCompanyRequest(BaseModel):
+class UnselectCompanyRequest(BaseModel):
     company_id: str
 
 class InterviewRoundOut(BaseModel):

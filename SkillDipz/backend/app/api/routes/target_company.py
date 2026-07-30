@@ -1,5 +1,5 @@
 import logging
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, Query, status
 from app.api.dependencies import get_current_student
 from app.schemas.target_company_schema import (
     SelectCompanyRequest,
@@ -18,15 +18,18 @@ router = APIRouter(prefix="/students/me/target-companies", tags=["Target Compani
 
 @router.get("", response_model=TargetCompaniesResponse)
 async def get_my_target_companies(
+    refresh: bool = Query(False),
     current_student: dict = Depends(get_current_student),
 ):
     """
     Returns all matched and selected companies for the current student.
     Uses Redis cache (30 min TTL). Cache invalidated on score/profile updates.
+    Pass ?refresh=true to bypass cache.
     """
     try:
         result = await recruiting_service.get_target_companies(
-            student_id=current_student["student_id"]
+            student_id=current_student["student_id"],
+            force_refresh=refresh,
         )
         return result
     except ValueError as e:

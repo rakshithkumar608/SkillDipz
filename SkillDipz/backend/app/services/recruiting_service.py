@@ -10,27 +10,7 @@ from app.models.target_company import (
 )
 from app.models.student_profile import StudentProfile
 from app.models.job_requirement import JobRequirement
-from app.core.database import redis_client
-from app.core.ws_manager import ws_manager
-
-logger = logging.getLogger(__name__)
-
-MATCH_CACHE_TTL = 1800
-
-# Core Matching Algorithm
-import json
-import logging
-from typing import List, Optional, Tuple, Dict, Any
-from datetime import datetime, timezone
-
-from app.models.target_company import (
-    CompanyProfile,
-    StudentTargetCompany,
-    EligibilityStatus,
-)
-from app.models.student_profile import StudentProfile
-from app.models.job_requirement import JobRequirement
-from app.core.database import redis_client
+from app.core.redis_client import get_redis
 from app.core.ws_manager import ws_manager
 
 logger = logging.getLogger(__name__)
@@ -38,7 +18,35 @@ logger = logging.getLogger(__name__)
 MATCH_CACHE_TTL = 1800  # 30 minutes
 
 
-# CORE MATCH ALGORITHM
+async def _get_student_info(student_id: str, student: Optional[StudentProfile] = None) -> Tuple[List[str], float, str]:
+    if not student:
+        student = await StudentProfile.find_one(StudentProfile.student_id == student_id)
+
+    student_skills: List[str] = []
+    if student and getattr(student, "skills", None):
+        if isinstance(student.skills, list):
+            student_skills = list(student.skills)
+        elif isinstance(student.skills, dict):
+            student_skills = list(student.skills.get("acquired", []))
+
+    if not student_skills:
+        from app.models.skill_gap import StudentSkillLevel
+        skill_levels = await StudentSkillLevel.find(StudentSkillLevel.student_id == student_id).to_list()
+        if skill_levels:
+            student_skills = [sl.skill for sl in skill_levels]
+
+    student_score = getattr(student, "overall_score", None) if student else None
+    student_role = (getattr(student, "primary_role", None) or getattr(student, "target_roles", None) or "") if student else ""
+
+    from app.models.employability_score import EmployabilityScore
+    score_doc = await EmployabilityScore.find_one(EmployabilityScore.student_id == student_id)
+    if score_doc:
+        if student_score is None or student_score == 0.0:
+            student_score = score_doc.overall_score or 0.0
+        if not student_role and score_doc.target_role:
+            student_role = score_doc.target_role
+
+    return student_skills, student_score or 0.0, student_role or ""
 
 
 def _compute_match(
@@ -116,8 +124,7 @@ async def select_target_company(
         StudentTargetCompany.company_id == company_id,
     )
 
-    student_skills = student.skills.get("acquired", [])
-    student_score = student.overall_score or 0.0
+    student_skills, student_score, _ = await _get_student_info(student_id, student)
     match_result = _compute_match(student_skills, student_score, company)
 
     now = datetime.now(timezone.utc)
@@ -166,7 +173,9 @@ async def select_target_company(
 
     # Invalidate Redis cache
     cache_key = f"matched_companies:{student_id}"
-    await redis_client.delete(cache_key)
+    rc = get_redis()
+    if rc:
+        await rc.delete(cache_key)
 
     active_openings = await JobRequirement.find(
         JobRequirement.company_id == company_id,
@@ -199,17 +208,19 @@ async def select_target_company(
 
 
 # FETCH TARGET COMPANIES FOR STUDENT 
-async def get_target_companies(student_id: str) -> Dict[str, Any]:
+async def get_target_companies(student_id: str, force_refresh: bool = False) -> Dict[str, Any]:
     """
     Returns the full target company list for a student.
     Uses Redis cache (TTL 30 min). Cache invalidated on any update.
     """
     cache_key = f"matched_companies:{student_id}"
 
-    cached = await redis_client.get(cache_key)
-    if cached:
-        logger.info(f"Cache HIT for matched_companies:{student_id}")
-        return json.loads(cached)
+    rc = get_redis()
+    if rc and not force_refresh:
+        cached = await rc.get(cache_key)
+        if cached:
+            logger.info(f"Cache HIT for matched_companies:{student_id}")
+            return json.loads(cached)
 
     logger.info(f"Cache MISS — computing matches for student {student_id}")
 
@@ -217,9 +228,7 @@ async def get_target_companies(student_id: str) -> Dict[str, Any]:
     if not student:
         raise ValueError(f"Student profile not found: {student_id}")
 
-    student_skills = student.skills.get("acquired", [])
-    student_score = student.overall_score or 0.0
-    student_role = student.primary_role or ""
+    student_skills, student_score, student_role = await _get_student_info(student_id, student)
 
     all_companies = await CompanyProfile.find(
         CompanyProfile.is_verified == True
@@ -229,6 +238,13 @@ async def get_target_companies(student_id: str) -> Dict[str, Any]:
         StudentTargetCompany.student_id == student_id
     ).to_list()
     selected_company_ids = {r.company_id for r in selected_records}
+
+    # Also check if student specified target companies in Profile Building (e.g. "Google, Amazon")
+    if student and getattr(student, "target_company", None):
+        target_str = student.target_company.lower()
+        for company in all_companies:
+            if (company.company_id.lower() in target_str or company.name.lower() in target_str):
+                selected_company_ids.add(company.company_id)
 
     selected_companies = []
     auto_suggested = []
@@ -315,7 +331,9 @@ async def get_target_companies(student_id: str) -> Dict[str, Any]:
         "last_updated_at": now.isoformat(),
     }
 
-    await redis_client.setex(cache_key, MATCH_CACHE_TTL, json.dumps(result, default=str))
+    rc = get_redis()
+    if rc:
+        await rc.setex(cache_key, MATCH_CACHE_TTL, json.dumps(result, default=str))
     return result
 
 
@@ -327,14 +345,15 @@ async def on_score_or_profile_updated(student_id: str, event_bus) -> None:
     """
     logger.info(f"Recomputing target company matches for student {student_id}")
 
-    await redis_client.delete(f"matched_companies:{student_id}")
+    rc = get_redis()
+    if rc:
+        await rc.delete(f"matched_companies:{student_id}")
 
     student = await StudentProfile.find_one(StudentProfile.student_id == student_id)
     if not student:
         return
 
-    student_skills = student.skills.get("acquired", [])
-    student_score = student.overall_score or 0.0
+    student_skills, student_score, _ = await _get_student_info(student_id, student)
 
     selected_records = await StudentTargetCompany.find(
         StudentTargetCompany.student_id == student_id
@@ -395,15 +414,10 @@ async def on_company_registered(company_id: str, event_bus) -> None:
     if not company or not company.is_verified:
         return
 
-    query_filter = {}
-    if company.required_roles:
-        query_filter["primary_role"] = {"$in": company.required_roles}
-
-    matching_students = await StudentProfile.find(query_filter).to_list()
+    matching_students = await StudentProfile.find_all().to_list()
 
     for student in matching_students:
-        student_skills = student.skills.get("acquired", [])
-        student_score = student.overall_score or 0.0
+        student_skills, student_score, _ = await _get_student_info(student.student_id, student)
         match_result = _compute_match(student_skills, student_score, company)
 
         if match_result["match_score"] >= 50:
@@ -418,7 +432,9 @@ async def on_company_registered(company_id: str, event_bus) -> None:
                 ),
                 "action_url": "/student/target-company",
             })
-            await redis_client.delete(f"matched_companies:{student.student_id}")
+            rc = get_redis()
+            if rc:
+                await rc.delete(f"matched_companies:{student.student_id}")
 
 
 # UNSELECTED COMPANY
@@ -430,4 +446,6 @@ async def unselect_target_company(student_id: str, company_id: str) -> None:
     )
     if record:
         await record.delete()
-    await redis_client.delete(f"matched_companies:{student_id}")
+    rc = get_redis()
+    if rc:
+        await rc.delete(f"matched_companies:{student_id}")
