@@ -2,7 +2,7 @@ import json
 import asyncio
 import logging
 from typing import Callable, Dict, List, Any
-from app.core.database import redis_client
+from app.core.redis_client import get_redis
 
 logger = logging.getLogger(__name__)
 
@@ -18,11 +18,13 @@ class EventBus:
     async def publish(self, event_type: str, payload: Dict[str, Any]):
         """Publish event to Redis Stream and dispatch to local handlers."""
         stream_key = f"stream:{event_type}"
-        await redis_client.xadd(
-            stream_key,
-            {"payload": json.dumps(payload, default=str)},
-            maxlen=1000,
-        )
+        rc = get_redis()
+        if rc:
+            await rc.xadd(
+                stream_key,
+                {"payload": json.dumps(payload, default=str)},
+                maxlen=1000,
+            )
         logger.info(f"EventBus: published {event_type}")
 
         for handler in self._handlers.get(event_type, []):

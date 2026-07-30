@@ -9,6 +9,8 @@ from app.models.activity_log import ActivityLog
 from app.models.student_streak import StudentStreak
 from app.models.skill_gap import StudentSkillLevel, RoleSkillBenchmark
 from app.models.student_profile import StudentProfile
+from app.models.target_company import CompanyProfile, StudentTargetCompany
+from app.models.job_requirement import JobRequirement
 
 client: AsyncIOMotorClient | None = None
 
@@ -28,6 +30,9 @@ async def connect_db():
             StudentSkillLevel,
             RoleSkillBenchmark,
             StudentProfile,
+            CompanyProfile,
+            StudentTargetCompany,
+            JobRequirement,
         ]
     )
 
@@ -42,6 +47,9 @@ async def connect_db():
     await StudentSkillLevel.get_motor_collection().create_index([("student_id", 1), ("skill", 1)])
     await RoleSkillBenchmark.get_motor_collection().create_index([("role", 1), ("skill", 1)])
     await StudentProfile.get_motor_collection().create_index("student_id", unique=True)
+    await CompanyProfile.get_motor_collection().create_index("company_id", unique=True)
+    await StudentTargetCompany.get_motor_collection().create_index([("student_id", 1), ("company_id", 1)], unique=True)
+    await JobRequirement.get_motor_collection().create_index("company_id")
 
     print("🚀 Database Succesffuly Connected")
 

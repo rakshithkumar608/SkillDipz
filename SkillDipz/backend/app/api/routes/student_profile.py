@@ -294,6 +294,10 @@ async def update_my_profile(
         await score_doc.save()
     if body.target_company is not None:
         profile.target_company = body.target_company
+        from app.core.redis_client import get_redis
+        rc = get_redis()
+        if rc:
+            await rc.delete(f"matched_companies:{student_id}")
     if body.visibility_setting is not None:
         if body.visibility_setting not in ("public", "companies_only", "private"):
             raise HTTPException(

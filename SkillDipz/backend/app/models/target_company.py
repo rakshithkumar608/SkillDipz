@@ -6,7 +6,7 @@ from datetime import datetime, timezone
 from enum import Enum
 
 
-class EligibalityStatus(str, Enum):
+class EligibilityStatus(str, Enum):
     ELIGIBLE = "eligible"
     NOT_YET = "not_yet"
     SKILL_GAP = "skill_gap"
@@ -21,14 +21,14 @@ class InterviewRound(BaseModel):
 
 
 class CompanyProfile(Document):
-    comapny_id: str
+    company_id: str
     name: str
     logo_emoji: Optional[str] = None
     logo_url: Optional[str] = None
     industry: str
     website: Optional[str] = None
     description: Optional[str] = None
-    headquaters: Optional[str] = None
+    headquarters: Optional[str] = None
 
     # Matching criteria (set when company posts a job)
     required_roles: List[str] = []
@@ -62,7 +62,7 @@ class StudentTargetCompany(Document):
     match_score: float = 0.0
     skill_match_pct: float = 0.0
     score_readiness_pct: float = 0.0
-    eligibality_status: EligibalityStatus = EligibalityStatus.NOT_YET
+    eligibility_status: EligibilityStatus = EligibilityStatus.NOT_YET
 
     matched_skills: List[str] = []
     missing_skills: List[str] = []

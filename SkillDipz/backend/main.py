@@ -14,6 +14,12 @@ from app.api.routes.students import router as students_router
 from app.api.routes.student_profile import router as student_profile_router
 from app.api.routes.ws import router as ws_router
 from app.api.routes.roadmap import router as roadmap_router
+from app.api.routes.target_company import router as target_company_router
+from app.api.routes.target_company import companies_router
+from app.api.routes.company_admin import router as company_admin_router, admin_router
+
+
+from app.core.event_bus import register_target_company_handlers
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
@@ -22,6 +28,7 @@ async def lifespan(app: FastAPI):
     Path("uploads/resumes").mkdir(parents=True, exist_ok=True)
     await connect_db()
     await connect_redis()
+    register_target_company_handlers()
     yield
     await close_db()
     await close_redis()
@@ -47,6 +54,14 @@ app.include_router(student_profile_router, prefix="/v1")
 app.include_router(roadmap_router, prefix="/v1")
 # WebSocket router — path: /v1/ws/student/{id}
 app.include_router(ws_router, prefix="/v1")
+# Target companies — /v1/students/me/target-companies
+app.include_router(target_company_router, prefix="/v1")
+# Company public profiles — /v1/companies/{id}/profile
+app.include_router(companies_router, prefix="/v1")
+# Company admin portal & job posting — /v1/companies/me/*
+app.include_router(company_admin_router, prefix="/v1")
+# Platform admin company verification — /v1/admin/companies/*
+app.include_router(admin_router, prefix="/v1")
 
 # Serve uploaded files (photos, resumes) as static
 # Path must include /v1 because the frontend baseURL already contains /v1
