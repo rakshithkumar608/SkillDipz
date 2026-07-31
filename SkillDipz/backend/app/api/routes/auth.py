@@ -235,55 +235,66 @@ async def login(body: LoginRequest):
 
 @router.post("/google", response_model=AuthResponse)
 async def google_login(body: GoogleLoginRequest):
+    token = body.id_token.strip()
 
     async with httpx.AsyncClient() as client:
-        # 1. Try verifying it as an ID Token (standard for modern Google Sign-In)
+        # 1. Try verifying as Google Access Token info
         resp = await client.get(
-            f"https://oauth2.googleapis.com/tokeninfo?id_token={body.id_token}"
+            f"https://oauth2.googleapis.com/tokeninfo?access_token={token}"
         )
 
+        # 2. Try verifying as Google ID Token info
         if resp.status_code != 200:
-            # 2. If that fails, try verifying it as an Access Token (OAuth2)
+            resp = await client.get(
+                f"https://oauth2.googleapis.com/tokeninfo?id_token={token}"
+            )
+
+        # 3. Try fetching Google UserInfo endpoint with Bearer header
+        if resp.status_code != 200:
             resp = await client.get(
                 "https://www.googleapis.com/oauth2/v3/userinfo",
-                headers={"Authorization": f"Bearer {body.id_token}"},
+                headers={"Authorization": f"Bearer {token}"},
             )
 
         if resp.status_code != 200:
             error_msg = resp.text
-            print(f"❌ Google Token Verification Failed: {error_msg}")
+            logger.error(f"❌ Google Token Verification Failed: {error_msg}")
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
-                detail=f"Failed to verify Google token: {error_msg}"
+                detail=f"Google authentication failed: {resp.status_code} {error_msg}",
             )
 
         google_data = resp.json()
 
-    google_id = google_data.get("sub")
+    google_id = google_data.get("sub") or google_data.get("id")
     email = google_data.get("email")
-    full_name = google_data.get("name", "")
+    full_name = google_data.get("name") or google_data.get("email", "").split("@")[0]
     avatar_url = google_data.get("picture")
 
     if not email or not google_id:
         raise HTTPException(
-            status_code=400, detail="Incomplete Google profile")
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Incomplete Google profile returned by Google.",
+        )
 
     user = await User.find_one(User.email == email)
+    desired_role = body.role if body.role in ["STUDENT", "COMPANY"] else "STUDENT"
+
     if user:
         if not user.google_id:
             user.google_id = google_id
-            user.avatar_url = user.avatar_url or avatar_url
-            # Google-verified emails are trusted
-            user.is_verified = True
-            await user.save()
+        if not user.avatar_url and avatar_url:
+            user.avatar_url = avatar_url
+        user.is_verified = True
+        await user.save()
     else:
         user = User(
             email=email,
             google_id=google_id,
             full_name=full_name,
             avatar_url=avatar_url,
-            role="STUDENT",
-            is_verified=True,   # Google already verified the email
+            role=desired_role,
+            is_verified=True,
         )
         await user.insert()
 

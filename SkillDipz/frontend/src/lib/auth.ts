@@ -36,9 +36,11 @@ export async function loginWithCredentials(
 
 export async function loginWithGoogle(
   googleIdToken: string,
+  role?: "STUDENT" | "COMPANY",
 ): Promise<AuthResponse> {
   const { data } = await api.post<AuthResponse>("/auth/google", {
     id_token: googleIdToken,
+    role: role || "STUDENT",
   });
   useAuthStore
     .getState()

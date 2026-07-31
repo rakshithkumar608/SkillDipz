@@ -23,6 +23,7 @@ class LoginRequest(BaseModel):
 
 class GoogleLoginRequest(BaseModel):
     id_token: str   # Google access token or id_token
+    role: Optional[Literal["STUDENT", "COMPANY"]] = "STUDENT"
 
 class RefreshRequest(BaseModel):
     refresh_token: str
