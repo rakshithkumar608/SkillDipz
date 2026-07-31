@@ -74,20 +74,26 @@ export default function RegisterScreen() {
     }
   };
   const googleLogin = useGoogleLogin({
-    onSuccess: async (tokenResponse: { access_token: string }) => {
+    onSuccess: async (tokenResponse) => {
       setGoogleLoading(true);
-
       try {
-        const data = await loginWithGoogle(tokenResponse.access_token);
+        const data = await loginWithGoogle(tokenResponse.access_token, tab);
         toast.success("Google login successful!");
         router.push(getRedirectPath(data.user.role));
-      } catch {
-        toast.error("Google sign-up failed. Please try again.");
+      } catch (err: unknown) {
+        const msg =
+          (err as { response?: { data?: { detail?: string } } })?.response?.data
+            ?.detail || "Google sign-up failed. Please try again.";
+        toast.error(msg);
       } finally {
         setGoogleLoading(false);
       }
     },
-    onError: () => toast.error("Google sign-up was cancelled."),
+    onError: (errorResponse) => {
+      console.error("Google Sign-up Error:", errorResponse);
+      const detail = errorResponse.error_description || errorResponse.error || "Google sign-up was cancelled or blocked.";
+      toast.error(`Google sign-up error: ${detail}`);
+    },
   });
 
   return (
