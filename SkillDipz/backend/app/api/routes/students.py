@@ -1,6 +1,6 @@
 import logging
 import uuid
-from datetime import datetime, timezone
+from datetime import datetime, timezone, date, timedelta
 from pathlib import Path
 from typing import List, Optional
 from fastapi import APIRouter, Depends, File, HTTPException, Query, UploadFile
@@ -81,6 +81,12 @@ class ActivityItem(BaseModel):
 
 
 class StreakOut(BaseModel):
+    current_streak: int
+    longest_streak: int
+    last_active: Optional[str]
+
+class CalendarOut(BaseModel):
+    dates: dict[str, int]
     current_streak: int
     longest_streak: int
     last_active: Optional[str]
@@ -471,26 +477,64 @@ async def mark_all_notifications_read(
 
 @router.get("/me/activity", response_model=List[ActivityItem])
 async def get_activity(
-    limit: int = Query(5, ge=1, le=50),
+    page: int = Query(1, ge=1),
+    limit: int = Query(20, ge=1, le=100),
     current_user: User = Depends(get_current_user),
 ):
     student_id = str(current_user.id)
+    skip = (page - 1) * limit
     logs = (
         await ActivityLog.find(ActivityLog.student_id == student_id)
         .sort(-ActivityLog.created_at)
+        .skip(skip)
         .limit(limit)
         .to_list()
     )
     return [
         ActivityItem(
-            id=str(l.id),
-            type=l.type,
-            title=l.title,
-            detail=l.detail,
-            created_at=l.created_at,
+            id=str(log.id),
+            type=log.type,
+            title=log.title,
+            detail=log.detail,
+            created_at=log.created_at,
         )
-        for l in logs
+        for log in logs
     ]
+
+def _compute_streak(active_dates: set[date]) -> tuple[int, int, Optional[date]]:
+    if not active_dates:
+        return 0, 0, None
+    
+    today = date.today()
+    sorted_dates = sorted(active_dates, reverse=True)
+    last_active = sorted_dates[0]
+
+    #  Current streak: walk backwards from today
+    current = 0
+    check = today
+    # Allow the streak to still be alive if last activity was yestarday
+    if last_active < today - timedelta(days=1):
+        #  No activities today or yestarday -> streak is 0
+        current = 0
+        #  we don't reset last_active here, 
+    else:
+        while check in active_dates:
+            current += 1
+            check -= timedelta(days=1)
+
+    #  Longest streak: walk backwards from last_active
+    longest = 0
+    run = 1
+    for i in range(1, len(sorted_dates)):
+        if (sorted_dates[i -1] - sorted_dates[i]).days == 1:
+            run += 1
+        else:
+            run = 1
+    longest = max(longest, run, current)
+
+    return current, longest, last_active
+
+
 
 
 # Streak
@@ -498,14 +542,50 @@ async def get_activity(
 @router.get("/me/streak", response_model=StreakOut)
 async def get_streak(current_user: User = Depends(get_current_user)):
     student_id = str(current_user.id)
-    doc = await StudentStreak.get_or_create(student_id)
+
+    # Fetch all activity dates (only need the date part, not full doc)
+    logs = await ActivityLog.find(
+        ActivityLog.student_id == student_id
+    ).to_list()
+
+    active_dates = {log.created_at.date() for log in logs}
+    current, longest, last_active = _compute_streak(active_dates)
+
     return StreakOut(
-        current_streak=doc.current_streak,
-        longest_streak=doc.longest_streak,
-        last_active=str(doc.last_active) if doc.last_active else None,
+        current_streak=current,
+        longest_streak=longest,
+        last_active=str(last_active) if last_active else None,
     )
 
+@router.get("/me/activity/calendar", response_model=CalendarOut)
+async def get_activity_calendar(current_user: User = Depends(get_current_user)):
 
+    student_id = str(current_user.id)
+    cutoff = datetime.now(timezone.utc) - timedelta(days=365)
+
+    logs = await ActivityLog.find(
+        ActivityLog.student_id == student_id,
+        ActivityLog.created_at >= cutoff,
+    ).to_list()
+
+    # Aggregate counts per date
+    counts: dict[str, int] = {}
+    active_dates: set[date] = set()
+    for log in logs:
+        d = log.created_at.date()
+        key = str(d)
+        counts[key] = counts.get(key, 0) + 1
+        active_dates.add(d)
+
+    current, longest, last_active = _compute_streak(active_dates)
+
+    return CalendarOut(
+        dates=counts,
+        current_streak=current,
+        longest_streak=longest,
+        last_active=str(last_active) if last_active else None,
+    )
+    
 
 # Skill Gap Analysis
 
