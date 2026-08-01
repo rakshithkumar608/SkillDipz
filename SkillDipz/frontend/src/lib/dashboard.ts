@@ -25,15 +25,35 @@ export async function fetchNotifications(): Promise<NotificationsResponse> {
   return data;
 }
 
-export async function fetchActivity(limit = 5): Promise<ActivityItem[]> {
+export async function fetchActivity(
+  limit = 20,
+  page = 1,
+): Promise<ActivityItem[]> {
   const { data } = await api.get<ActivityItem[]>(
-    `/students/me/activity?limit=${limit}`
+    `/students/me/activity?page=${page}&limit=${limit}`,
   );
   return data;
 }
 
+
 export async function fetchStreak(): Promise<StreakData> {
   const { data } = await api.get<StreakData>("/students/me/streak");
+  return data;
+}
+
+// Activity Streak Calendar
+
+export interface ActivityCalendar {
+  dates: Record<string, number>;
+  current_streak: number;
+  longest_streak: number;
+  last_active: string | null;
+}
+
+export async function fetchActivityCalendar(): Promise<ActivityCalendar> {
+  const {data} = await api.get<ActivityCalendar>(
+    "/students/me/activity/calendar",
+  );
   return data;
 }
 
@@ -53,4 +73,4 @@ export async function uploadResume(file: File): Promise<void> {
   await api.post("/students/me/resume", form, {
     headers: { "Content-Type": "multipart/form-data" },
   });
-}
+}
