@@ -10,6 +10,7 @@ class Notification(Document):
     body: str
     action_url: Optional[str] = None
     is_read: bool = False
+    notification_type: str = "general"
     created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
 
     class Settings:
