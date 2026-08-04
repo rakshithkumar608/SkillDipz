@@ -62,6 +62,17 @@ export async function markAllNotificationsRead(): Promise<void> {
   await api.patch("/students/me/notifications/mark-all-read");
 }
 
+export async function markNotificationRead(notificationId: string): Promise<void> {
+  await api.patch(`/students/me/notifications/${notificationId}/read`);
+}
+
+export async function fetchUnreadNotifications(): Promise<NotificationsResponse> {
+  const { data } = await api.get<NotificationsResponse>(
+    "/students/me/notifications?limit=50&unread=true"
+  );
+  return data;
+}
+
 /**
  * Upload a student's resume (PDF / DOC / DOCX).
  * The backend endpoint is POST /students/me/resume (multipart/form-data).

@@ -64,6 +64,7 @@ class NotificationItem(BaseModel):
     body: str
     action_url: Optional[str]
     is_read: bool
+    notification_type: str
     created_at: datetime
 
 
@@ -417,12 +418,18 @@ async def upload_resume(
 
 @router.get("/me/notifications", response_model=NotificationsOut)
 async def get_notifications(
-    limit: int = Query(20, ge=1, le=100),
+    limit: int = Query(50, ge=1, le=200),
+    unread: bool = Query(False, description="Return only unread notifications when true"),
     current_user: User = Depends(get_current_user),
 ):
     student_id = str(current_user.id)
+    query = Notification.find(Notification.student_id == student_id)
+    if unread:
+        query = query.find(Notification.is_read == False)
+
+
     items = (
-        await Notification.find(Notification.student_id == student_id)
+        await query
         .sort(-Notification.created_at)
         .limit(limit)
         .to_list()
@@ -437,6 +444,7 @@ async def get_notifications(
                 body=n.body,
                 action_url=n.action_url,
                 is_read=n.is_read,
+                notification_type=getattr(n, "notification_type", "general"),
                 created_at=n.created_at,
             )
             for n in items
@@ -472,6 +480,19 @@ async def mark_all_notifications_read(
         await n.save()
     return {"message": f"Marked {len(unread)} notifications as read."}
 
+
+@router.patch("/me/notifications/{notification_id}/read")
+async def mark_notification_read(
+    notification_id: str,
+    current_user: User = Depends(get_current_user),
+):
+    from beanie import PydanticObjectId
+    notif = await Notification.get(PydanticObjectId(notification_id))
+    if not notif or str(notif.student_id) != str(current_user.id):
+        raise HTTPException(status_code=404, detail="Notification not found.")
+    notif.is_read = True
+    await notif.save() 
+    return {"message": "Marked as read."}
 
 # Activity
 

@@ -36,6 +36,7 @@ export interface RoadmapSummary {
 }
 
 export interface NotificationItem {
+  notification_type(notification_type: any): unknown;
   id: string;
   title: string;
   body: string;
