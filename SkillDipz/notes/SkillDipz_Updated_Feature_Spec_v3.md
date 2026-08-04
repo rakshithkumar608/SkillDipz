@@ -804,7 +804,7 @@ GET /companies/me/projects/:projectId/submissions
 ---
 
 ## 9. Skill Tests + Code Practice (MERGED TAB)
-
+ 
 **URL:** `/practice`  
 **⚠️ These are the SAME tab. No duplicate UI.**
 

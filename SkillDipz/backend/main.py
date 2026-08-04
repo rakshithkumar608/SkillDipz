@@ -17,6 +17,7 @@ from app.api.routes.roadmap import router as roadmap_router
 from app.api.routes.target_company import router as target_company_router
 from app.api.routes.target_company import companies_router
 from app.api.routes.company_admin import router as company_admin_router, admin_router
+from app.api.routes.jobs import router as jobs_router
 
 
 from app.core.event_bus import register_target_company_handlers
@@ -71,6 +72,8 @@ app.include_router(companies_router, prefix="/v1")
 app.include_router(company_admin_router, prefix="/v1")
 # Platform admin company verification — /v1/admin/companies/*
 app.include_router(admin_router, prefix="/v1")
+# Jobs Hub — /v1/jobs
+app.include_router(jobs_router, prefix="/v1")
 
 # Serve uploaded files (photos, resumes) as static
 # Path must include /v1 because the frontend baseURL already contains /v1
