@@ -4,7 +4,7 @@ import axios from "axios";
 const api = axios.create({
     baseURL: process.env.NEXT_PUBLIC_API_URL,
     headers: {"Content-Type": "application/json"},
-    withCredentials: true,
+    withCredentials: true, // sends HttpOnly cookies autometically on EVERY request
 });
 
 // Attach JWT on every request
@@ -19,13 +19,17 @@ api.interceptors.response.use(
   (res) => res,
   async (error) => {
     const original = error.config;
-    if (error.response?.status === 401 && !original._retry) {
+    // don't retry if it's already the refresh call itself
+    const isRefreshCall = original.url?.includes("/auth/refresh");
+    
+    if (error.response?.status === 401 && !original._retry && !isRefreshCall) {
       original._retry = true;
       try {
         const refreshToken = useAuthStore.getState().refreshToken;
         const { data } = await axios.post(
           `${process.env.NEXT_PUBLIC_API_URL}/auth/refresh`,
-          { refresh_token: refreshToken }
+          { refresh_token: refreshToken },
+          { withCredentials: true }
         );
         useAuthStore.getState().setAuth(
           useAuthStore.getState().user!,

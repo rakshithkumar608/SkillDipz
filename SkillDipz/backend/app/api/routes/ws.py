@@ -2,6 +2,7 @@ import logging
 from fastapi import APIRouter, WebSocket, WebSocketDisconnect, Query, status
 from app.core.ws_manager import ws_manager
 from app.core.security import decode_token
+from app.core.redis_client import get_session
 from app.models.user import User
 
 logger = logging.getLogger(__name__)
@@ -12,15 +13,25 @@ router = APIRouter(tags=["WebSocket"])
 async def student_ws(
     websocket: WebSocket,
     user_id: str,
-    token: str = Query(..., description="JWT access token"),
+    token: str = Query(None, description="JWT access token (fallback if no cookie)"),
 ):
 
-    payload = decode_token(token)
-    if not payload or payload.get("type") != "access":
-        await websocket.close(code=status.WS_1008_POLICY_VIOLATION)
-        return
+    authenticated = False
 
-    if payload.get("sub") != user_id:
+    # 1. Try HttpOnly cookie (most secure - no token in URl)
+    session_id = websocket.cookies.get("session_id")
+    if session_id:
+        session = await get_session(session_id)
+        if session and session.get("user_id") == user_id:
+            authenticated = True
+
+    # 2. Fallback: token query param (for non-browser client)
+    if not authenticated and token:
+        payload = decode_token(token)
+        if payload and payload.get("type") == "access" and payload.get("sub") == user_id:
+            authenticated = True
+
+    if not authenticated:
         await websocket.close(code=status.WS_1008_POLICY_VIOLATION)
         return
 

@@ -1,3 +1,6 @@
+from fastapi import Request
+from app.core.redis_client import check_session_rate_limit
+from app.core.config import settings
 import logging
 import re
 from datetime import datetime, timezone
@@ -63,7 +66,21 @@ class RoadmapOut(BaseModel):
     phases: List[RoadmapPhase]
     needs_setup: bool
 
-
+#  Then inside any AI-generating endpoint
+async def some_ai_endpoint(
+    request: Request,
+    current_user: User = Depends(get_current_user),
+) : 
+    # Use Session_id for fair per-student quota even on shared Wi-fi
+    session_id = request.cookies.get(settings.COOKIE_NAME) or str(current_user.id)
+    allowed = await check_session_rate_limit(
+        session_id, action="ai_roadmap", limit=5, window_seconds=3600
+    )
+    if not allowed:
+        raise HTTPException(
+            status_code=429,
+            detail="You have exceeded the AI roadmap generation limit. Please try again later.",
+        )
 
 def _estimate_weeks(gap: int) -> int:
     return max(1, gap)

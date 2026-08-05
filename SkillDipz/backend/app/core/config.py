@@ -15,6 +15,14 @@ class Settings(BaseSettings):
     YOUTUBE_API_KEY: str = ""
     GROQ_API_KEY: str = ""
 
+
+    # Cookie / Session
+    COOKIE_NAME: str = "session_id"
+    COOKIE_SECURE: bool = False
+    COOKIE_SAMESITE: str = "lax"
+    SESSION_EXPIRE_DAYS: int = 7
+    
+
     class Config:
         env_file = ".env"
 

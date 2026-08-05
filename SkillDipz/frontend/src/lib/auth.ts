@@ -28,9 +28,11 @@ export async function loginWithCredentials(
   payload: LoginPayload,
 ): Promise<AuthResponse> {
   const { data } = await api.post<AuthResponse>("/auth/login", payload);
+  // Store user + tokens in Zustand for UI + Bearer header
   useAuthStore
     .getState()
     .setAuth(data.user, data.access_token, data.refresh_token);
+    // HttpOnly cookie is set by the backend — browser handles it automatically
   return data;
 }
 
