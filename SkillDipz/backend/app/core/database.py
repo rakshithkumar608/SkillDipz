@@ -2,6 +2,7 @@ from motor.motor_asyncio import AsyncIOMotorClient
 from beanie import init_beanie
 from app.models.user import User
 from app.core.config import settings
+
 from app.models.employability_score import EmployabilityScore
 from app.models.roadmap import StudentRoadmap
 from app.models.notification import Notification
@@ -12,6 +13,13 @@ from app.models.student_profile import StudentProfile
 from app.models.target_company import CompanyProfile, StudentTargetCompany
 from app.models.job_requirement import JobRequirement
 from app.models.job_application import JobApplication
+
+from app.models.project import (
+    CompanyProject,
+    ProjectGroup,
+    StudentProjectSubmission,
+    ProjectComment,
+)
 
 client: AsyncIOMotorClient | None = None
 
@@ -55,6 +63,11 @@ async def connect_db():
     await JobApplication.get_motor_collection().create_index([("student_id", 1), ("job_id", 1)], unique=True)
     await JobApplication.get_motor_collection().create_index("job_id")
     await JobApplication.get_motor_collection().create_index("company_id")
+    await CompanyProject.get_motor_collection().create_index([("target_roles", 1), ("is_active", 1)])
+    await ProjectGroup.get_motor_collection().create_index("invite_code", unique=True)
+    await StudentProjectSubmission.get_motor_collection().create_index([("student_id", 1), ("project_id", 1)], unique=True)
+    await StudentProjectSubmission.get_motor_collection().create_index([("is_public", 1), ("submitted_at", -1)])
+    await ProjectComment.get_motor_collection().create_index([("submission_id", 1), ("created_at", 1)])
 
     print("🚀 Database Succesffuly Connected")
 

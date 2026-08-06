@@ -18,6 +18,8 @@ from app.api.routes.target_company import router as target_company_router
 from app.api.routes.target_company import companies_router
 from app.api.routes.company_admin import router as company_admin_router, admin_router
 from app.api.routes.jobs import router as jobs_router
+from app.api.routes.projects import student_router as projects_student_router
+from app.api.routes.projects import company_router as projects_company_router
 
 
 from app.core.event_bus import register_target_company_handlers
@@ -74,6 +76,9 @@ app.include_router(company_admin_router, prefix="/v1")
 app.include_router(admin_router, prefix="/v1")
 # Jobs Hub — /v1/jobs
 app.include_router(jobs_router, prefix="/v1")
+# Projects — /v1/projects
+app.include_router(projects_student_router, prefix="/v1/projects/student")
+app.include_router(projects_company_router, prefix="/v1/projects/company")
 
 # Serve uploaded files (photos, resumes) as static
 # Path must include /v1 because the frontend baseURL already contains /v1

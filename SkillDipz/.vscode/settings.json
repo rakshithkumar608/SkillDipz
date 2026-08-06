@@ -1,0 +1,6 @@
+{
+  "cSpell.enabledFileTypes": {
+    "python": false
+  },
+  "python-envs.defaultEnvManager": "ms-python.python:system"
+}

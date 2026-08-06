@@ -1,8 +1,25 @@
 import json
 import asyncio
 import logging
+import asyncio
+import httpx
+from beanie import PydanticObjectId
+from datetime import datetime, timezone
 from typing import Callable, Dict, List, Any
+
+
+from app.models.employability_score import EmployabilityScore, ScoreHistory
+from app.models.project import CompanyProject
+from app.models.project import StudentProjectSubmission
+from app.models.student_profile import StudentProfile
+
+from app.services.notification_service import send_notification
+from app.services.notification_service import send_notification
+
+from app.core.ws_manager import ws_manager
 from app.core.redis_client import get_redis
+
+
 
 logger = logging.getLogger(__name__)
 
@@ -132,6 +149,168 @@ async def _handle_job_applied(payload: Dict[str, Any]):
     )
 
 
+async def _handle_project_posted(payload: dict) -> None:
+    target_roles = payload.get("target_roles", [])
+    company_name = payload.get("company_name", "A company")
+    project_title = payload.get("title", "New Project")
+    
+    all_profiles = await StudentProfile.find_all().to_list()
+    for profile in all_profiles:
+        student_role = (profile.target_roles or "").lower()
+        if target_roles and student_role:
+            if not any(student_role in r.lower() for r in target_roles):
+                continue
+        await send_notification(
+            student_id=profile.student_id,
+            title=f"New Project Brief from {company_name}",
+            body=f"{company_name} uploaded: \"{project_title}\". View project brief!",
+            action_url="/student/projects",
+            notification_type="general",
+        )
+        
+async def _handle_project_submitted(payload: dict) -> None:
+    asyncio.create_task(_run_nlp_evaluation(payload))
+    
+async def _run_nlp_evaluation(payload: dict) -> None:
+
+    submission_id = payload.get("submission_id")
+    github_url = payload.get("github_url", "")
+    required_skills = payload.get("required_skills", [])
+
+    if not submission_id or not github_url:
+        return
+
+    try:
+        parts = github_url.rstrip("/").replace("https://github.com/", "").split("/")
+        if len(parts) < 2:
+            raise ValueError("Invalid GitHub URL format")
+        owner, repo = parts[0], parts[1]
+
+        verified_skills = []
+        quality_signals = []
+
+        async with httpx.AsyncClient(timeout=15.0) as client:
+            # Fetch repository README
+            readme_res = await client.get(
+                f"https://api.github.com/repos/{owner}/{repo}/readme",
+                headers={"Accept": "application/vnd.github.raw"},
+            )
+            readme_text = readme_res.text.lower() if readme_res.status_code == 200 else ""
+
+            # Fetch file tree
+            tree_res = await client.get(
+                f"https://api.github.com/repos/{owner}/{repo}/git/trees/HEAD?recursive=0",
+            )
+            file_names = ""
+            if tree_res.status_code == 200:
+                tree = tree_res.json()
+                file_names = " ".join(item["path"].lower() for item in tree.get("tree", []))
+
+        combined_evidence = readme_text + " " + file_names
+
+        for skill in required_skills:
+            if skill.lower() in combined_evidence:
+                verified_skills.append(skill)
+
+        if len(readme_text) > 250:
+            quality_signals.append("Comprehensive README")
+        if "docker" in combined_evidence or "dockerfile" in file_names:
+            quality_signals.append("Docker Configuration")
+        if ".github" in file_names or "ci" in file_names:
+            quality_signals.append("CI/CD Pipeline")
+        if "test" in file_names or "spec" in file_names:
+            quality_signals.append("Automated Test Suite")
+
+        skill_match = len(verified_skills) / len(required_skills) if required_skills else 0.5
+        quality_bonus = min(0.2, len(quality_signals) * 0.05)
+        evidence_score = round(min(1.0, skill_match * 0.8 + quality_bonus), 2)
+
+        sub = await StudentProjectSubmission.get(PydanticObjectId(submission_id))
+        if sub:
+            sub.nlp_score = evidence_score
+            sub.verified_skills = verified_skills
+            sub.quality_signals = quality_signals
+            sub.evaluation_status = "evaluated"
+            sub.evaluated_at = datetime.now(timezone.utc)
+            await sub.save()
+
+            await event_bus.publish("project.evaluated", {
+                "submission_id": submission_id,
+                "student_id": sub.student_id,
+                "project_id": sub.project_id,
+                "nlp_score": evidence_score,
+                "verified_skills": verified_skills,
+                "quality_signals": quality_signals,
+            })
+
+    except Exception as e:
+        logger.error(f"NLP Evaluation failed for {submission_id}: {e}")
+        sub = await StudentProjectSubmission.get(PydanticObjectId(submission_id))
+        if sub:
+            sub.evaluation_status = "failed"
+            await sub.save()
+            
+            
+async def _handle_project_evaluated(payload: dict) -> None:
+
+
+    student_id = payload.get("student_id")
+    nlp_score = payload.get("nlp_score", 0.0)
+    project_id = payload.get("project_id", "")
+    verified_skills = payload.get("verified_skills", [])
+
+    if not student_id:
+        return
+
+    # Update Employability Score
+    score_doc = await EmployabilityScore.get_or_create(student_id)
+    new_strength = min(100.0, max(score_doc.components.project_strength, nlp_score * 100))
+    score_doc.components.project_strength = new_strength
+    new_overall = score_doc.compute_overall()
+    score_doc.overall_score = new_overall
+    score_doc.last_updated = datetime.now(timezone.utc)
+    score_doc.history.append(ScoreHistory(score=new_overall))
+    score_doc.history = score_doc.history[-7:]
+    await score_doc.save()
+
+    # Broadcast WebSocket update for real-time gauge animation
+    await ws_manager.broadcast(
+        student_id,
+        "score_update",
+        {
+            "overall_score": new_overall,
+            "components": score_doc.components.model_dump(),
+            "last_updated": score_doc.last_updated.isoformat(),
+        },
+    )
+
+    pct = int(nlp_score * 100)
+    await send_notification(
+        student_id=student_id,
+        title=f"Your project scored {pct}%!",
+        body=f"NLP Verified Skills: {', '.join(verified_skills[:3])}. Employability score updated!",
+        action_url="/student/projects",
+        notification_type="score_update",
+    )
+
+    # Notify Company
+    try:
+        project = await CompanyProject.get(PydanticObjectId(project_id))
+        if project:
+            from app.models.student_profile import StudentProfile
+            profile = await StudentProfile.find_one(StudentProfile.student_id == student_id)
+            student_name = profile.name if profile else "A student"
+            await send_notification(
+                student_id=project.company_id,
+                title="New Project Submission Received",
+                body=f"{student_name} submitted '{project.title}' (Score: {pct}%).",
+                action_url=f"/company/projects/{project_id}/submissions",
+                notification_type="general",
+            )
+    except Exception as e:
+        logger.warning(f"Company notification error: {e}")
+
+
 def register_target_company_handlers():
     event_bus.subscribe("score.updated", _handle_score_updated)
     event_bus.subscribe("profile.updated", _handle_profile_updated)
@@ -141,3 +320,6 @@ def register_target_company_handlers():
     event_bus.subscribe("company.new_match", _handle_company_new_match)
     event_bus.subscribe("job.posted", _handle_job_posted)
     event_bus.subscribe("job.applied", _handle_job_applied)
+    event_bus.subscribe("project.posted", _handle_project_posted)
+    event_bus.subscribe("project.submitted", _handle_project_submitted)
+    event_bus.subscribe("project.evaluated", _handle_project_evaluated)
