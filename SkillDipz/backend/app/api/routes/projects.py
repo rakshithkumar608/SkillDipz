@@ -13,6 +13,7 @@ from app.models.project import (
     ProjectComment,
     GroupMember,
     ProjectResource,
+    StudentProject,
 )
 from app.models.student_profile import StudentProfile
 from app.schemas.project_schema import (
@@ -31,13 +32,13 @@ from app.services.notification_service import send_notification
 
 logger = logging.getLogger(__name__)
 
-student_router = APIRouter(prefix="/projects", tags=["Projects — Student"])
-company_router = APIRouter(prefix="/companies/me/projects", tags=["Projects — Company"])
+student_router = APIRouter(tags=["Projects — Student"])
+company_router = APIRouter(tags=["Projects — Company"])
 
 
 @company_router.post("")
 async def create_project(
-    body: CreateGroupRequest,
+    body: CreateProjectRequest,
     current_company: dict = Depends(get_current_company),
 ):
     from app.models.target_company import CompanyProfile
@@ -440,3 +441,160 @@ async def get_group_details(
         "is_open": group.is_open,
         "members": [{"student_id": m.student_id, "name": m.name} for m in group.members],
     }
+
+
+# ─── Student Personal Projects ────────────────────────────────────────────────
+
+@student_router.post("/my-projects/create")
+async def create_student_project(
+    body: dict,
+    current_user: User = Depends(get_current_user),
+):
+    """Student creates their own personal project and gets an invite code for collaborators."""
+    student_id = str(current_user.id)
+    profile = await StudentProfile.find_one(StudentProfile.student_id == student_id)
+    creator_name = profile.name if profile else "Student"
+
+    invite_code = uuid.uuid4().hex[:8].upper()
+
+    project = StudentProject(
+        created_by=student_id,
+        creator_name=creator_name,
+        title=body.get("title", "Untitled Project"),
+        description=body.get("description", ""),
+        tech_stack=body.get("tech_stack", []),
+        difficulty=body.get("difficulty", "Intermediate"),
+        looking_for=body.get("looking_for", []),
+        max_members=body.get("max_members", 5),
+        is_public=body.get("is_public", True),
+        github_url=body.get("github_url"),
+        demo_url=body.get("demo_url"),
+        invite_code=invite_code,
+        members=[GroupMember(student_id=student_id, name=creator_name)],
+    )
+    await project.insert()
+    return {
+        "message": "Project created successfully.",
+        "project_id": str(project.id),
+        "invite_code": invite_code,
+    }
+
+
+@student_router.get("/my-projects/feed")
+async def get_student_project_feed(
+    page: int = Query(1, ge=1),
+    limit: int = Query(20, ge=1, le=50),
+    current_user: User = Depends(get_current_user),
+):
+    """Public feed of all student-created projects (for discovery & collaboration)."""
+    skip = (page - 1) * limit
+    projects = (
+        await StudentProject.find(StudentProject.is_public == True)  # noqa: E712
+        .sort(-StudentProject.created_at)
+        .skip(skip)
+        .limit(limit)
+        .to_list()
+    )
+    return [
+        {
+            "project_id": str(p.id),
+            "created_by": p.created_by,
+            "creator_name": p.creator_name,
+            "title": p.title,
+            "description": p.description,
+            "tech_stack": p.tech_stack,
+            "difficulty": p.difficulty,
+            "looking_for": p.looking_for,
+            "max_members": p.max_members,
+            "current_members": len(p.members),
+            "is_open": p.is_open,
+            "github_url": p.github_url,
+            "demo_url": p.demo_url,
+            "invite_code": p.invite_code if p.created_by == str(current_user.id) else None,
+            "members": [{"student_id": m.student_id, "name": m.name} for m in p.members],
+            "created_at": p.created_at.isoformat(),
+            "is_mine": p.created_by == str(current_user.id),
+        }
+        for p in projects
+    ]
+
+
+@student_router.get("/my-projects/mine")
+async def get_my_student_projects(
+    current_user: User = Depends(get_current_user),
+):
+    """Fetch all projects the current student created or joined."""
+    student_id = str(current_user.id)
+    # Created by me
+    created = await StudentProject.find(StudentProject.created_by == student_id).to_list()
+    # Joined (member but not creator)
+    all_projects = await StudentProject.find().to_list()
+    joined = [p for p in all_projects if any(m.student_id == student_id for m in p.members) and p.created_by != student_id]
+
+    def serialize(p: StudentProject, is_mine: bool):
+        return {
+            "project_id": str(p.id),
+            "created_by": p.created_by,
+            "creator_name": p.creator_name,
+            "title": p.title,
+            "description": p.description,
+            "tech_stack": p.tech_stack,
+            "difficulty": p.difficulty,
+            "looking_for": p.looking_for,
+            "max_members": p.max_members,
+            "current_members": len(p.members),
+            "is_open": p.is_open,
+            "github_url": p.github_url,
+            "demo_url": p.demo_url,
+            "invite_code": p.invite_code,
+            "members": [{"student_id": m.student_id, "name": m.name} for m in p.members],
+            "created_at": p.created_at.isoformat(),
+            "is_mine": is_mine,
+        }
+
+    return [serialize(p, True) for p in created] + [serialize(p, False) for p in joined]
+
+
+@student_router.post("/my-projects/join")
+async def join_student_project(
+    body: dict,
+    current_user: User = Depends(get_current_user),
+):
+    """Join a student-created project using its invite code."""
+    student_id = str(current_user.id)
+    invite_code = body.get("invite_code", "").upper()
+    project = await StudentProject.find_one(StudentProject.invite_code == invite_code)
+    if not project:
+        raise HTTPException(status_code=404, detail="Invalid invite code.")
+    if not project.is_open:
+        raise HTTPException(status_code=400, detail="Project is full or closed.")
+    if any(m.student_id == student_id for m in project.members):
+        raise HTTPException(status_code=400, detail="You are already a member.")
+
+    profile = await StudentProfile.find_one(StudentProfile.student_id == student_id)
+    name = profile.name if profile else "Student"
+    project.members.append(GroupMember(student_id=student_id, name=name))
+    if len(project.members) >= project.max_members:
+        project.is_open = False
+    await project.save()
+    return {"message": f"Joined '{project.title}' successfully.", "project_id": str(project.id)}
+
+
+@student_router.patch("/my-projects/{project_id}")
+async def update_student_project(
+    project_id: str,
+    body: dict,
+    current_user: User = Depends(get_current_user),
+):
+    """Creator can update GitHub URL, demo URL, or close the project."""
+    from beanie import PydanticObjectId
+    student_id = str(current_user.id)
+    project = await StudentProject.get(PydanticObjectId(project_id))
+    if not project or project.created_by != student_id:
+        raise HTTPException(status_code=403, detail="Not authorized to edit this project.")
+
+    for field in ("github_url", "demo_url", "is_open", "description", "title"):
+        if field in body:
+            setattr(project, field, body[field])
+    await project.save()
+    return {"message": "Project updated."}

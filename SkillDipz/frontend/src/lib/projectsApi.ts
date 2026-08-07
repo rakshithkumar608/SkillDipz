@@ -64,7 +64,7 @@ export interface SubmitProjectPayload {
 }
 
 export const getMyProjects = async (): Promise<ProjectCard[]> => {
-  const { data } = await api.get<ProjectCard[]>("/projects/me");
+  const { data } = await api.get<ProjectCard[]>("/projects/student/me");
   return data;
 };
 
@@ -72,31 +72,115 @@ export const submitProject = async (
   projectId: string,
   payload: SubmitProjectPayload
 ): Promise<{ message: string; submission_id: string }> => {
-  const { data } = await api.post(`/projects/${projectId}/submit`, payload);
+  const { data } = await api.post(`/projects/student/${projectId}/submit`, payload);
   return data;
 };
 
 export const getCommunityFeed = async (page = 1, limit = 20): Promise<CommunitySubmission[]> => {
-  const { data } = await api.get<CommunitySubmission[]>(`/projects/community?page=${page}&limit=${limit}`);
+  const { data } = await api.get<CommunitySubmission[]>(`/projects/student/community?page=${page}&limit=${limit}`);
   return data;
 };
 
 export const getComments = async (submissionId: string): Promise<Comment[]> => {
-  const { data } = await api.get<Comment[]>(`/projects/sub/submissions/${submissionId}/comments`);
+  const { data } = await api.get<Comment[]>(`/projects/student/sub/submissions/${submissionId}/comments`);
   return data;
 };
 
 export const addComment = async (submissionId: string, body: string): Promise<{ message: string; comment_id: string }> => {
-  const { data } = await api.post(`/projects/sub/submissions/${submissionId}/comments`, { body });
+  const { data } = await api.post(`/projects/student/sub/submissions/${submissionId}/comments`, { body });
   return data;
 };
 
 export const createGroup = async (payload: { project_id: string; group_name: string }): Promise<{ invite_code: string }> => {
-  const { data } = await api.post("/projects/groups/create", payload);
+  const { data } = await api.post("/projects/student/groups/create", payload);
   return data;
 };
 
 export const joinGroup = async (inviteCode: string): Promise<{ message: string }> => {
-  const { data } = await api.post("/projects/groups/join", { invite_code: inviteCode });
+  const { data } = await api.post("/projects/student/groups/join", { invite_code: inviteCode });
   return data;
 };
+
+export interface GroupDetails {
+  group_id: string;
+  name: string;
+  project_id: string;
+  invite_code: string;
+  is_open: boolean;
+  members: { student_id: string; name: string }[];
+}
+
+export const getGroupDetails = async (inviteCode: string): Promise<GroupDetails> => {
+  const { data } = await api.get<GroupDetails>(`/projects/student/groups/${inviteCode}`);
+  return data;
+};
+
+// ─── Student Personal Projects ───────────────────────────────────────────────
+
+export interface StudentProject {
+  project_id: string;
+  created_by: string;
+  creator_name: string;
+  title: string;
+  description: string;
+  tech_stack: string[];
+  difficulty: "Beginner" | "Intermediate" | "Advanced";
+  looking_for: string[];
+  max_members: number;
+  current_members: number;
+  is_open: boolean;
+  github_url: string | null;
+  demo_url: string | null;
+  invite_code: string | null; // only visible to members
+  members: { student_id: string; name: string }[];
+  created_at: string;
+  is_mine: boolean;
+}
+
+export interface CreateStudentProjectPayload {
+  title: string;
+  description: string;
+  tech_stack: string[];
+  difficulty: "Beginner" | "Intermediate" | "Advanced";
+  looking_for: string[];
+  max_members?: number;
+  is_public?: boolean;
+  github_url?: string;
+  demo_url?: string;
+}
+
+export const createStudentProject = async (
+  payload: CreateStudentProjectPayload
+): Promise<{ message: string; project_id: string; invite_code: string }> => {
+  const { data } = await api.post("/projects/student/my-projects/create", payload);
+  return data;
+};
+
+export const getStudentProjectFeed = async (page = 1, limit = 20): Promise<StudentProject[]> => {
+  const { data } = await api.get<StudentProject[]>(
+    `/projects/student/my-projects/feed?page=${page}&limit=${limit}`
+  );
+  return data;
+};
+
+export const getMyStudentProjects = async (): Promise<StudentProject[]> => {
+  const { data } = await api.get<StudentProject[]>("/projects/student/my-projects/mine");
+  return data;
+};
+
+export const joinStudentProject = async (
+  inviteCode: string
+): Promise<{ message: string; project_id: string }> => {
+  const { data } = await api.post("/projects/student/my-projects/join", {
+    invite_code: inviteCode,
+  });
+  return data;
+};
+
+export const updateStudentProject = async (
+  projectId: string,
+  payload: Partial<{ title: string; description: string; github_url: string; demo_url: string; is_open: boolean }>
+): Promise<{ message: string }> => {
+  const { data } = await api.patch(`/projects/student/my-projects/${projectId}`, payload);
+  return data;
+};

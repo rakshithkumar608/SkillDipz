@@ -19,6 +19,7 @@ from app.models.project import (
     ProjectGroup,
     StudentProjectSubmission,
     ProjectComment,
+    StudentProject,
 )
 
 client: AsyncIOMotorClient | None = None
@@ -43,6 +44,11 @@ async def connect_db():
             StudentTargetCompany,
             JobRequirement,
             JobApplication,
+            CompanyProject,
+            ProjectGroup,
+            StudentProjectSubmission,
+            ProjectComment,
+            StudentProject,
         ]
     )
 
@@ -68,6 +74,9 @@ async def connect_db():
     await StudentProjectSubmission.get_motor_collection().create_index([("student_id", 1), ("project_id", 1)], unique=True)
     await StudentProjectSubmission.get_motor_collection().create_index([("is_public", 1), ("submitted_at", -1)])
     await ProjectComment.get_motor_collection().create_index([("submission_id", 1), ("created_at", 1)])
+    await StudentProject.get_motor_collection().create_index([("created_by", 1), ("created_at", -1)])
+    await StudentProject.get_motor_collection().create_index("invite_code", unique=True)
+    await StudentProject.get_motor_collection().create_index([("is_public", 1), ("created_at", -1)])
 
     print("🚀 Database Succesffuly Connected")
 

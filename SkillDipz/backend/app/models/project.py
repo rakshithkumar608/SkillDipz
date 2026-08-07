@@ -91,3 +91,25 @@ class ProjectComment(Document):
 
     class Settings:
         name = "project_comments"
+
+
+# Student-created personal project
+class StudentProject(Document):
+    created_by: str                         # student_id
+    creator_name: str
+    title: str
+    description: str
+    tech_stack: List[str] = []
+    difficulty: Literal["Beginner", "Intermediate", "Advanced"] = "Intermediate"
+    looking_for: List[str] = []             # roles wanted in the team
+    max_members: int = 5
+    is_open: bool = True                    # accepting new members
+    is_public: bool = True
+    github_url: Optional[str] = None
+    demo_url: Optional[str] = None
+    invite_code: str                        # for joining
+    members: List[GroupMember] = []
+    created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+
+    class Settings:
+        name = "student_projects"
