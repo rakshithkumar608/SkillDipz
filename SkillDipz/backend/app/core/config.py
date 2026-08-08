@@ -14,6 +14,7 @@ class Settings(BaseSettings):
     SMTP_PASSWORD: str       # Gmail App Password (not your real password)
     YOUTUBE_API_KEY: str = ""
     GROQ_API_KEY: str = ""
+    QUIZ_API_KEY: str = "" 
 
 
     # Cookie / Session
