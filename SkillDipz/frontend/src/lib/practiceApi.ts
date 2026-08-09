@@ -192,3 +192,91 @@ export const removeBookmark = async (cfProblemId: string) => {
   const { data } = await api.delete(`/practice/bookmarks/${cfProblemId}`);
   return data;
 };
+
+// Activity Logging 
+
+
+export const logCodingActivity = async (
+  problemTitle: string,
+  difficulty: string,
+  topics: string[]
+): Promise<void> => {
+  try {
+    await api.post("/students/me/activity/log", {
+      type: "submission",
+      title: `Solved: ${problemTitle}`,
+      detail: `${difficulty} · ${topics.join(", ")}`,
+    });
+  } catch {
+    // Non-critical — don't throw if activity logging fails
+  }
+};
+
+//  Roadmap Weak Skills 
+
+export interface WeakSkill {
+  skill: string;
+  gap: number;
+  status: string;
+}
+
+
+export const fetchWeakSkills = async (): Promise<WeakSkill[]> => {
+  try {
+    const { data } = await api.get("/roadmap/me");
+    const weakSkills: WeakSkill[] = [];
+    const phases = data?.phases ?? [];
+    for (const phase of phases) {
+      for (const item of phase.items ?? []) {
+        if (item.type === "project") continue;
+        if (item.status !== "completed" || (item.gap ?? 0) > 0) {
+          weakSkills.push({
+            skill: item.skill as string,
+            gap: item.gap ?? 0,
+            status: item.status as string,
+          });
+        }
+      }
+    }
+    return weakSkills;
+  } catch {
+    return [];
+  }
+};
+
+// Real Dynamic Coding Arena Problems (Served by Skill Gap) 
+
+export interface CodingArenaProblem {
+  id: string;
+  title: string;
+  difficulty: "EASY" | "MEDIUM" | "HARD";
+  concept?: string;
+  topics: string[];
+  skillTags: string[];
+  description: string;
+  examples: { input: string; output: string; explanation?: string }[];
+  functionSignature: string;
+  starterCode: string;
+  testCases: { input: any[]; expected: any }[];
+}
+
+export interface ArenaProblemsResponse {
+  weak_skills: WeakSkill[];
+  problems: CodingArenaProblem[];
+  solved_ids: string[];
+}
+
+export const getArenaProblems = async (): Promise<ArenaProblemsResponse> => {
+  const { data } = await api.get<ArenaProblemsResponse>("/practice/arena-problems");
+  return data;
+};
+
+export const submitSolvedProblem = async (problem: {
+  question_id: string;
+  title: string;
+  difficulty: string;
+  topics: string[];
+}) => {
+  const { data } = await api.post("/practice/arena-problems/submit-solved", problem);
+  return data;
+};

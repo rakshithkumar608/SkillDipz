@@ -8,7 +8,7 @@ class ActivityLog(Document):
     student_id: str
     type: Literal[
         "submission", "assessment", "shortlist",
-        "module", "interview", "project"
+        "module", "interview", "project", "resume"
     ]
     title: str
     detail: str

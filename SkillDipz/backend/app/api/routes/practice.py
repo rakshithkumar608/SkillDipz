@@ -1,12 +1,24 @@
 import logging
 import json
 import httpx
+import re
 from typing import Optional
 from fastapi import APIRouter, Depends, HTTPException, Query
 
+from pydantic import BaseModel
 from app.api.routes.auth import get_current_user
 from app.models.user import User
-from app.models.assessment import CFBookmark, CFSolvedProblem
+from app.models.assessment import (
+    CFBookmark,
+    CFSolvedProblem,
+    CodingQuestion,
+    CodingSolvedProblem,
+    CodingExample,
+    CodingTestCase,
+    AssessmentResult,
+)
+from app.models.activity_log import ActivityLog
+from app.models.roadmap import StudentRoadmap
 from app.models.student_profile import StudentProfile
 from app.core.redis_client import get_redis
 
@@ -323,3 +335,331 @@ async def get_cf_profile(
     except Exception as e:
         raise HTTPException(
             status_code=502, detail=f"Codeforces API error: {str(e)}")
+
+
+# ─── Arena Problems — Real Questions via Groq AI per Skill Gap ────────────────
+
+GROQ_COMPLETIONS_URL = "https://api.groq.com/openai/v1/chat/completions"
+GROQ_MODEL = "llama-3.3-70b-versatile"
+
+
+def _build_coding_question_prompt(skill: str, difficulty: str, count: int = 4) -> str:
+    diff_map = {
+        "EASY":   "beginner — single concept, small inputs, straightforward logic",
+        "MEDIUM": "intermediate — combines 2-3 concepts, moderate input size",
+        "HARD":   "advanced — optimization, edge cases, complex logic, larger inputs",
+    }
+    return f"""You are generating concept-wise JavaScript coding practice questions for the skill: "{skill}".
+Difficulty: {difficulty} ({diff_map.get(difficulty, "intermediate")}).
+
+TASK: Generate {count} questions, each covering a DISTINCT core concept/sub-topic within "{skill}".
+Each question must target ONE specific concept (e.g., for "React" -> hooks, memoization, state management; for "Arrays" -> sliding window, two pointers, sorting, prefix sums).
+
+STRICT RULES:
+1. Each question = a pure JavaScript function (no I/O, no stdin/stdout).
+2. Self-contained and testable: fn(...inputs) must return a value directly comparable to expected.
+3. test_cases: use ONLY JSON primitives (numbers, strings, booleans, arrays, plain objects). NO class instances.
+4. DO NOT use TreeNode, ListNode or other class-based structures.
+5. starter_code must be a named function definition.
+6. The "concept" field is the specific sub-topic this question tests (e.g., "Sliding Window", "Array Destructuring", "Closure").
+7. Return ONLY valid JSON — no markdown, no explanation.
+
+Return exactly this JSON:
+{{
+  "questions": [
+    {{
+      "concept": "Specific Sub-concept Name",
+      "title": "Short descriptive problem title",
+      "topics": ["Concept1", "Concept2"],
+      "description": "Clear 2-3 sentence problem statement with constraints.",
+      "examples": [
+        {{"input": "human-readable input", "output": "human-readable output", "explanation": "brief why"}},
+        {{"input": "another example input", "output": "expected output"}}
+      ],
+      "function_signature": "function functionName(param1, param2)",
+      "starter_code": "function functionName(param1, param2) {{\\n  // Write your solution here\\n}}",
+      "test_cases": [
+        {{"input": [<actual value(s)>], "expected": <actual value>}},
+        {{"input": [<actual value(s)>], "expected": <actual value>}},
+        {{"input": [<actual value(s)>], "expected": <actual value>}}
+      ]
+    }}
+  ]
+}}""".strip()
+
+
+async def _generate_questions_via_groq(skill: str, difficulty: str, count: int = 4) -> list[dict]:
+    """Call Groq AI to generate real coding questions for a given skill + difficulty."""
+    from app.core.config import settings
+    if not settings.GROQ_API_KEY:
+        logger.warning("GROQ_API_KEY not set — cannot generate coding questions.")
+        return []
+
+    payload = {
+        "model": GROQ_MODEL,
+        "messages": [
+            {
+                "role": "system",
+                "content": (
+                    "You are an expert software engineering interview coach. "
+                    "You create precise, testable JavaScript coding problems. "
+                    "Always respond with strictly valid JSON only — no markdown, no extra text."
+                ),
+            },
+            {"role": "user", "content": _build_coding_question_prompt(skill, difficulty, count)},
+        ],
+        "temperature": 0.7,
+        "response_format": {"type": "json_object"},
+        "max_tokens": 4000,
+    }
+
+    headers = {
+        "Authorization": f"Bearer {settings.GROQ_API_KEY}",
+        "Content-Type": "application/json",
+    }
+
+    try:
+        async with httpx.AsyncClient(timeout=30.0) as client:
+            res = await client.post(GROQ_COMPLETIONS_URL, json=payload, headers=headers)
+            res.raise_for_status()
+            content = res.json()["choices"][0]["message"]["content"].strip()
+            parsed = json.loads(content)
+            questions = parsed.get("questions", [])
+            logger.info(f"⚡ Groq generated {len(questions)} {difficulty} questions for skill '{skill}'")
+            return questions
+    except Exception as e:
+        logger.error(f"Groq coding question generation failed for skill='{skill}' diff='{difficulty}': {e}")
+        return []
+
+
+async def _ensure_questions_for_skill(skill: str) -> None:
+    """
+    For a given skill, generate and cache EASY + MEDIUM + HARD questions via Groq AI.
+    Skip any difficulty level that already has questions in MongoDB for this skill.
+    """
+    # Check if ANY active questions exist for this skill in MongoDB
+    skill_clean = skill.strip()
+    existing_for_skill = await CodingQuestion.find(
+        {"$or": [
+            {"skill_tags": {"$elemMatch": {"$regex": f"^{re.escape(skill_clean)}$", "$options": "i"}}},
+            {"topics": {"$elemMatch": {"$regex": f"^{re.escape(skill_clean)}$", "$options": "i"}}},
+            {"concept": {"$regex": f"^{re.escape(skill_clean)}$", "$options": "i"}}
+        ], "is_active": True}
+    ).count()
+
+    if existing_for_skill >= 1:
+        logger.debug(f"Skipping Groq generation — {existing_for_skill} questions already exist in DB for skill '{skill}'")
+        return
+
+    import uuid
+    for difficulty in ["EASY", "MEDIUM", "HARD"]:
+
+        logger.info(f"Generating {difficulty} questions for skill '{skill}'...")
+        raw_questions = await _generate_questions_via_groq(skill, difficulty, count=4)
+
+        for q in raw_questions:
+            if not isinstance(q, dict):
+                continue
+            title = q.get("title", "").strip()
+            if not title:
+                continue
+
+            # Skip duplicates by title + skill
+            dup = await CodingQuestion.find_one({"title": title, "skill_tags": skill})
+            if dup:
+                continue
+
+            try:
+                examples = [
+                    CodingExample(
+                        input=str(ex.get("input", "")),
+                        output=str(ex.get("output", "")),
+                        explanation=ex.get("explanation") or None,
+                    )
+                    for ex in q.get("examples", [])
+                ]
+                test_cases = [
+                    CodingTestCase(
+                        input=tc.get("input", []),
+                        expected=tc.get("expected"),
+                    )
+                    for tc in q.get("test_cases", [])
+                    if isinstance(tc.get("input"), list)
+                ]
+
+                if not test_cases:
+                    logger.warning(f"Skipping '{title}' — no valid test_cases returned by Groq.")
+                    continue
+
+                question_id = f"groq_{skill.lower().replace(' ', '_')}_{difficulty.lower()}_{uuid.uuid4().hex[:8]}"
+                doc = CodingQuestion(
+                    question_id=question_id,
+                    title=title,
+                    difficulty=difficulty,
+                    topics=q.get("topics", [skill]),
+                    skill_tags=[skill],
+                    concept=q.get("concept", "").strip() or skill,
+                    description=q.get("description", ""),
+                    examples=examples,
+                    function_signature=q.get("function_signature", "function solve()"),
+                    starter_code=q.get("starter_code", "function solve() {\n  // Write your solution here\n}"),
+                    test_cases=test_cases,
+                )
+                await doc.insert()
+                logger.info(f"✅ Saved '{title}' ({difficulty}) for skill '{skill}'")
+            except Exception as e:
+                logger.warning(f"Failed to save question '{title}': {e}")
+
+
+@router.get("/arena-problems")
+async def get_arena_problems(
+    current_user: User = Depends(get_current_user),
+):
+    """
+    Returns real AI-generated coding questions from MongoDB, grouped and prioritized
+    by the student's actual Skill Gap from their Roadmap + recent MCQ weak areas.
+    Questions are generated on-demand via Groq AI and cached in MongoDB.
+    Zero hardcoded/mock data.
+    """
+    student_id = str(current_user.id)
+
+    # ── 1. Extract student's real weak skills from StudentRoadmap ──────────────
+    weak_skills: list[dict] = []
+    roadmap = await StudentRoadmap.find_one(StudentRoadmap.student_id == student_id)
+    if roadmap and roadmap.phases:
+        for phase in roadmap.phases:
+            items = phase.get("items", []) if isinstance(phase, dict) else getattr(phase, "items", [])
+            for item in items:
+                if not isinstance(item, dict):
+                    continue
+                if item.get("type") == "project":
+                    continue
+                skill = item.get("skill", "").strip()
+                gap = item.get("gap", 0)
+                status = item.get("status", "")
+                if skill and (status != "completed" or gap > 0):
+                    weak_skills.append({"skill": skill, "gap": gap, "status": status})
+
+    # ── 2. Augment with MCQ weak skill tags (score < 80%) ─────────────────────
+    recent_results = (
+        await AssessmentResult.find(AssessmentResult.student_id == student_id)
+        .sort(-AssessmentResult.taken_at)
+        .limit(5)
+        .to_list()
+    )
+    existing_skill_names = {s["skill"].lower() for s in weak_skills}
+    for r in recent_results:
+        if r.score_pct < 80:
+            for tag in r.skill_tags:
+                if tag.lower() not in existing_skill_names:
+                    existing_skill_names.add(tag.lower())
+                    weak_skills.append({"skill": tag, "gap": 2, "status": "needs_practice"})
+
+    # ── 3. For each weak skill, ensure Groq-generated questions exist in DB ───
+    # Sort by gap descending so highest-gap skills are generated first
+    top_skills = sorted(weak_skills, key=lambda x: x.get("gap", 0), reverse=True)[:6]
+
+    for ws in top_skills:
+        await _ensure_questions_for_skill(ws["skill"])
+
+    # ── 4. Fetch all active questions from MongoDB ─────────────────────────────
+    all_questions = await CodingQuestion.find(CodingQuestion.is_active == True).to_list()
+
+    # ── 5. Rank: questions matching the student's weak skill names come first ──
+    weak_skill_names_lower = [s["skill"].lower() for s in weak_skills]
+
+    def rank_question(q: CodingQuestion) -> int:
+        q_tags = [t.lower() for t in q.skill_tags + q.topics]
+        score = 0
+        for ws_lower in weak_skill_names_lower:
+            if any(ws_lower in t or t in ws_lower for t in q_tags):
+                score += 3
+        # Bonus: sort EASY before MEDIUM before HARD within same score band
+        diff_order = {"EASY": 0, "MEDIUM": 1, "HARD": 2}
+        return score * 10 - diff_order.get(q.difficulty, 1)
+
+    all_questions.sort(key=rank_question, reverse=True)
+
+    out_problems = [
+        {
+            "id": q.question_id,
+            "title": q.title,
+            "difficulty": q.difficulty,
+            "concept": getattr(q, "concept", None) or (q.topics[0] if q.topics else q.skill_tags[0] if q.skill_tags else "General"),
+            "topics": q.topics,
+            "skillTags": q.skill_tags,
+            "description": q.description,
+            "examples": [
+                {"input": e.input, "output": e.output, "explanation": e.explanation}
+                for e in q.examples
+            ],
+            "functionSignature": q.function_signature,
+            "starterCode": q.starter_code,
+            "testCases": [
+                {"input": tc.input, "expected": tc.expected}
+                for tc in q.test_cases
+            ],
+        }
+        for q in all_questions
+    ]
+
+    # 6. Fetch student's solved coding problems from MongoDB
+    solved_docs = await CodingSolvedProblem.find(
+        CodingSolvedProblem.student_id == student_id
+    ).to_list()
+    solved_ids = [s.question_id for s in solved_docs]
+
+    return {
+        "weak_skills": weak_skills,
+        "problems": out_problems,
+        "solved_ids": solved_ids,
+    }
+
+
+class SubmitSolvedBody(BaseModel):
+    question_id: str
+    title: str
+    difficulty: str
+    topics: list[str] = []
+
+
+@router.post("/arena-problems/submit-solved")
+async def submit_solved_problem(
+    body: SubmitSolvedBody,
+    current_user: User = Depends(get_current_user),
+):
+    """
+    Persists solved status for a coding practice problem in MongoDB
+    and logs an activity entry in the student activity stream.
+    """
+    student_id = str(current_user.id)
+
+    existing = await CodingSolvedProblem.find_one(
+        CodingSolvedProblem.student_id == student_id,
+        CodingSolvedProblem.question_id == body.question_id,
+    )
+
+    if not existing:
+        doc = CodingSolvedProblem(
+            student_id=student_id,
+            question_id=body.question_id,
+            title=body.title,
+            difficulty=body.difficulty,
+            topics=body.topics,
+        )
+        await doc.insert()
+
+        # Log entry to Activity Stream (type: "submission")
+        try:
+            topics_str = ", ".join(body.topics[:2]) if body.topics else "General"
+            await ActivityLog(
+                student_id=student_id,
+                type="submission",
+                title=f"Solved Coding Challenge: {body.title}",
+                detail=f"{body.difficulty} · {topics_str}",
+            ).insert()
+        except Exception as e:
+            logger.warning(f"Could not log activity for coding challenge solve: {e}")
+
+    return {"status": "ok", "question_id": body.question_id}
+

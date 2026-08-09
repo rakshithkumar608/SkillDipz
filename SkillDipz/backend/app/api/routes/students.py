@@ -2,7 +2,7 @@ import logging
 import uuid
 from datetime import datetime, timezone, date, timedelta
 from pathlib import Path
-from typing import List, Optional
+from typing import List, Literal, Optional
 from fastapi import APIRouter, Depends, File, HTTPException, Query, UploadFile
 from pydantic import BaseModel
 
@@ -373,7 +373,7 @@ async def upload_resume(
     activity_detail = f"Extracted {len(extracted_skills)} skills: {', '.join(extracted_skills[:4])}" if extracted_skills else "Resume parsed."
     await ActivityLog(
         student_id=student_id,
-        type="submission",
+        type="resume",
         title="Resume Parsed & Analyzed",
         detail=activity_detail
     ).insert()
@@ -521,6 +521,33 @@ async def get_activity(
         )
         for log in logs
     ]
+
+
+class ActivityLogBody(BaseModel):
+    type: Literal["submission", "assessment", "shortlist", "module", "interview", "project", "resume"]
+    title: str
+    detail: str = ""
+
+
+@router.post("/me/activity/log", status_code=201)
+async def log_activity(
+    body: ActivityLogBody,
+    current_user: User = Depends(get_current_user),
+):
+    """
+    Generic activity logger — used by the frontend to log coding practice solves.
+    These entries count toward the streak heatmap (same as all other activity types).
+    """
+    student_id = str(current_user.id)
+    await ActivityLog(
+        student_id=student_id,
+        type=body.type,
+        title=body.title,
+        detail=body.detail,
+    ).insert()
+    return {"message": "Activity logged."}
+
+
 
 def _compute_streak(active_dates: set[date]) -> tuple[int, int, Optional[date]]:
     if not active_dates:

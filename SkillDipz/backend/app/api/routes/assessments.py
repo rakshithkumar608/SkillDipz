@@ -19,7 +19,9 @@ from app.models.assessment import (
     MCQOption,
 )
 from app.models.student_profile import StudentProfile
+from app.models.roadmap import StudentRoadmap
 from app.models.employability_score import EmployabilityScore
+from app.models.activity_log import ActivityLog
 from app.core.event_bus import event_bus
 from app.core.config import settings
 from app.core.redis_client import get_redis
@@ -221,12 +223,114 @@ async def fetch_questions_from_opentdb(difficulty: str, count: int = 10) -> List
     return questions[:count]
 
 
+GROQ_COMPLETIONS_URL = "https://api.groq.com/openai/v1/chat/completions"
+GROQ_MODEL = "llama-3.3-70b-versatile"
+
+
+async def fetch_mcq_from_groq(
+    topic_title: str, skill_tags: List[str], difficulty: str, count: int = 10
+) -> List[MCQQuestion]:
+    """
+    Generate concept-wise MCQ questions for a student's skill gap using Groq AI.
+    """
+    if not settings.GROQ_API_KEY:
+        return []
+
+    tags_str = ", ".join(skill_tags) if skill_tags else topic_title
+    prompt = f"""Generate exactly {count} multiple-choice technical questions for testing skill gap: "{topic_title}".
+Target skills / concepts: {tags_str}.
+Difficulty: {difficulty}.
+
+STRICT RULES:
+1. Questions must test practical technical concepts, code syntax, architectural trade-offs, or best practices.
+2. Provide exactly 4 options per question: A, B, C, D.
+3. correct_key MUST be one of "A", "B", "C", "D".
+4. Provide a 1-2 sentence explanation of why the correct_key is right.
+5. Return ONLY valid JSON, no markdown.
+
+JSON SHAPE:
+{{
+  "questions": [
+    {{
+      "id": "1",
+      "question": "Question text here?",
+      "options": [
+        {{"key": "A", "text": "Option A"}},
+        {{"key": "B", "text": "Option B"}},
+        {{"key": "C", "text": "Option C"}},
+        {{"key": "D", "text": "Option D"}}
+      ],
+      "correct_key": "A",
+      "explanation": "Brief explanation why A is correct.",
+      "skill_tag": "{skill_tags[0] if skill_tags else topic_title}"
+    }}
+  ]
+}}"""
+
+    payload = {
+        "model": GROQ_MODEL,
+        "messages": [
+            {
+                "role": "system",
+                "content": (
+                    "You are a tech assessment engineer. "
+                    "You create precise, concept-focused multiple choice questions for software developers. "
+                    "Respond ONLY with valid JSON."
+                ),
+            },
+            {"role": "user", "content": prompt},
+        ],
+        "temperature": 0.5,
+        "response_format": {"type": "json_object"},
+        "max_tokens": 4000,
+    }
+
+    headers = {
+        "Authorization": f"Bearer {settings.GROQ_API_KEY}",
+        "Content-Type": "application/json",
+    }
+
+    try:
+        async with httpx.AsyncClient(timeout=20.0) as client:
+            res = await client.post(GROQ_COMPLETIONS_URL, json=payload, headers=headers)
+            res.raise_for_status()
+            content = res.json()["choices"][0]["message"]["content"].strip()
+            parsed = json.loads(content)
+            raw_qs = parsed.get("questions", [])
+
+            out: List[MCQQuestion] = []
+            for item in raw_qs:
+                opts = [
+                    MCQOption(key=o["key"], text=str(o["text"]).strip())
+                    for o in item.get("options", [])
+                    if isinstance(o, dict) and "key" in o and "text" in o
+                ]
+                if len(opts) == 4 and item.get("correct_key") in ["A", "B", "C", "D"]:
+                    out.append(
+                        MCQQuestion(
+                            question_id=f"groq_mcq_{uuid.uuid4().hex[:8]}",
+                            question=str(item.get("question", "")).strip(),
+                            options=opts,
+                            correct_key=item["correct_key"],
+                            explanation=item.get("explanation"),
+                            skill_tag=item.get("skill_tag", skill_tags[0] if skill_tags else topic_title),
+                            source="groq_ai",
+                        )
+                    )
+            logger.info(f"⚡ Groq generated {len(out)} MCQ questions for topic '{topic_title}'")
+            return out
+    except Exception as e:
+        logger.error(f"Groq MCQ fetch failed for topic '{topic_title}': {e}")
+        return []
+
+
 async def get_questions_for_topic(topic: AssessmentTopic) -> List[MCQQuestion]:
     """
     Priority:
-      1. Admin-uploaded questions from MongoDB (most role-specific)
-      2. QuizAPI.io (live tech questions, cached 1h)
-      3. OpenTDB fallback (general CS)
+      1. Admin-uploaded questions from MongoDB
+      2. Groq AI concept questions generated for skill gaps
+      3. QuizAPI.io (live tech questions)
+      4. OpenTDB fallback (general CS)
     """
     # 1. Check admin-uploaded questions
     admin_qs = await AssessmentQuestion.find(
@@ -249,18 +353,28 @@ async def get_questions_for_topic(topic: AssessmentTopic) -> List[MCQQuestion]:
             for q in chosen
         ]
 
-    # 2. QuizAPI
-    tags = topic.quizapi_tags or ROLE_TO_QUIZAPI_TAGS.get(topic.role, [
-                                                          "python"])
+    # 2. Try Groq AI first for dynamic concept-focused questions
+    groq_qs = await fetch_mcq_from_groq(
+        topic_title=topic.title,
+        skill_tags=topic.skill_tags,
+        difficulty=topic.difficulty,
+        count=topic.question_count,
+    )
+    if len(groq_qs) >= topic.question_count:
+        return groq_qs[:topic.question_count]
+
+    # 3. QuizAPI
+    tags = topic.quizapi_tags or ROLE_TO_QUIZAPI_TAGS.get(topic.role, ["python"])
     quizapi_qs = await fetch_questions_from_quizapi(tags, topic.difficulty, count=15)
+    combined = (groq_qs + quizapi_qs)[:topic.question_count]
+    if len(combined) >= topic.question_count:
+        return combined[:topic.question_count]
 
-    if len(quizapi_qs) >= topic.question_count:
-        return quizapi_qs[:topic.question_count]
-
-    # 3. OpenTDB fallback
+    # 4. OpenTDB fallback
     opentdb_qs = await fetch_questions_from_opentdb(topic.difficulty, count=topic.question_count)
-    combined = (quizapi_qs + opentdb_qs)[:topic.question_count]
-    return combined if combined else opentdb_qs[:topic.question_count]
+    res = (combined + opentdb_qs)[:topic.question_count]
+    return res if res else opentdb_qs[:topic.question_count]
+
 
 
 #  Endpoints 
@@ -278,17 +392,46 @@ async def get_available_assessments(
         AssessmentTopic.is_active == True,  # noqa: E712
     ).to_list()
 
+    # Auto-generate default role topics if none exist
     if not topics:
-        # Auto-generate default topics for this role if none exist
         default_topics = _get_default_topics(role)
         for t in default_topics:
             existing = await AssessmentTopic.find_one(AssessmentTopic.topic_id == t["topic_id"])
             if not existing:
                 await AssessmentTopic(**t).insert()
-        topics = await AssessmentTopic.find(
-            AssessmentTopic.role == role,
-            AssessmentTopic.is_active == True,
-        ).to_list()
+
+    # Dynamically ensure AssessmentTopics exist for all student's Roadmap Skill Gaps
+    roadmap = await StudentRoadmap.find_one(StudentRoadmap.student_id == student_id)
+    if roadmap and roadmap.phases:
+        for phase in roadmap.phases:
+            items = phase.get("items", []) if isinstance(phase, dict) else getattr(phase, "items", [])
+            for item in items:
+                if isinstance(item, dict) and item.get("type") != "project":
+                    skill = item.get("skill", "").strip()
+                    gap = item.get("gap", 0)
+                    status = item.get("status", "")
+                    if skill and (status != "completed" or gap > 0):
+                        topic_id = f"gap-{role}-{skill.lower().replace(' ', '-')}"
+                        existing = await AssessmentTopic.find_one(AssessmentTopic.topic_id == topic_id)
+                        if not existing:
+                            new_t = AssessmentTopic(
+                                topic_id=topic_id,
+                                title=f"{skill} Concept Assessment",
+                                role=role,
+                                skill_tags=[skill],
+                                quizapi_tags=[skill.lower()],
+                                difficulty="Intermediate",
+                                question_count=10,
+                                time_limit_mins=15,
+                                is_active=True,
+                            )
+                            await new_t.insert()
+
+    # Fetch updated topics list
+    topics = await AssessmentTopic.find(
+        AssessmentTopic.role == role,
+        AssessmentTopic.is_active == True,  # noqa: E712
+    ).to_list()
 
     # Get all results for this student
     results = (
@@ -609,6 +752,17 @@ async def submit_assessment(
         next_retake_allowed_at=now + timedelta(hours=24),
     )
     await result.insert()
+
+    # Log to activity feed (counts toward streak heatmap)
+    try:
+        await ActivityLog(
+            student_id=student_id,
+            type="assessment",
+            title=f"Completed: {session.topic_title}",
+            detail=f"{score_pct}% · {correct}/{total} correct · Skills: {', '.join(list(skills_verified)[:4])}",
+        ).insert()
+    except Exception as e:
+        logger.warning(f"Could not log assessment activity: {e}")
 
     # Update EmployabilityScore.assessment_score directly (no separate consumer needed)
     try:

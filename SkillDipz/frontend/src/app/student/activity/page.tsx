@@ -28,6 +28,8 @@ import {
   ChevronDown,
   Sparkles,
   ArrowRightLeft,
+  Terminal,
+  FileText,
 } from "lucide-react";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { toast } from "sonner";
@@ -38,7 +40,8 @@ type ActivityType =
   | "shortlist"
   | "module"
   | "interview"
-  | "project";
+  | "project"
+  | "resume";
 
 type FilterType = ActivityType | "all";
 
@@ -49,20 +52,51 @@ const FILTER_TABS: { key: FilterType; label: string }[] = [
   { key: "all", label: "All" },
   { key: "submission", label: "Code" },
   { key: "assessment", label: "Tests" },
+  { key: "resume", label: "Resume" },
   { key: "project", label: "Projects" },
   { key: "shortlist", label: "Shortlists" },
   { key: "interview", label: "Interviews" },
   { key: "module", label: "Modules" },
 ];
 
-// Heatmap colour levels (index 0 = no activity, 4 = most active)
-const HEAT_COLORS = [
-  "bg-slate-800/60 border border-slate-700/30",         // 0 - empty
-  "bg-emerald-950/80 border border-emerald-800/40 text-emerald-300", // 1 - 1 activity
-  "bg-emerald-800/90 border border-emerald-600/50 text-emerald-200", // 2 - 2-3 activities
-  "bg-emerald-600 border border-emerald-400/60 text-white shadow-sm shadow-emerald-600/30", // 3 - 4-6 activities
-  "bg-emerald-400 border border-emerald-300 text-slate-950 shadow-md shadow-emerald-400/50 font-bold", // 4 - 7+ activities
-];
+// Category-specific Heatmap colour levels (Cyan, Purple, Teal, Emerald)
+const HEAT_COLORS_MAP: Record<string, string[]> = {
+  all: [
+    "bg-slate-800/60 border border-slate-700/30",
+    "bg-emerald-950/80 border border-emerald-800/40 text-emerald-300",
+    "bg-emerald-800/90 border border-emerald-600/50 text-emerald-200",
+    "bg-emerald-600 border border-emerald-400/60 text-white shadow-sm shadow-emerald-600/30",
+    "bg-emerald-400 border border-emerald-300 text-slate-950 shadow-md shadow-emerald-400/50 font-bold",
+  ],
+  submission: [
+    "bg-slate-800/60 border border-slate-700/30",
+    "bg-cyan-950/80 border border-cyan-800/40 text-cyan-300",
+    "bg-cyan-800/90 border border-cyan-600/50 text-cyan-200",
+    "bg-cyan-600 border border-cyan-400/60 text-white shadow-sm shadow-cyan-600/30",
+    "bg-cyan-400 border border-cyan-300 text-slate-950 shadow-md shadow-cyan-400/50 font-bold",
+  ],
+  assessment: [
+    "bg-slate-800/60 border border-slate-700/30",
+    "bg-purple-950/80 border border-purple-800/40 text-purple-300",
+    "bg-purple-800/90 border border-purple-600/50 text-purple-200",
+    "bg-purple-600 border border-purple-400/60 text-white shadow-sm shadow-purple-600/30",
+    "bg-purple-400 border border-purple-300 text-slate-950 shadow-md shadow-purple-400/50 font-bold",
+  ],
+  project: [
+    "bg-slate-800/60 border border-slate-700/30",
+    "bg-teal-950/80 border border-teal-800/40 text-teal-300",
+    "bg-teal-800/90 border border-teal-600/50 text-teal-200",
+    "bg-teal-600 border border-teal-400/60 text-white shadow-sm shadow-teal-600/30",
+    "bg-teal-400 border border-teal-300 text-slate-950 shadow-md shadow-teal-400/50 font-bold",
+  ],
+  resume: [
+    "bg-slate-800/60 border border-slate-700/30",
+    "bg-sky-950/80 border border-sky-800/40 text-sky-300",
+    "bg-sky-800/90 border border-sky-600/50 text-sky-200",
+    "bg-sky-600 border border-sky-400/60 text-white shadow-sm shadow-sky-600/30",
+    "bg-sky-400 border border-sky-300 text-slate-950 shadow-md shadow-sky-400/50 font-bold",
+  ],
+};
 
 const MONTH_LABELS = [
   "Jan", "Feb", "Mar", "Apr", "May", "Jun",
@@ -179,15 +213,37 @@ function ActivityHeatmap({
   calendar,
   selectedYear,
   onYearChange,
+  activeFilter = "all",
+  activities = [],
 }: {
   calendar: ActivityCalendar | null;
   selectedYear: number;
   onYearChange: (year: number) => void;
+  activeFilter?: string;
+  activities?: { id: string; type: string; created_at: string }[];
 }) {
   const grid = useMemo(() => buildCalendarGrid(selectedYear), [selectedYear]);
   const monthLabels = useMemo(() => buildMonthLabels(grid), [grid]);
 
-  const counts = calendar?.dates ?? {};
+  // Compute category-specific counts or fallback to overall calendar dates
+  const counts = useMemo(() => {
+    if (activeFilter === "all" || !activities || activities.length === 0) {
+      return calendar?.dates ?? {};
+    }
+    const catCounts: Record<string, number> = {};
+    activities.forEach((act) => {
+      if (activeFilter === "project") {
+        if (act.type !== "project" && act.type !== "module") return;
+      } else if (act.type !== activeFilter) {
+        return;
+      }
+      const dKey = act.created_at.split("T")[0];
+      catCounts[dKey] = (catCounts[dKey] ?? 0) + 1;
+    });
+    return catCounts;
+  }, [calendar?.dates, activities, activeFilter]);
+
+  const activeColors = HEAT_COLORS_MAP[activeFilter] ?? HEAT_COLORS_MAP["all"];
   const now = new Date();
   const currentActualYear = now.getFullYear();
 
@@ -200,35 +256,46 @@ function ActivityHeatmap({
     return years;
   }, [currentActualYear]);
 
+  const filterLabel =
+    activeFilter === "submission"
+      ? "Coding Practice"
+      : activeFilter === "assessment"
+      ? "MCQ Assessment"
+      : activeFilter === "project"
+      ? "Projects & Modules"
+      : "Overall";
+
   return (
     <div className="relative space-y-3">
-      {/* Year Selector Tabs Header */}
-      <div className="flex items-center justify-between pb-2 border-b border-slate-800/60">
+      {/* Year & Category Selector Header */}
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 pb-2 border-b border-slate-800/60">
         <div className="flex items-center gap-2">
           <Sparkles className="w-4 h-4 text-emerald-400" />
           <h3 className="text-xs sm:text-sm font-bold text-white tracking-wide">
-            {selectedYear} Contribution Calendar
+            {selectedYear} {filterLabel} Contribution Calendar
           </h3>
         </div>
-        
-        {/* Year Pills (rendered dynamically from currentActualYear down to 2026) */}
-        {availableYears.length > 1 && (
-          <div className="flex items-center gap-1 bg-slate-950/80 p-1 rounded-xl border border-slate-800">
-            {availableYears.map((yr) => (
-              <button
-                key={yr}
-                onClick={() => onYearChange(yr)}
-                className={`px-3 py-1 rounded-lg text-xs font-bold transition-all ${
-                  selectedYear === yr
-                    ? "bg-emerald-500 text-slate-950 shadow-md shadow-emerald-500/20"
-                    : "text-slate-400 hover:text-slate-200 hover:bg-slate-900"
-                }`}
-              >
-                {yr}
-              </button>
-            ))}
-          </div>
-        )}
+
+        <div className="flex items-center gap-2">
+          {/* Year Pills */}
+          {availableYears.length > 1 && (
+            <div className="flex items-center gap-1 bg-slate-950/80 p-1 rounded-xl border border-slate-800">
+              {availableYears.map((yr) => (
+                <button
+                  key={yr}
+                  onClick={() => onYearChange(yr)}
+                  className={`px-3 py-1 rounded-lg text-xs font-bold transition-all ${
+                    selectedYear === yr
+                      ? "bg-emerald-500 text-slate-950 shadow-md shadow-emerald-500/20"
+                      : "text-slate-400 hover:text-slate-200 hover:bg-slate-900"
+                  }`}
+                >
+                  {yr}
+                </button>
+              ))}
+            </div>
+          )}
+        </div>
       </div>
 
       {/* Grid Wrapper */}
@@ -240,8 +307,7 @@ function ActivityHeatmap({
               const isCurrentMonth =
                 now.getMonth() === MONTH_LABELS.indexOf(l.month) &&
                 currentActualYear === l.year;
-              
-              // Each week column is 11px wide + 2px gap = 13px
+
               const leftPos = l.colIndex * 13;
 
               return (
@@ -292,15 +358,15 @@ function ActivityHeatmap({
                   });
                   const tooltipText =
                     count > 0
-                      ? `${count} activity${count === 1 ? "" : "ies"} on ${labelDate}`
-                      : `No activity on ${labelDate}`;
+                      ? `${count} ${filterLabel.toLowerCase()} activit${count === 1 ? "y" : "ies"} on ${labelDate}`
+                      : `No ${filterLabel.toLowerCase()} activity on ${labelDate}`;
 
                   return (
                     <div key={dateKey} className="relative group">
                       <div
                         className={`
                           w-[11px] h-[11px] rounded-[3px] cursor-pointer
-                          ${HEAT_COLORS[level]}
+                          ${activeColors[level]}
                           hover:scale-125 transition-all duration-150
                         `}
                         title={tooltipText}
@@ -322,12 +388,12 @@ function ActivityHeatmap({
       <div className="flex items-center justify-between pt-2 border-t border-slate-800/40 text-xs">
         <div className="flex items-center gap-2">
           <span className="text-[11px] text-slate-400 font-medium">
-            {selectedYear} Contribution Calendar
+            {selectedYear} {filterLabel} Contribution Heatmap
           </span>
         </div>
         <div className="flex items-center gap-1.5 ml-auto text-[11px] text-slate-400">
           <span>Less</span>
-          {HEAT_COLORS.map((cls, i) => (
+          {activeColors.map((cls, i) => (
             <div className={`w-3 h-3 rounded-[3px] ${cls}`} key={i} />
           ))}
           <span>More</span>
@@ -341,13 +407,15 @@ function ActivityIcon({ type }: { type: string }) {
   const cls = "w-4 h-4 shrink-0";
   switch (type as ActivityType) {
     case "submission":
-      return <Code2 className={`${cls} text-emerald-400`} />;
+      return <Terminal className={`${cls} text-cyan-400`} />;
     case "assessment":
-      return <ClipboardList className={`${cls} text-sky-400`} />;
+      return <ClipboardList className={`${cls} text-purple-400`} />;
+    case "resume":
+      return <FileText className={`${cls} text-sky-400`} />;
     case "shortlist":
-      return <Building2 className={`${cls} text-purple-400`} />;
+      return <Building2 className={`${cls} text-amber-400`} />;
     case "module":
-      return <BookOpen className={`${cls} text-amber-400`} />;
+      return <BookOpen className={`${cls} text-indigo-400`} />;
     case "interview":
       return <Mic className={`${cls} text-rose-400`} />;
     case "project":
@@ -359,16 +427,18 @@ function ActivityIcon({ type }: { type: string }) {
 
 function TypeBadge({ type }: { type: string }) {
   const styles: Record<ActivityType, string> = {
-    submission: "bg-emerald-500/15 text-emerald-400 border-emerald-500/25",
-    assessment: "bg-sky-500/15 text-sky-400 border-sky-500/25",
-    shortlist: "bg-purple-500/15 text-purple-400 border-purple-500/25",
-    module: "bg-amber-500/15 text-amber-400 border-amber-500/25",
-    interview: "bg-rose-500/15 text-rose-400 border-rose-500/25",
-    project: "bg-teal-500/15 text-teal-400 border-teal-500/25",
+    submission: "bg-cyan-500/20 text-cyan-300 border-cyan-500/40 shadow-sm shadow-cyan-500/10",
+    assessment: "bg-purple-500/20 text-purple-300 border-purple-500/40 shadow-sm shadow-purple-500/10",
+    resume: "bg-sky-500/20 text-sky-300 border-sky-500/40 shadow-sm shadow-sky-500/10",
+    shortlist: "bg-amber-500/20 text-amber-300 border-amber-500/40",
+    module: "bg-indigo-500/20 text-indigo-300 border-indigo-500/40",
+    interview: "bg-rose-500/20 text-rose-300 border-rose-500/40",
+    project: "bg-teal-500/20 text-teal-300 border-teal-500/40",
   };
   const labels: Record<ActivityType, string> = {
-    submission: "Code",
-    assessment: "Test",
+    submission: "Coding Practice",
+    assessment: "MCQ Assessment",
+    resume: "Resume & Profile",
     shortlist: "Shortlist",
     module: "Module",
     interview: "Interview",
@@ -380,8 +450,8 @@ function TypeBadge({ type }: { type: string }) {
   const text = labels[type as ActivityType] ?? type;
   return (
     <span
-      className={`inline-flex items-center px-2 py-0.5 rounded-full text-[10px]
-        font-semibold border ${style}`}
+      className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-[10px]
+        font-bold tracking-wide border ${style}`}
     >
       {text}
     </span>
@@ -399,31 +469,47 @@ function ActivityRow({
     created_at: string;
   };
 }) {
+  const borderAccents: Record<string, string> = {
+    submission: "border-l-4 border-l-cyan-400",
+    assessment: "border-l-4 border-l-purple-400",
+    resume: "border-l-4 border-l-sky-400",
+    shortlist: "border-l-4 border-l-amber-400",
+    module: "border-l-4 border-l-indigo-400",
+    interview: "border-l-4 border-l-rose-400",
+    project: "border-l-4 border-l-teal-400",
+  };
+  const accent = borderAccents[item.type] ?? "border-l-4 border-l-slate-600";
+
   return (
     <li
-      className="flex items-start gap-3 p-3.5 rounded-xl
-      bg-slate-950/40 border border-slate-800/40
-      hover:bg-slate-900/60 hover:border-slate-700/60
-      transition-all duration-150 group"
+      className={`flex items-start gap-3.5 p-3.5 rounded-xl
+      bg-slate-950/60 border border-slate-800/60
+      hover:bg-slate-900 hover:border-slate-700/80
+      transition-all duration-150 group ${accent}`}
     >
       <div
         className="mt-0.5 flex h-9 w-9 shrink-0 items-center justify-center
-        rounded-xl bg-slate-800/80 border border-slate-700/50 shadow-inner"
+        rounded-xl bg-slate-900 border border-slate-800 shadow-inner"
       >
         <ActivityIcon type={item.type} />
       </div>
       <div className="min-w-0 flex-1">
-        <div className="flex flex-wrap items-center gap-2 mb-1">
-          <span className="text-sm font-semibold text-slate-100 group-hover:text-sky-300 transition-colors truncate">
+        <div className="flex flex-wrap items-center justify-between gap-2 mb-1">
+          <span className="text-sm font-bold text-slate-100 group-hover:text-cyan-300 transition-colors truncate">
             {item.title}
           </span>
           <TypeBadge type={item.type} />
         </div>
-        <p className="text-xs text-slate-400 truncate leading-relaxed">{item.detail}</p>
+        <p className="text-xs text-slate-400 font-sans leading-relaxed">
+          {item.detail}
+        </p>
+        <p className="text-[10px] text-slate-500 font-mono mt-1">
+          {new Date(item.created_at).toLocaleString("en-IN", {
+            dateStyle: "medium",
+            timeStyle: "short",
+          })}
+        </p>
       </div>
-      <span className="shrink-0 text-[11px] text-slate-500 font-medium">
-        {timeAgo(item.created_at)}
-      </span>
     </li>
   );
 }
@@ -502,8 +588,26 @@ export default function ActivityPage() {
     }
   };
 
-  const displayed =
-    filter === "all" ? activity : activity.filter((a) => a.type === filter);
+  const displayed = useMemo(() => {
+    if (filter === "all") return activity;
+    if (filter === "submission") {
+      return activity.filter(
+        (a) =>
+          a.type === "submission" &&
+          !a.title.toLowerCase().includes("resume") &&
+          !a.title.toLowerCase().includes("parsed")
+      );
+    }
+    if (filter === "resume") {
+      return activity.filter(
+        (a) =>
+          a.type === "resume" ||
+          a.title.toLowerCase().includes("resume") ||
+          a.title.toLowerCase().includes("parsed")
+      );
+    }
+    return activity.filter((a) => a.type === filter);
+  }, [activity, filter]);
 
   // Compute Current Month & Yearly Month Breakdown
   const now = new Date();
@@ -517,6 +621,25 @@ export default function ActivityPage() {
       return dateStr.startsWith(currentMonthPrefix) ? acc + count : acc;
     },
     0,
+  );
+
+  const codingCount = useMemo(
+    () =>
+      activity.filter(
+        (a) =>
+          a.type === "submission" &&
+          !a.title.toLowerCase().includes("resume") &&
+          !a.title.toLowerCase().includes("parsed")
+      ).length,
+    [activity],
+  );
+  const mcqCount = useMemo(
+    () => activity.filter((a) => a.type === "assessment").length,
+    [activity],
+  );
+  const projectCount = useMemo(
+    () => activity.filter((a) => a.type === "project" || a.type === "module").length,
+    [activity],
   );
 
   const yearlyMonthBreakdown = useMemo(() => {
@@ -722,14 +845,112 @@ export default function ActivityPage() {
             </div>
           </div>
 
-          {/* LeetCode Heatmap Grid */}
+          {/* LeetCode Contribution Heatmap Grid */}
           <ActivityHeatmap
             calendar={calendar}
             selectedYear={selectedYear}
             onYearChange={setSelectedYear}
+            activeFilter={filter}
+            activities={activity}
           />
         </Card>
       )}
+
+      {/* Category-Specific Streak & Activity Breakdown Cards */}
+      <div className="grid grid-cols-1 sm:grid-cols-3 gap-3.5">
+        {/* Coding Practice Streak Card (Cyan) */}
+        <button
+          onClick={() => setFilter("submission")}
+          className={`p-4 rounded-2xl border text-left transition-all duration-200 backdrop-blur-xl relative overflow-hidden group ${
+            filter === "submission"
+              ? "bg-cyan-950/60 border-cyan-500/50 shadow-lg shadow-cyan-500/10 ring-1 ring-cyan-500/30"
+              : "bg-slate-900/60 border-slate-800 hover:border-cyan-500/30 hover:bg-slate-800/80"
+          }`}
+        >
+          <div className="flex items-center justify-between mb-2">
+            <div className="flex items-center gap-2">
+              <div className="p-2 rounded-xl bg-cyan-500/20 text-cyan-400 border border-cyan-500/30">
+                <Terminal className="w-4 h-4" />
+              </div>
+              <span className="text-xs font-bold text-slate-200">Coding Practice Streak</span>
+            </div>
+            <span className="text-[10px] font-extrabold px-2.5 py-0.5 rounded-full bg-cyan-500/20 text-cyan-300 border border-cyan-500/30">
+              Coding
+            </span>
+          </div>
+          <div className="flex items-baseline justify-between mt-3">
+            <div>
+              <span className="text-2xl font-extrabold text-cyan-400 font-mono">{codingCount}</span>
+              <span className="text-xs text-slate-400 ml-1.5 font-medium">challenges solved</span>
+            </div>
+            <span className="text-[11px] text-cyan-300 font-bold flex items-center gap-1 group-hover:translate-x-0.5 transition-transform">
+              View Stream →
+            </span>
+          </div>
+        </button>
+
+        {/* MCQ Assessment Streak Card (Purple) */}
+        <button
+          onClick={() => setFilter("assessment")}
+          className={`p-4 rounded-2xl border text-left transition-all duration-200 backdrop-blur-xl relative overflow-hidden group ${
+            filter === "assessment"
+              ? "bg-purple-950/60 border-purple-500/50 shadow-lg shadow-purple-500/10 ring-1 ring-purple-500/30"
+              : "bg-slate-900/60 border-slate-800 hover:border-purple-500/30 hover:bg-slate-800/80"
+          }`}
+        >
+          <div className="flex items-center justify-between mb-2">
+            <div className="flex items-center gap-2">
+              <div className="p-2 rounded-xl bg-purple-500/20 text-purple-400 border border-purple-500/30">
+                <ClipboardList className="w-4 h-4" />
+              </div>
+              <span className="text-xs font-bold text-slate-200">MCQ Assessment Streak</span>
+            </div>
+            <span className="text-[10px] font-extrabold px-2.5 py-0.5 rounded-full bg-purple-500/20 text-purple-300 border border-purple-500/30">
+              MCQ Tests
+            </span>
+          </div>
+          <div className="flex items-baseline justify-between mt-3">
+            <div>
+              <span className="text-2xl font-extrabold text-purple-400 font-mono">{mcqCount}</span>
+              <span className="text-xs text-slate-400 ml-1.5 font-medium">tests completed</span>
+            </div>
+            <span className="text-[11px] text-purple-300 font-bold flex items-center gap-1 group-hover:translate-x-0.5 transition-transform">
+              View Stream →
+            </span>
+          </div>
+        </button>
+
+        {/* Projects & Learning Card (Teal) */}
+        <button
+          onClick={() => setFilter("project")}
+          className={`p-4 rounded-2xl border text-left transition-all duration-200 backdrop-blur-xl relative overflow-hidden group ${
+            filter === "project"
+              ? "bg-teal-950/60 border-teal-500/50 shadow-lg shadow-teal-500/10 ring-1 ring-teal-500/30"
+              : "bg-slate-900/60 border-slate-800 hover:border-teal-500/30 hover:bg-slate-800/80"
+          }`}
+        >
+          <div className="flex items-center justify-between mb-2">
+            <div className="flex items-center gap-2">
+              <div className="p-2 rounded-xl bg-teal-500/20 text-teal-400 border border-teal-500/30">
+                <CheckCircle2 className="w-4 h-4" />
+              </div>
+              <span className="text-xs font-bold text-slate-200">Projects &amp; Learning</span>
+            </div>
+            <span className="text-[10px] font-extrabold px-2.5 py-0.5 rounded-full bg-teal-500/20 text-teal-300 border border-teal-500/30">
+              Projects
+            </span>
+          </div>
+          <div className="flex items-baseline justify-between mt-3">
+            <div>
+              <span className="text-2xl font-extrabold text-teal-400 font-mono">{projectCount}</span>
+              <span className="text-xs text-slate-400 ml-1.5 font-medium">projects &amp; modules</span>
+            </div>
+            <span className="text-[11px] text-teal-300 font-bold flex items-center gap-1 group-hover:translate-x-0.5 transition-transform">
+              View Stream →
+            </span>
+          </div>
+        </button>
+      </div>
 
       {/* Horizontal Scrollable Filter Chips for Mobile */}
       <div className="flex gap-2 overflow-x-auto pb-1 scrollbar-none snap-x flex-nowrap sm:flex-wrap">

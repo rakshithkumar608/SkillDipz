@@ -5,15 +5,16 @@ import {
   AssessmentSessionData,
   submitAssessment,
 } from "@/lib/practiceApi";
+import { useCheatPrevention } from "@/hooks/useCheatPrevention";
 import { motion } from "framer-motion";
-import { CheckCircle2, Clock, Loader2, X } from "lucide-react";
+import { AlertCircle, CheckCircle2, Clock, Loader2, Shield, X } from "lucide-react";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { toast } from "sonner";
 
 interface Props {
   session: AssessmentSessionData;
-  initialSecondsLeft?: number;                        // for session resume
-  initialAnswers?: Record<string, string>;            // for session resume
+  initialSecondsLeft?: number;
+  initialAnswers?: Record<string, string>;
   onClose: () => void;
   onCompleted: (result: AssessmentResult) => void;
 }
@@ -47,6 +48,13 @@ export default function MCQTestRunner({
     }
   }, [answers, session.session_id, submitting, onCompleted]);
 
+  // Cheat prevention
+  const { tabSwitchCount, isWarning } = useCheatPrevention({
+    maxViolations: 3,
+    onMaxViolations: () => handleSubmit(true),
+    enabled: true,
+  });
+
   useEffect(() => {
     timerRef.current = setInterval(() => {
       setSecondsLeft((s) => {
@@ -75,6 +83,25 @@ export default function MCQTestRunner({
         animate={{ opacity: 1, scale: 1 }}
         className="bg-slate-900 border border-white/10 rounded-2xl w-full max-w-2xl shadow-2xl flex flex-col max-h-[92vh]"
       >
+        {/* Cheat Prevention Badge */}
+        {isWarning && (
+          <motion.div
+            initial={{ opacity: 0, y: -8 }}
+            animate={{ opacity: 1, y: 0 }}
+            className="mx-5 mt-4 flex items-center gap-2.5 px-4 py-2.5 rounded-xl bg-red-950/80 border border-red-500/40 text-red-400 shadow-lg shadow-red-500/10"
+          >
+            <AlertCircle className="w-4 h-4 shrink-0 animate-pulse" />
+            <div className="flex-1 min-w-0">
+              <p className="text-xs font-bold uppercase tracking-wider">Cheat Prevention Shield Active</p>
+              <p className="text-[11px] text-red-400/70 mt-0.5">
+                Unauthorized tab swaps:{" "}
+                <span className="font-black text-red-300">{tabSwitchCount}/3</span>
+              </p>
+            </div>
+            <Shield className="w-4 h-4 text-red-500/50 shrink-0" />
+          </motion.div>
+        )}
+
         {/* Header */}
         <div className="flex items-center justify-between p-5 border-b border-white/6 shrink-0">
           <div>

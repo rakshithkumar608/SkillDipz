@@ -29,6 +29,8 @@ from app.models.assessment import (
     AssessmentQuestion,
     CFBookmark,
     CFSolvedProblem,
+    CodingQuestion,
+    CodingSolvedProblem,
 )
 
 client: AsyncIOMotorClient | None = None
@@ -64,7 +66,9 @@ async def connect_db():
             AssessmentQuestion,
             CFBookmark,
             CFSolvedProblem,
-        ]
+            CodingQuestion,
+            CodingSolvedProblem,
+        ],
     )
 
     # Create indexes manually
@@ -107,6 +111,8 @@ async def connect_db():
     await AssessmentQuestion.get_motor_collection().create_index([("role", 1), ("topic_id", 1), ("is_active", 1)])
     await CFBookmark.get_motor_collection().create_index([("student_id", 1), ("cf_problem_id", 1)], unique=True)
     await CFSolvedProblem.get_motor_collection().create_index([("student_id", 1), ("cf_problem_id", 1)], unique=True)
+    await CodingQuestion.get_motor_collection().create_index("question_id", unique=True)
+    await CodingQuestion.get_motor_collection().create_index([("is_active", 1)])
 
     print("🚀 Database Succesffuly Connected")
 
