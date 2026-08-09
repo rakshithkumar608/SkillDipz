@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { Suspense, useEffect, useRef, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import Image from "next/image";
 import { Loader2, MailCheck, RefreshCw } from "lucide-react";
@@ -9,7 +9,7 @@ import { useAuthStore } from "@/store/authStore";
 import { getRedirectPath } from "@/lib/auth";
 import { toast } from "sonner";
 
-export default function VerifyOTPPage() {
+function VerifyOTPContent() {
   const router = useRouter();
   const params = useSearchParams();
   const email = params.get("email") ?? "";
@@ -210,5 +210,19 @@ export default function VerifyOTPPage() {
         </div>
       </div>
     </main>
+  );
+}
+
+export default function VerifyOTPPage() {
+  return (
+    <Suspense
+      fallback={
+        <div className="min-h-screen bg-black text-white flex items-center justify-center">
+          <Loader2 className="w-8 h-8 animate-spin text-violet-500" />
+        </div>
+      }
+    >
+      <VerifyOTPContent />
+    </Suspense>
   );
 }

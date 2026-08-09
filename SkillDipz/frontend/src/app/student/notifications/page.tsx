@@ -1,6 +1,4 @@
 "use client";
-// FILE: frontend/src/app/student/notifications/page.tsx
-// FULL REPLACEMENT — replaces the ComingSoon stub
 
 
 import { useCallback, useEffect, useState } from "react";
@@ -98,7 +96,7 @@ function NotifCard({
       className={`
         relative flex items-start gap-4 p-4 rounded-2xl border cursor-pointer
         transition-all duration-200 hover:scale-[1.005] hover:shadow-lg hover:shadow-black/20
-        ${accentColor(notif.notification_type)}
+        ${accentColor(notif.notification_type || notif.type || "")}
         ${notif.is_read ? "opacity-60" : ""}
       `}
     >
@@ -109,7 +107,7 @@ function NotifCard({
 
       {/* Icon bubble */}
       <div className="shrink-0 w-10 h-10 rounded-xl bg-white/5 border border-white/8 flex items-center justify-center">
-        <NotifIcon type={notif.notification_type} />
+        <NotifIcon type={notif.notification_type || notif.type || ""} />
       </div>
 
       {/* Content */}

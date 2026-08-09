@@ -10,6 +10,7 @@ export interface AuthUser {
     role: UserRole;
     full_name: string;
     avatar_url?: string;
+    target_role?: string;
     is_verified: boolean;
 }
 
