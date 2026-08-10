@@ -24,6 +24,12 @@ from app.api.routes.assessments import router as assessments_router
 from app.api.routes.practice import router as practice_router
 
 
+from app.api.routes.interviews import (
+    router as interviews_router,
+    ai_router as ai_interview_router,
+    company_router as company_interview_router,
+)
+
 from app.core.event_bus import register_target_company_handlers
 
 @asynccontextmanager
@@ -85,6 +91,10 @@ app.include_router(projects_company_router, prefix="/v1/projects/company")
 app.include_router(assessments_router, prefix="/v1")
 # Coding Practice (Codeforces) - /v1/practise
 app.include_router(practice_router, prefix="/v1")
+# Interview 
+app.include_router(interviews_router, prefix="/v1")
+app.include_router(ai_interview_router, prefix="/v1")
+app.include_router(company_interview_router, prefix="/v1")
 
 # Serve uploaded files (photos, resumes) as static
 # Path must include /v1 because the frontend baseURL already contains /v1

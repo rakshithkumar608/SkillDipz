@@ -310,6 +310,51 @@ async def _handle_project_evaluated(payload: dict) -> None:
     except Exception as e:
         logger.warning(f"Company notification error: {e}")
 
+async def _handle_interview_completed(payload: Dict[str, Any]) -> None:
+    student_id=payload.get("student_id")
+    overall_score = payload("overall_score")
+    feedback = payload.get("feedback", "")
+    mode = payload.get("mode", "ai")
+    company_name = payload.get("company_name", "SkillDipz AI")
+
+    if not student_id or overall_score is None:
+        return
+
+    score_doc = await EmployabilityScore.get_or_create(student_id)
+    new_readiness = min(100.0, max(score_doc.components.interview_readiness, float(overall_score)))
+    score_doc.components.interview_readiness = new_readiness
+    new_overall = score_doc.compute_overall()
+    score_doc.overall_score = new_overall
+    score_doc.last_updated = datetime.now(timezone.utc)
+    score_doc.history.append(ScoreHistory(score=new_overall))
+    score_doc.history = score_doc.history[-7:]
+    await score_doc.save()
+
+    await ws_manager.broadcast(
+        student_id,
+        "score_update",
+        {
+            "overall_score": new_overall,
+            "components": score_doc.components.model_dump(),
+            "last_updated": score_doc.last_updated.isoformat(),
+        },
+    )
+
+    score_display = f"{overall_score:.0f}" if overall_score else "N/A"
+    mode_label = "AI Practice" if mode == "ai" else "Company"
+    await send_notification(
+        student_id=student_id,
+        title=f"Mock Interview Result: {score_display}/100",
+        body=f"Your {mode_label} interview with {company_name} scored {score_display}/100. {feedback[:120]}",
+        action_url="/student/mock-interview",
+        notification_type="interview_result",
+    )
+
+async def _handle_interview_terminated(payload: Dict[str, Any]) -> None:
+    logger.warning(
+        f"Interview {payload.get('session_id')} terminated for student "
+        f"{payload.get('student_id')}: {payload.get('reason')}"
+    )
 
 def register_target_company_handlers():
     event_bus.subscribe("score.updated", _handle_score_updated)
@@ -323,3 +368,5 @@ def register_target_company_handlers():
     event_bus.subscribe("project.posted", _handle_project_posted)
     event_bus.subscribe("project.submitted", _handle_project_submitted)
     event_bus.subscribe("project.evaluated", _handle_project_evaluated)
+    event_bus.subscribe("interview.completed", _handle_interview_completed)
+    event_bus.subscribe("interview.terminated", _handle_interview_terminated)

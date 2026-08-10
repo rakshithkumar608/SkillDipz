@@ -13,6 +13,7 @@ from app.models.student_profile import StudentProfile
 from app.models.target_company import CompanyProfile, StudentTargetCompany
 from app.models.job_requirement import JobRequirement
 from app.models.job_application import JobApplication
+from app.models.interview import InterviewSession
 
 from app.models.project import (
     CompanyProject,
@@ -68,6 +69,7 @@ async def connect_db():
             CFSolvedProblem,
             CodingQuestion,
             CodingSolvedProblem,
+            InterviewSession,
         ],
     )
 
@@ -113,6 +115,12 @@ async def connect_db():
     await CFSolvedProblem.get_motor_collection().create_index([("student_id", 1), ("cf_problem_id", 1)], unique=True)
     await CodingQuestion.get_motor_collection().create_index("question_id", unique=True)
     await CodingQuestion.get_motor_collection().create_index([("is_active", 1)])
+
+    # Interview
+    await InterviewSession.get_motor_collection().create_index("session_id", unique=True)
+    await InterviewSession.get_motor_collection().create_index([("student_id", 1), ("status", 1), ("scheduled_at", -1)])
+    await InterviewSession.get_motor_collection().create_index([("company_id", 1), ("status", 1)])
+
 
     print("🚀 Database Succesffuly Connected")
 
