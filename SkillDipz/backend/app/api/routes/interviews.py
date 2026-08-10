@@ -432,19 +432,21 @@ def _build_system_prompt(company_key: str, interview_type: str, duration_mins: i
     context = company_prompts.get(company_key.lower(), "Senior Technical Interviewer at a premier technology company.")
 
     if interview_type == "hr":
-        return f"""You are conducting an HR / Culture Fit interview. {context}
-Duration: {duration_mins} minutes.
-Ask behavioral questions using the STAR framework (Situation, Task, Action, Result).
-Evaluate: leadership, communication, adaptability, conflict resolution, and career vision.
-Ask ONE concise question at a time. Provide 1 sentence of encouraging feedback on candidate answers before asking the next question.
-Begin by welcoming the candidate and asking for a short introduction."""
+        return f"""You are an elite HR / Culture Fit Interviewer. {context}
+Total Interview Length: 7 sequential questions.
+Your behavior rules:
+1. Evaluate candidate's previous response with 1 encouraging sentence.
+2. Ask ONE focused, realistic HR question at a time using the STAR framework (Situation, Task, Action, Result).
+3. Cover: leadership, teamwork under pressure, conflict resolution, career ambitions, and adaptability.
+4. CRITICAL: Do NOT wrap up or say 'interview completed' until question 7 is reached! Keep asking follow-up questions."""
     else:
-        return f"""You are conducting a rigorous Technical Interview. {context}
-Duration: {duration_mins} minutes.
-Ask technical questions starting with core fundamentals, then deep-dive into architecture, algorithms, and domain scenario questions.
-Ask ONE question at a time. Evaluate accuracy, technical depth, and problem-solving clarity.
-Provide 1-2 sentences of constructive feedback after each candidate response before asking the next question.
-Begin by welcoming the candidate and asking them to introduce themselves and highlight their key technical stack."""
+        return f"""You are a world-class Senior Technical Interviewer. {context}
+Total Interview Length: 7 sequential technical questions.
+Your behavior rules:
+1. Acknowledge candidate's answer with 1 sentence of technical assessment or feedback.
+2. Ask ONE targeted technical follow-up question at a time. Progress from core fundamentals -> system design -> data structures/algorithms -> concurrency & databases -> real-world debugging scenarios.
+3. Keep your questions sharp, professional, and challenging.
+4. CRITICAL: Do NOT say 'We have completed all interview modules' or end early! Ask question N of 7 sequentially."""
 
 
 @ai_router.post("/start", status_code=201)
@@ -506,6 +508,33 @@ async def start_ai_interview(
     }
 
 
+def _get_fallback_question(company_name: str, interview_type: str, q_num: int, answer: str) -> str:
+    """Intelligent fallback question generator when LLM API is unreachable."""
+    if q_num >= 7:
+        return f"Thank you for sharing your technical insights. That completes our 7-question proctored interview module for {company_name}. We will evaluate your overall performance now."
+
+    tech_questions = {
+        2: f"Great! Coming to core architecture at {company_name}, how do you design your backend services for high concurrency and thread safety?",
+        3: f"Understood. When building scalable data pipelines at {company_name}, how do you handle database indexing, transaction locks, and query optimization?",
+        4: f"Thanks. How do you implement caching strategies (such as Redis) and handle cache invalidation and stampede issues in production?",
+        5: f"Good points. Can you walk me through a complex technical problem or bug you solved in your recent projects using Python or fullstack tools?",
+        6: f"Excellent. How do you design microservices for resiliency, circuit breaking, and event-driven messaging using systems like Kafka or RabbitMQ?",
+        7: f"Thank you for your responses! That wraps up our technical deep-dive for {company_name}. Do you have any questions for the team?",
+    }
+
+    hr_questions = {
+        2: f"Thanks for introducing yourself! Tell me about a time you faced a tight deadline or conflicting priorities. How did you handle it?",
+        3: f"Good insight. Can you share an instance where you disagreed with a teammate or lead on a technical approach? How was it resolved?",
+        4: f"Great. Describe a project where you had to take complete ownership from design to deployment. What were the key challenges?",
+        5: f"Understood. How do you handle constructive feedback or sudden changes in project requirements?",
+        6: f"What specifically attracts you to work with our team at {company_name}, and where do you see your technical growth in the next 2 years?",
+        7: f"Thank you! That completes our HR assessment for {company_name}. We appreciate your time today!",
+    }
+
+    q_map = hr_questions if interview_type == "hr" else tech_questions
+    return q_map.get(q_num, f"Thank you. Let's move on to the next question for {company_name}: Can you elaborate on your experience with automated testing and CI/CD pipelines?")
+
+
 @ai_router.post("/{session_id}/answer")
 async def submit_ai_answer(
     session_id: str,
@@ -521,41 +550,53 @@ async def submit_ai_answer(
         raise HTTPException(status_code=400, detail=f"Session is currently {session.status}")
 
     MAX_QUESTIONS = 7
+
+    # Append user's answer
     session.conversation.append({"role": "user", "content": body.answer})
 
+    # Increment question turn count
+    next_q_num = session.question_count + 1
+    interview_over = next_q_num > MAX_QUESTIONS
+
+    company_name = session.target_company_name or session.company_key or "SkillDipz AI"
+    ai_response = _get_fallback_question(company_name, session.interview_type, next_q_num, body.answer)
+
     groq = _get_groq_client()
-    interview_over = session.question_count >= MAX_QUESTIONS
-
-    if interview_over:
-        session.conversation.append({
-            "role": "system",
-            "content": "Interview duration reached. Briefly thank the candidate, provide a summary statement, and wrap up."
-        })
-
-    ai_response = "Thank you for sharing that answer. We have completed all interview modules."
-
     if groq and settings.GROQ_API_KEY:
         try:
-            messages = [{
-                "role": "system",
-                "content": _build_system_prompt(session.company_key or "default", session.interview_type, session.duration_mins)
-            }]
+            # Build System Prompt with explicit turn context
+            system_prompt = (
+                _build_system_prompt(session.company_key or "default", session.interview_type, session.duration_mins)
+                + f"\n\nCURRENT STATUS: Candidate just submitted answer to question {session.question_count} of {MAX_QUESTIONS}."
+            )
+
+            if interview_over:
+                system_prompt += "\nThis is the FINAL TURN. Thank the candidate, provide a brief wrap-up evaluation, and conclude the interview."
+            else:
+                system_prompt += f"\nYou must now ask QUESTION {next_q_num} of {MAX_QUESTIONS}. Give 1 brief sentence acknowledging their answer, then ask your next technical question."
+
+            # Construct clean OpenAI/Groq messages array with SYSTEM at index 0 ONLY
+            messages = [{"role": "system", "content": system_prompt}]
             for turn in session.conversation:
-                role = "assistant" if turn["role"] == "ai" else turn["role"]
-                messages.append({"role": role, "content": turn["content"]})
+                # Ensure only 'user' or 'assistant' roles are passed in history
+                if turn.get("role") in ("user", "ai", "assistant"):
+                    role = "assistant" if turn["role"] == "ai" else turn["role"]
+                    messages.append({"role": role, "content": turn["content"]})
 
             resp = await groq.chat.completions.create(
                 model="llama-3.3-70b-versatile",
                 messages=messages,
-                max_tokens=400,
+                max_tokens=350,
                 temperature=0.7,
             )
-            ai_response = resp.choices[0].message.content.strip()
+            llm_text = resp.choices[0].message.content.strip()
+            if llm_text:
+                ai_response = llm_text
         except Exception as e:
-            logger.warning(f"Groq turn error: {e}")
+            logger.warning(f"Groq turn API error: {e}")
 
     session.conversation.append({"role": "ai", "content": ai_response})
-    session.question_count += 1
+    session.question_count = next_q_num
 
     if interview_over:
         score_data = await _evaluate_ai_interview(session)
@@ -563,7 +604,7 @@ async def submit_ai_answer(
         session.technical_score = score_data.get("technical")
         session.communication_score = score_data.get("communication")
         session.coding_score = score_data.get("coding")
-        session.feedback = score_data.get("feedback", "Completed practice session.")
+        session.feedback = score_data.get("feedback", "Completed proctored practice session.")
         session.transcript = _format_transcript(session.conversation)
         session.status = "completed"
         session.ended_at = datetime.now(timezone.utc)
@@ -575,7 +616,7 @@ async def submit_ai_answer(
             "overall_score": session.overall_score,
             "feedback": session.feedback,
             "mode": "ai",
-            "company_name": session.target_company_name or "SkillDipz AI",
+            "company_name": company_name,
         })
 
         return {

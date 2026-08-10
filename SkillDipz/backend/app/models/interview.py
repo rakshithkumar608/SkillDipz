@@ -5,7 +5,7 @@ from datetime import datetime, timezone
 import uuid
 
 
-class ProtectingReport(BaseModel):
+class ProctoringReport(BaseModel):
     snapshots_s3_keys: List[str] = []
     violations: List[Dict[str, Any]] = []
     face_detection_alerts: List[Dict[str, Any]] = []
@@ -15,7 +15,7 @@ class InterviewViolation(BaseModel):
     type: Literal[
         "tab_switch",
         "fullscreen_exit",
-        "copy_attempts",
+        "copy_attempt",
         "window_blur",
         "keyboard_shortcut",
         "context_menu",

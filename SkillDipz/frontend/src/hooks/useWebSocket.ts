@@ -66,6 +66,36 @@ export function useWebSocket(userId: string | undefined): WsState {
             [newNotif, ...s.notifications].slice(0, 20),
             s.unreadCount + 1,
           );
+
+          // Show prominent toast for company interview schedules & alerts
+          if (
+            newNotif.type === "interview_scheduled" ||
+            (newNotif as any).notification_type === "interview_scheduled"
+          ) {
+            toast.success(`🎯 ${newNotif.title}`, {
+              description: newNotif.body,
+              duration: 8000,
+              action: {
+                label: "View Interview",
+                onClick: () =>
+                  (window.location.href =
+                    newNotif.action_url || "/student/mock-interview"),
+              },
+            });
+          } else if (
+            newNotif.type === "interview_terminated" ||
+            (newNotif as any).notification_type === "interview_terminated"
+          ) {
+            toast.error(`⚠️ ${newNotif.title}`, {
+              description: newNotif.body,
+              duration: 8000,
+            });
+          } else {
+            toast.info(newNotif.title, {
+              description: newNotif.body,
+              duration: 5000,
+            });
+          }
         }
 
         if (msg.type === "new_project_group") {
