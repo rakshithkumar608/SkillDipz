@@ -7,6 +7,7 @@ import {
   useDashboardStore,
 } from "@/store/dashboardStore";
 import { useCallback, useEffect, useRef, useState } from "react";
+import { toast } from "sonner";
 
 const WS_BASE = (process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000/v1").replace(/^http/, "ws");
 
@@ -57,6 +58,7 @@ export function useWebSocket(userId: string | undefined): WsState {
             });
           }
         }
+
         if (msg.type === "notification") {
           const newNotif = msg.payload as NotificationItem;
           const s = useDashboardStore.getState();
@@ -64,6 +66,33 @@ export function useWebSocket(userId: string | undefined): WsState {
             [newNotif, ...s.notifications].slice(0, 20),
             s.unreadCount + 1,
           );
+        }
+
+        if (msg.type === "new_project_group") {
+          const { creator_name, title } = msg.payload as {
+            creator_name: string;
+            title: string;
+            project_id: string;
+          };
+          toast.info(`🚀 ${creator_name} just created a project group: "${title}"`, {
+            description: "Head to Projects to collaborate!",
+            duration: 6000,
+            action: {
+              label: "View",
+              onClick: () => window.location.href = "/student/projects",
+            },
+          });
+        }
+
+        if (msg.type === "member_joined_project") {
+          const { joiner_name, title } = msg.payload as {
+            joiner_name: string;
+            title: string;
+            project_id: string;
+          };
+          toast.success(`👋 ${joiner_name} joined your project "${title}"`, {
+            duration: 5000,
+          });
         }
       } catch {
         // ignore malformed messages

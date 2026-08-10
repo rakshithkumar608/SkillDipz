@@ -30,4 +30,19 @@ class WebSocketManager:
                 logger.warning(f"WS send error for {student_id}: {e}")
                 self.disconnect(student_id)
 
+    async def broadcast_all(self, event_type: str, payload: Any, exclude_user_id: str | None = None):
+        """Push an event to every currently connected WebSocket client."""
+        message = json.dumps({"type": event_type, "payload": payload})
+        disconnected = []
+        for uid, ws in list(self._connections.items()):
+            if uid == exclude_user_id:
+                continue
+            try:
+                await ws.send_text(message)
+            except Exception as e:
+                logger.warning(f"WS broadcast_all error for {uid}: {e}")
+                disconnected.append(uid)
+        for uid in disconnected:
+            self.disconnect(uid)
+
 ws_manager = WebSocketManager()

@@ -473,6 +473,15 @@ async def create_student_project(
         members=[GroupMember(student_id=student_id, name=creator_name)],
     )
     await project.insert()
+
+    # Notify all other users that a new project group is open for collaboration
+    await event_bus.publish("student_project.created", {
+        "project_id": str(project.id),
+        "creator_id": student_id,
+        "creator_name": creator_name,
+        "title": project.title,
+    })
+
     return {
         "message": "Project created successfully.",
         "project_id": str(project.id),
@@ -573,10 +582,24 @@ async def join_student_project(
 
     profile = await StudentProfile.find_one(StudentProfile.student_id == student_id)
     name = profile.name if profile else "Student"
+
+    # Collect existing members before appending the new joiner (to notify them)
+    existing_member_ids = [m.student_id for m in project.members if m.student_id != student_id]
+
     project.members.append(GroupMember(student_id=student_id, name=name))
     if len(project.members) >= project.max_members:
         project.is_open = False
     await project.save()
+
+    # Notify existing group members of the new joiner
+    await event_bus.publish("student_project.joined", {
+        "project_id": str(project.id),
+        "joiner_id": student_id,
+        "joiner_name": name,
+        "title": project.title,
+        "existing_member_ids": existing_member_ids,
+    })
+
     return {"message": f"Joined '{project.title}' successfully.", "project_id": str(project.id)}
 
 

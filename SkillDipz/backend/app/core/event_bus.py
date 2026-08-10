@@ -356,6 +356,67 @@ async def _handle_interview_terminated(payload: Dict[str, Any]) -> None:
         f"{payload.get('student_id')}: {payload.get('reason')}"
     )
 
+
+async def _handle_student_project_created(payload: Dict[str, Any]) -> None:
+    """When a student creates a personal project group, notify all online users
+    via WebSocket and persist a notification for offline users."""
+    creator_id = payload.get("creator_id", "")
+    creator_name = payload.get("creator_name", "A student")
+    project_title = payload.get("title", "a new project")
+    project_id = payload.get("project_id", "")
+
+    # 1. Live push to every connected user (excluding the creator themselves)
+    await ws_manager.broadcast_all(
+        "new_project_group",
+        {
+            "creator_name": creator_name,
+            "title": project_title,
+            "project_id": project_id,
+        },
+        exclude_user_id=creator_id,
+    )
+
+    # 2. Persist notification for offline users (visible in the bell on next login)
+    all_profiles = await StudentProfile.find_all().to_list()
+    for profile in all_profiles:
+        if profile.student_id == creator_id:
+            continue
+        await send_notification(
+            student_id=profile.student_id,
+            title=f"{creator_name} created a project group",
+            body=f'"{project_title}" is looking for collaborators. Join now!',
+            action_url="/student/projects",
+            notification_type="general",
+        )
+
+
+async def _handle_student_project_joined(payload: Dict[str, Any]) -> None:
+    """When a student joins a project group, notify existing members."""
+    joiner_name = payload.get("joiner_name", "Someone")
+    project_title = payload.get("title", "your project")
+    project_id = payload.get("project_id", "")
+    member_ids: list = payload.get("existing_member_ids", [])
+
+    for member_id in member_ids:
+        # Live push if they're online
+        await ws_manager.broadcast(
+            member_id,
+            "member_joined_project",
+            {
+                "joiner_name": joiner_name,
+                "title": project_title,
+                "project_id": project_id,
+            },
+        )
+        # Persist for offline
+        await send_notification(
+            student_id=member_id,
+            title=f"{joiner_name} joined your project",
+            body=f"{joiner_name} joined \"{project_title}\". You now have a new teammate!",
+            action_url="/student/projects",
+            notification_type="general",
+        )
+
 def register_target_company_handlers():
     event_bus.subscribe("score.updated", _handle_score_updated)
     event_bus.subscribe("profile.updated", _handle_profile_updated)
@@ -370,3 +431,6 @@ def register_target_company_handlers():
     event_bus.subscribe("project.evaluated", _handle_project_evaluated)
     event_bus.subscribe("interview.completed", _handle_interview_completed)
     event_bus.subscribe("interview.terminated", _handle_interview_terminated)
+    # Student personal project group notifications
+    event_bus.subscribe("student_project.created", _handle_student_project_created)
+    event_bus.subscribe("student_project.joined", _handle_student_project_joined)
