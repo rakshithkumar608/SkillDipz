@@ -34,6 +34,8 @@ from app.models.assessment import (
     CodingSolvedProblem,
 )
 
+from app.models.daily_assignment import DailyAssignment, CompanySponsoredChallenge
+
 client: AsyncIOMotorClient | None = None
 
 
@@ -70,6 +72,8 @@ async def connect_db():
             CodingQuestion,
             CodingSolvedProblem,
             InterviewSession,
+            DailyAssignment,
+            CompanySponsoredChallenge,
         ],
     )
 

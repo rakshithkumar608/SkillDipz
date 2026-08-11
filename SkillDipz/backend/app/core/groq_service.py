@@ -44,11 +44,7 @@ Respond ONLY with a JSON object in this exact format:
 
 
 async def fetch_realtime_benchmarks_from_groq(role: str) -> list[dict]:
-    """
-    Calls Groq AI to generate real-time industry benchmark skills for a given role.
-    Returns list of dicts: [{'role', 'skill', 'required_level', 'priority'}]
-    Returns [] if API key not set or request fails.
-    """
+   
     if not settings.GROQ_API_KEY:
         logger.warning("GROQ_API_KEY not set — cannot generate real-time benchmarks.")
         return []
@@ -107,15 +103,9 @@ async def fetch_realtime_benchmarks_from_groq(role: str) -> list[dict]:
 
 
 async def get_or_generate_benchmarks(role: str) -> list[RoleSkillBenchmark]:
-    """
-    Primary entry point for benchmark data.
-    1. Check MongoDB cache (fast path).
-    2. If not cached → call Groq AI → save to MongoDB.
-    3. If Groq fails or key not set → return [] (zero mock/hardcoded data).
-    """
     role_clean = role.lower().strip()
 
-    # ── 1. DB cache hit ──────────────────────────────────────────────────────
+    #  DB cache hit 
     existing = await RoleSkillBenchmark.find(
         {"role": {"$regex": f"^{re.escape(role_clean)}$", "$options": "i"}}
     ).sort(RoleSkillBenchmark.priority).to_list()
@@ -124,7 +114,7 @@ async def get_or_generate_benchmarks(role: str) -> list[RoleSkillBenchmark]:
         logger.debug(f"Cache hit: {len(existing)} benchmarks for '{role_clean}'")
         return existing
 
-    # ── 2. Cache miss → Groq AI ──────────────────────────────────────────────
+    #2. Cache miss → Groq AI 
     raw = await fetch_realtime_benchmarks_from_groq(role_clean)
 
     if raw:
@@ -133,6 +123,210 @@ async def get_or_generate_benchmarks(role: str) -> list[RoleSkillBenchmark]:
         logger.info(f"Cached {len(docs)} Groq benchmarks for '{role_clean}'")
         return docs
 
-    # ── 3. Groq unavailable → return nothing (no mock data) ──────────────────
+    #  3. Groq unavailable → return nothing 
     logger.warning(f"No benchmarks available for '{role_clean}' — GROQ_API_KEY may not be set.")
     return []
+
+
+# FLASHCARD GENERATION
+
+_FLASHCARD_SYSTEM = (
+    "You are a senior software engineer and technical educator. "
+    "Generate concise, accurate flashcards for a technical concept. "
+    "Always respond with strictly valid JSON only — no markdown, no explanation, no code blocks."
+)
+
+
+def _build_flashcard_prompt(skill: str, role: str) -> str:
+    return f"""
+Generate exactly 5 flashcard question-answer pairs for the skill "{skill}" targeted at a "{role}" developer.
+
+Rules:
+1. Each question must be specific, practical, and interview-relevant.
+2. Each answer must be clear and concise (1-3 sentences max).
+3. Cover different sub-topics within "{skill}" — do not repeat the same concept.
+4. Use real technical terminology — no vague or beginner platitudes.
+
+Respond ONLY with this exact JSON format:
+{{
+  "flashcards": [
+    {{"front": "Question here?", "back": "Answer here."}},
+    {{"front": "Question here?", "back": "Answer here."}},
+    {{"front": "Question here?", "back": "Answer here."}},
+    {{"front": "Question here?", "back": "Answer here."}},
+    {{"front": "Question here?", "back": "Answer here."}}
+  ]
+}}
+""".strip()
+
+
+async def generate_flashcards_for_skill(
+    skill: str,
+    role: str,
+    redis=None,
+    ttl: int = 6 * 3600,
+) -> list[dict[str, str]]:
+    
+    cache_key = f"groq_flashcards:{skill.lower().replace(' ', '_')}:{role.lower()}"
+
+    # Redis cache hit
+    if redis:
+        try:
+            cached = await redis.get(cache_key)
+            if cached:
+                return json.loads(cached)
+        except Exception as e:
+            logger.warning(f"Redis read failed for flashcard cache: {e}")
+
+    if not settings.GROQ_API_KEY:
+        logger.warning("GROQ_API_KEY not set — cannot generate flashcards.")
+        return []
+
+    payload = {
+        "model": GROQ_MODEL,
+        "messages": [
+            {"role": "system", "content": _FLASHCARD_SYSTEM},
+            {"role": "user", "content": _build_flashcard_prompt(skill, role)},
+        ],
+        "temperature": 0.3,
+        "response_format": {"type": "json_object"},
+        "max_tokens": 1024,
+    }
+
+    headers = {
+        "Authorization": f"Bearer {settings.GROQ_API_KEY}",
+        "Content-Type": "application/json",
+    }
+
+    try:
+        async with httpx.AsyncClient(timeout=20) as client:
+            res = await client.post(GROQ_COMPLETIONS_URL, json=payload, headers=headers)
+            res.raise_for_status()
+            content = res.json()["choices"][0]["message"]["content"].strip()
+            parsed = json.loads(content)
+
+        cards = parsed.get("flashcards", [])
+        if not isinstance(cards, list) or not cards:
+            logger.error(f"Groq flashcard response malformed for '{skill}': {content[:200]}")
+            return []
+
+        # Validate shape
+        valid = [
+            c for c in cards
+            if isinstance(c, dict) and "front" in c and "back" in c
+        ]
+
+        if redis and valid:
+            try:
+                await redis.setex(cache_key, ttl, json.dumps(valid))
+            except Exception as e:
+                logger.warning(f"Redis write failed for flashcard cache: {e}")
+
+        logger.info(f"⚡ Groq generated {len(valid)} flashcards for '{skill}'")
+        return valid
+
+    except httpx.HTTPStatusError as e:
+        logger.error(f"Groq flashcard HTTP error for '{skill}': {e.response.status_code}")
+        return []
+    except Exception as e:
+        logger.error(f"Groq flashcard generation failed for '{skill}': {e}")
+        return []
+
+
+#  EXPLAIN PROMPT GENERATION
+
+_EXPLAIN_SYSTEM = (
+    "You are a senior software engineer and technical interviewer. "
+    "Generate deep, thought-provoking 'Explain this concept' prompts that would be asked in real senior-level technical interviews. "
+    "Always respond with strictly valid JSON only — no markdown, no explanation, no code blocks."
+)
+
+
+def _build_explain_prompt(skill: str, role: str) -> str:
+    return f"""
+Generate exactly 3 "Explain this concept" prompts for the skill "{skill}" targeted at a "{role}" developer.
+
+Rules:
+1. Each prompt must start with "Explain:" followed by a specific technical question.
+2. Questions must target understanding and reasoning — not just definition recall.
+3. Cover different aspects of "{skill}" — architecture, trade-offs, internals, or real-world usage.
+4. The student should be able to answer in 60 seconds (spoken or written).
+
+Respond ONLY with this exact JSON format:
+{{
+  "prompts": [
+    "Explain: ...",
+    "Explain: ...",
+    "Explain: ..."
+  ]
+}}
+""".strip()
+
+
+async def generate_explain_prompts_for_skill(
+    skill: str,
+    role: str,
+    redis=None,
+    ttl: int = 6 * 3600,
+) -> list[str]:
+    
+    cache_key = f"groq_explain:{skill.lower().replace(' ', '_')}:{role.lower()}"
+
+    # Redis cache hit
+    if redis:
+        try:
+            cached = await redis.get(cache_key)
+            if cached:
+                return json.loads(cached)
+        except Exception as e:
+            logger.warning(f"Redis read failed for explain cache: {e}")
+
+    if not settings.GROQ_API_KEY:
+        logger.warning("GROQ_API_KEY not set — cannot generate explain prompts.")
+        return []
+
+    payload = {
+        "model": GROQ_MODEL,
+        "messages": [
+            {"role": "system", "content": _EXPLAIN_SYSTEM},
+            {"role": "user", "content": _build_explain_prompt(skill, role)},
+        ],
+        "temperature": 0.4,
+        "response_format": {"type": "json_object"},
+        "max_tokens": 512,
+    }
+
+    headers = {
+        "Authorization": f"Bearer {settings.GROQ_API_KEY}",
+        "Content-Type": "application/json",
+    }
+
+    try:
+        async with httpx.AsyncClient(timeout=20) as client:
+            res = await client.post(GROQ_COMPLETIONS_URL, json=payload, headers=headers)
+            res.raise_for_status()
+            content = res.json()["choices"][0]["message"]["content"].strip()
+            parsed = json.loads(content)
+
+        prompts = parsed.get("prompts", [])
+        if not isinstance(prompts, list) or not prompts:
+            logger.error(f"Groq explain response malformed for '{skill}': {content[:200]}")
+            return []
+
+        valid = [p for p in prompts if isinstance(p, str) and p.startswith("Explain:")]
+
+        if redis and valid:
+            try:
+                await redis.setex(cache_key, ttl, json.dumps(valid))
+            except Exception as e:
+                logger.warning(f"Redis write failed for explain cache: {e}")
+
+        logger.info(f"⚡ Groq generated {len(valid)} explain prompts for '{skill}'")
+        return valid
+
+    except httpx.HTTPStatusError as e:
+        logger.error(f"Groq explain HTTP error for '{skill}': {e.response.status_code}")
+        return []
+    except Exception as e:
+        logger.error(f"Groq explain prompt generation failed for '{skill}': {e}")
+        return []

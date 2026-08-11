@@ -22,6 +22,11 @@ from app.api.routes.projects import student_router as projects_student_router
 from app.api.routes.projects import company_router as projects_company_router
 from app.api.routes.assessments import router as assessments_router
 from app.api.routes.practice import router as practice_router
+from app.api.routes.daily_assignments import (
+    router as daily_assignments_router,
+    company_router as daily_challenge_company_router,
+    public_router as daily_assignments_stats_router,
+)
 
 
 from app.api.routes.interviews import (
@@ -89,8 +94,14 @@ app.include_router(projects_student_router, prefix="/v1/projects/student")
 app.include_router(projects_company_router, prefix="/v1/projects/company")
 # Skill Text (MCQ) - /v1/assessments
 app.include_router(assessments_router, prefix="/v1")
-# Coding Practice (Codeforces) - /v1/practise
+# Coding Practice (Codeforces) - /v1/practice
 app.include_router(practice_router, prefix="/v1")
+# Daily Assignments — /v1/students/me/daily-assignments
+app.include_router(daily_assignments_router, prefix="/v1")
+# Daily Assignments — Company Sponsored — /v1/companies/me/daily-challenge
+app.include_router(daily_challenge_company_router, prefix="/v1")
+# Daily Assignments — Public Stats — /v1/daily-assignments/stats
+app.include_router(daily_assignments_stats_router, prefix="/v1")
 # Interview 
 app.include_router(interviews_router, prefix="/v1")
 app.include_router(ai_interview_router, prefix="/v1")
