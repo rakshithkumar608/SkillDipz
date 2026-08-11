@@ -1,7 +1,5 @@
 import api from "./api";
 
-
-
 export interface Flashcard {
   front: string;
   back: string;
@@ -16,20 +14,14 @@ export interface DailyTask {
   points: number;
   completed_at?: string;
   skill_tag?: string;
-  // quiz
   topic_id?: string;
-  // code
   cf_url?: string;
   cf_rating?: number;
-  // video
   youtube_id?: string;
   channel?: string;
   duration_label?: string;
-  // flashcard
   flashcards?: Flashcard[];
-  // explain
   explain_prompt?: string;
-  // resume_tweak
   resume_skill?: string;
   tweak_instruction?: string;
 }
@@ -60,20 +52,17 @@ export interface PlatformStats {
   total_active_students: number;
 }
 
+export interface StreakData {
+  current_streak: number;
+  longest_streak: number;
+  last_active: string | null;
+}
 
-/** Get today's assignment (auto-generates if not yet created) */
 export const getTodayAssignment = async (): Promise<DailyAssignment> => {
   const { data } = await api.get("/students/me/daily-assignments");
   return data;
 };
 
-/** Get assignment for a specific date (read-only for past dates) */
-export const getAssignmentByDate = async (date: string): Promise<DailyAssignment> => {
-  const { data } = await api.get("/students/me/daily-assignments", { params: { date } });
-  return data;
-};
-
-/** Mark a specific task as completed */
 export const completeTask = async (
   taskId: string
 ): Promise<{ message: string; task_id: string; all_done: boolean; streak: number }> => {
@@ -81,8 +70,13 @@ export const completeTask = async (
   return data;
 };
 
-/** Get platform-wide completion stats for the social proof widget */
 export const getPlatformStats = async (): Promise<PlatformStats> => {
   const { data } = await api.get("/daily-assignments/stats");
   return data;
 };
+
+export const getStreakData = async (): Promise<StreakData> => {
+  const { data } = await api.get("/students/me/streak");
+  return data;
+};
+

@@ -43,13 +43,14 @@ type ActivityType =
   | "project"
   | "resume";
 
-type FilterType = ActivityType | "all";
+type FilterType = ActivityType | "all" | "daily";
 
 // Constants
 const PAGE_SIZE = 20;
 
 const FILTER_TABS: { key: FilterType; label: string }[] = [
   { key: "all", label: "All" },
+  { key: "daily", label: "Daily Tasks" },
   { key: "submission", label: "Code" },
   { key: "assessment", label: "Tests" },
   { key: "resume", label: "Resume" },
@@ -425,7 +426,18 @@ function ActivityIcon({ type }: { type: string }) {
   }
 }
 
-function TypeBadge({ type }: { type: string }) {
+function TypeBadge({ type, title }: { type: string; title?: string }) {
+  if (title?.startsWith("Daily Task")) {
+    return (
+      <span
+        className="inline-flex items-center px-2.5 py-0.5 rounded-full text-[10px]
+          font-extrabold tracking-wide bg-amber-500/20 text-amber-300 border border-amber-500/40 shadow-sm shadow-amber-500/10"
+      >
+        ⚡ Daily Task
+      </span>
+    );
+  }
+
   const styles: Record<ActivityType, string> = {
     submission: "bg-cyan-500/20 text-cyan-300 border-cyan-500/40 shadow-sm shadow-cyan-500/10",
     assessment: "bg-purple-500/20 text-purple-300 border-purple-500/40 shadow-sm shadow-purple-500/10",
@@ -498,7 +510,7 @@ function ActivityRow({
           <span className="text-sm font-bold text-slate-100 group-hover:text-cyan-300 transition-colors truncate">
             {item.title}
           </span>
-          <TypeBadge type={item.type} />
+          <TypeBadge type={item.type} title={item.title} />
         </div>
         <p className="text-xs text-slate-400 font-sans leading-relaxed">
           {item.detail}
@@ -590,6 +602,9 @@ export default function ActivityPage() {
 
   const displayed = useMemo(() => {
     if (filter === "all") return activity;
+    if (filter === "daily") {
+      return activity.filter((a) => a.title.startsWith("Daily Task"));
+    }
     if (filter === "submission") {
       return activity.filter(
         (a) =>
@@ -639,6 +654,10 @@ export default function ActivityPage() {
   );
   const projectCount = useMemo(
     () => activity.filter((a) => a.type === "project" || a.type === "module").length,
+    [activity],
+  );
+  const dailyTaskCount = useMemo(
+    () => activity.filter((a) => a.title.startsWith("Daily Task")).length,
     [activity],
   );
 
@@ -857,8 +876,8 @@ export default function ActivityPage() {
       )}
 
       {/* Category-Specific Streak & Activity Breakdown Cards */}
-      <div className="grid grid-cols-1 sm:grid-cols-3 gap-3.5">
-        {/* Coding Practice Streak Card (Cyan) */}
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3.5">
+        {/* Coding Practice Card (Cyan) */}
         <button
           onClick={() => setFilter("submission")}
           className={`p-4 rounded-2xl border text-left transition-all duration-200 backdrop-blur-xl relative overflow-hidden group ${
@@ -872,24 +891,24 @@ export default function ActivityPage() {
               <div className="p-2 rounded-xl bg-cyan-500/20 text-cyan-400 border border-cyan-500/30">
                 <Terminal className="w-4 h-4" />
               </div>
-              <span className="text-xs font-bold text-slate-200">Coding Practice Streak</span>
+              <span className="text-xs font-bold text-slate-200">Coding Practice</span>
             </div>
             <span className="text-[10px] font-extrabold px-2.5 py-0.5 rounded-full bg-cyan-500/20 text-cyan-300 border border-cyan-500/30">
-              Coding
+              Code
             </span>
           </div>
           <div className="flex items-baseline justify-between mt-3">
             <div>
               <span className="text-2xl font-extrabold text-cyan-400 font-mono">{codingCount}</span>
-              <span className="text-xs text-slate-400 ml-1.5 font-medium">challenges solved</span>
+              <span className="text-xs text-slate-400 ml-1.5 font-medium">solved</span>
             </div>
             <span className="text-[11px] text-cyan-300 font-bold flex items-center gap-1 group-hover:translate-x-0.5 transition-transform">
-              View Stream →
+              View →
             </span>
           </div>
         </button>
 
-        {/* MCQ Assessment Streak Card (Purple) */}
+        {/* MCQ Assessment Card (Purple) */}
         <button
           onClick={() => setFilter("assessment")}
           className={`p-4 rounded-2xl border text-left transition-all duration-200 backdrop-blur-xl relative overflow-hidden group ${
@@ -903,19 +922,19 @@ export default function ActivityPage() {
               <div className="p-2 rounded-xl bg-purple-500/20 text-purple-400 border border-purple-500/30">
                 <ClipboardList className="w-4 h-4" />
               </div>
-              <span className="text-xs font-bold text-slate-200">MCQ Assessment Streak</span>
+              <span className="text-xs font-bold text-slate-200">MCQ Assessments</span>
             </div>
             <span className="text-[10px] font-extrabold px-2.5 py-0.5 rounded-full bg-purple-500/20 text-purple-300 border border-purple-500/30">
-              MCQ Tests
+              MCQ
             </span>
           </div>
           <div className="flex items-baseline justify-between mt-3">
             <div>
               <span className="text-2xl font-extrabold text-purple-400 font-mono">{mcqCount}</span>
-              <span className="text-xs text-slate-400 ml-1.5 font-medium">tests completed</span>
+              <span className="text-xs text-slate-400 ml-1.5 font-medium">completed</span>
             </div>
             <span className="text-[11px] text-purple-300 font-bold flex items-center gap-1 group-hover:translate-x-0.5 transition-transform">
-              View Stream →
+              View →
             </span>
           </div>
         </button>
@@ -934,7 +953,7 @@ export default function ActivityPage() {
               <div className="p-2 rounded-xl bg-teal-500/20 text-teal-400 border border-teal-500/30">
                 <CheckCircle2 className="w-4 h-4" />
               </div>
-              <span className="text-xs font-bold text-slate-200">Projects &amp; Learning</span>
+              <span className="text-xs font-bold text-slate-200">Projects & Learning</span>
             </div>
             <span className="text-[10px] font-extrabold px-2.5 py-0.5 rounded-full bg-teal-500/20 text-teal-300 border border-teal-500/30">
               Projects
@@ -943,12 +962,52 @@ export default function ActivityPage() {
           <div className="flex items-baseline justify-between mt-3">
             <div>
               <span className="text-2xl font-extrabold text-teal-400 font-mono">{projectCount}</span>
-              <span className="text-xs text-slate-400 ml-1.5 font-medium">projects &amp; modules</span>
+              <span className="text-xs text-slate-400 ml-1.5 font-medium">projects & modules</span>
             </div>
             <span className="text-[11px] text-teal-300 font-bold flex items-center gap-1 group-hover:translate-x-0.5 transition-transform">
-              View Stream →
+              View →
             </span>
           </div>
+        </button>
+
+        {/* Daily Assignments Card (Amber) — NEW */}
+        <button
+          onClick={() => setFilter("daily")}
+          className={`p-4 rounded-2xl border text-left transition-all duration-200 backdrop-blur-xl relative overflow-hidden group ${
+            filter === "daily"
+              ? "bg-amber-950/60 border-amber-500/50 shadow-lg shadow-amber-500/10 ring-1 ring-amber-500/30"
+              : "bg-slate-900/60 border-slate-800 hover:border-amber-500/30 hover:bg-slate-800/80"
+          }`}
+        >
+          <div className="absolute top-0 right-0 w-14 h-14 bg-amber-500/5 rounded-full blur-xl group-hover:bg-amber-500/10 transition-all pointer-events-none" />
+          <div className="flex items-center justify-between mb-2">
+            <div className="flex items-center gap-2">
+              <div className="p-2 rounded-xl bg-amber-500/20 text-amber-400 border border-amber-500/30">
+                <Flame className="w-4 h-4" />
+              </div>
+              <span className="text-xs font-bold text-slate-200">Daily Assignments</span>
+            </div>
+            <span className="text-[10px] font-extrabold px-2.5 py-0.5 rounded-full bg-amber-500/20 text-amber-300 border border-amber-500/30">
+              ⚡ Daily
+            </span>
+          </div>
+          <div className="flex items-baseline justify-between mt-3">
+            <div>
+              <span className="text-2xl font-extrabold text-amber-400 font-mono">{dailyTaskCount}</span>
+              <span className="text-xs text-slate-400 ml-1.5 font-medium">tasks done</span>
+            </div>
+            <span className="text-[11px] text-amber-300 font-bold flex items-center gap-1 group-hover:translate-x-0.5 transition-transform">
+              View →
+            </span>
+          </div>
+          {dailyTaskCount > 0 && (
+            <div className="flex items-center gap-1 mt-2">
+              <Flame className="w-3 h-3 text-amber-400 animate-pulse" />
+              <span className="text-[10px] text-amber-400 font-bold">
+                {calendar?.current_streak ?? 0}d streak
+              </span>
+            </div>
+          )}
         </button>
       </div>
 

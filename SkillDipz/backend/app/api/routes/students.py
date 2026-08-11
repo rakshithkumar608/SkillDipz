@@ -552,31 +552,29 @@ async def log_activity(
 def _compute_streak(active_dates: set[date]) -> tuple[int, int, Optional[date]]:
     if not active_dates:
         return 0, 0, None
-    
+
     today = date.today()
     sorted_dates = sorted(active_dates, reverse=True)
     last_active = sorted_dates[0]
 
-    #  Current streak: walk backwards from today
+    # Current streak: walk backwards from today (or yesterday if not active yet today)
     current = 0
-    check = today
-    # Allow the streak to still be alive if last activity was yestarday
     if last_active < today - timedelta(days=1):
-        #  No activities today or yestarday -> streak is 0
         current = 0
-        #  we don't reset last_active here, 
     else:
+        check = today if today in active_dates else today - timedelta(days=1)
         while check in active_dates:
             current += 1
             check -= timedelta(days=1)
 
-    #  Longest streak: walk backwards from last_active
+    # Longest streak: find max consecutive day sequence
     longest = 0
     run = 1
     for i in range(1, len(sorted_dates)):
-        if (sorted_dates[i -1] - sorted_dates[i]).days == 1:
+        if (sorted_dates[i - 1] - sorted_dates[i]).days == 1:
             run += 1
         else:
+            longest = max(longest, run)
             run = 1
     longest = max(longest, run, current)
 

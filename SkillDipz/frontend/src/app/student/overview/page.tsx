@@ -26,7 +26,6 @@ import {
   ChevronRight,
   Circle,
   ClipboardList,
-  Code2,
   FileCheck,
   Flame,
   Loader2,
@@ -39,6 +38,7 @@ import {
   Wifi,
   WifiOff,
 } from "lucide-react";
+
 
 // ─── Helpers 
 
@@ -324,23 +324,40 @@ export default function OverviewPage() {
           </span>
         </Card>
 
-        {/* Card 3: Total Roadmap Skills */}
-        <Card className="flex flex-col justify-between relative overflow-hidden">
+        {/* Card 3: Current Streak — live from /students/me/streak */}
+        <Card className="flex flex-col justify-between relative overflow-hidden group">
+          <div className="absolute inset-0 bg-gradient-to-br from-amber-500/5 to-transparent opacity-0 group-hover:opacity-100 transition-opacity rounded-2xl pointer-events-none" />
           <div className="flex items-start justify-between">
             {isLoading ? (
               <Skeleton className="h-9 w-16" />
             ) : (
-              <span className="text-3xl sm:text-4xl font-extrabold text-amber-400 tracking-tight">
-                {totalSkills}
-              </span>
+              <div className="flex flex-col">
+                <span className="text-3xl sm:text-4xl font-extrabold text-amber-400 tracking-tight">
+                  {streak?.current_streak ?? 0}
+                  <span className="text-base font-medium text-slate-500 ml-1">days</span>
+                </span>
+                {streak && streak.longest_streak > 0 && (
+                  <span className="text-[10px] text-slate-500 mt-0.5">
+                    Best: {streak.longest_streak}d
+                  </span>
+                )}
+              </div>
             )}
-            <div className="p-2 rounded-xl bg-slate-800/80 border border-slate-700/50 text-slate-300">
-              <Code2 className="w-4 h-4 text-amber-400" />
+            <div className="p-2 rounded-xl bg-amber-500/10 border border-amber-500/30">
+              <Flame className={`w-4 h-4 text-amber-400 ${(streak?.current_streak ?? 0) > 0 ? "animate-pulse" : ""}`} />
             </div>
           </div>
-          <span className="text-[11px] font-bold text-slate-400 uppercase tracking-wider mt-4">
-            TOTAL ROADMAP SKILLS
-          </span>
+          <div className="flex items-center justify-between mt-4">
+            <span className="text-[11px] font-bold text-slate-400 uppercase tracking-wider">
+              CURRENT STREAK
+            </span>
+            <Link
+              href="/student/activity"
+              className="text-[10px] text-amber-400 hover:text-amber-300 font-semibold transition-colors"
+            >
+              View →
+            </Link>
+          </div>
         </Card>
 
         {/* Card 4: In-Demand Gaps Remaining */}
@@ -349,9 +366,14 @@ export default function OverviewPage() {
             {isLoading ? (
               <Skeleton className="h-9 w-16" />
             ) : (
-              <span className="text-3xl sm:text-4xl font-extrabold text-rose-400 tracking-tight">
-                {remainingGaps}
-              </span>
+              <div className="flex flex-col">
+                <span className="text-3xl sm:text-4xl font-extrabold text-rose-400 tracking-tight">
+                  {remainingGaps}
+                </span>
+                <span className="text-[10px] text-slate-500 mt-0.5">
+                  of {totalSkills} total
+                </span>
+              </div>
             )}
             <div className="p-2 rounded-xl bg-amber-500/10 border border-amber-500/30 text-amber-400">
               <AlertTriangle className="w-4 h-4 text-amber-400" />
@@ -363,6 +385,7 @@ export default function OverviewPage() {
         </Card>
 
       </div>
+
 
       {/* ── Main Section: Skill Indices & Target Placement Goal ───────────── */}
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-stretch">

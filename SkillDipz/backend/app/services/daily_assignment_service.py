@@ -18,6 +18,7 @@ from app.models.student_streak import StudentStreak
 from app.models.skill_gap import StudentSkillLevel, RoleSkillBenchmark
 from app.models.roadmap import StudentRoadmap
 from app.models.assessment import AssessmentTopic
+from app.models.activity_log import ActivityLog
 from app.core.youtube import fetch_youtube_videos
 from app.core.redis_client import get_redis
 from app.core.groq_service import generate_flashcards_for_skill, generate_explain_prompts_for_skill
@@ -414,9 +415,18 @@ async def generate_assignment_for_student(student_id: str) -> Optional[DailyAssi
 
     role = (profile.target_roles or "backend").lower().split()[0]
 
-    # Load streak
+    # Load & sync streak from ActivityLog
+    from app.api.routes.students import _compute_streak
+    logs = await ActivityLog.find(ActivityLog.student_id == student_id).to_list()
+    active_dates = {log.created_at.date() for log in logs}
+    current_streak, longest_streak, last_act = _compute_streak(active_dates)
+
     streak_doc = await StudentStreak.get_or_create(student_id)
-    current_streak = streak_doc.current_streak
+    if streak_doc.current_streak != current_streak or streak_doc.longest_streak != longest_streak:
+        streak_doc.current_streak = current_streak
+        streak_doc.longest_streak = longest_streak
+        streak_doc.last_active = last_act or date.today()
+        await streak_doc.save()
 
     # Compute 7-day completion rate
     completion_rate = await _compute_completion_rate(student_id)

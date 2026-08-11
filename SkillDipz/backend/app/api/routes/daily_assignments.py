@@ -23,6 +23,8 @@ from app.schemas.daily_assignment_schema import (
     PlatformStatsOut,
 )
 from app.services.daily_assignment_service import generate_assignment_for_student
+from app.models.activity_log import ActivityLog
+from app.api.routes.students import _compute_streak
 from app.core.redis_client import get_redis
 
 logger = logging.getLogger(__name__)
@@ -185,47 +187,65 @@ async def complete_task(
     task.completed_at = datetime.now(timezone.utc)
     await assignment.save()
 
-    # Check if ALL tasks are now done → update streak
+    # Log to ActivityLog feed (counts towards Activity page feed, streak & heatmap)
+    task_type_map = {
+        "quiz": "assessment",
+        "code": "submission",
+        "video": "module",
+        "flashcard": "assessment",
+        "explain": "assessment",
+        "resume_tweak": "resume",
+        "wildcard": "assessment",
+    }
+    log_type = task_type_map.get(task.type, "assessment")
+
+    try:
+        await ActivityLog(
+            student_id=student_id,
+            type=log_type,
+            title=f"Daily Task: {task.title}",
+            detail=f"Completed {task.type} daily task (+{task.points} pts)",
+        ).insert()
+    except Exception as e:
+        logger.warning(f"Could not log ActivityLog for task {task_id}: {e}")
+
+    # Re-calculate streak dynamically from all ActivityLogs to keep StudentStreak document aligned
+    logs = await ActivityLog.find(ActivityLog.student_id == student_id).to_list()
+    active_dates = {log.created_at.date() for log in logs}
+    current_s, longest_s, last_act = _compute_streak(active_dates)
+
+    streak_doc = await StudentStreak.get_or_create(student_id)
+    streak_doc.current_streak = current_s
+    streak_doc.longest_streak = longest_s
+    streak_doc.last_active = last_act or date.today()
+    await streak_doc.save()
+
     all_done = all(t.status == "completed" for t in assignment.tasks)
     if all_done:
-        streak_doc = await StudentStreak.get_or_create(student_id)
-        last = streak_doc.last_active
+        # Invalidate stats cache
+        redis = get_redis()
+        if redis:
+            try:
+                await redis.delete(f"da_stats:completed:{today}")
+            except Exception:
+                pass
 
-        if last is None or (date.today() - last).days >= 1:
-            if last and (date.today() - last).days == 1:
-                streak_doc.current_streak += 1
-            else:
-                streak_doc.current_streak = 1
-
-            streak_doc.last_active = date.today()
-            if streak_doc.current_streak > streak_doc.longest_streak:
-                streak_doc.longest_streak = streak_doc.current_streak
-            await streak_doc.save()
-
-            # Invalidate stats cache
-            redis = get_redis()
-            if redis:
-                try:
-                    await redis.delete(f"da_stats:completed:{today}")
-                except Exception:
-                    pass
-
-            # Push notification for streak milestones
-            milestones = {7, 14, 30, 60, 100}
-            if streak_doc.current_streak in milestones:
-                await Notification(
-                    student_id=student_id,
-                    title=f"🔥 {streak_doc.current_streak}-Day Streak!",
-                    body=f"Incredible! You've maintained a {streak_doc.current_streak}-day streak. Keep crushing it!",
-                    action_url="/student/daily-assignments",
-                    notification_type="streak_milestone",
-                ).insert()
+        # Push notification for streak milestones
+        milestones = {7, 14, 30, 60, 100}
+        if streak_doc.current_streak in milestones:
+            await Notification(
+                student_id=student_id,
+                title=f"🔥 {streak_doc.current_streak}-Day Streak!",
+                body=f"Incredible! You've maintained a {streak_doc.current_streak}-day streak. Keep crushing it!",
+                action_url="/student/daily-assignments",
+                notification_type="streak_milestone",
+            ).insert()
 
     return {
         "message": "Task completed",
         "task_id": task_id,
         "all_done": all_done,
-        "streak": (await StudentStreak.get_or_create(student_id)).current_streak,
+        "streak": streak_doc.current_streak,
     }
 
 
