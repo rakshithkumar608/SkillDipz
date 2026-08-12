@@ -81,6 +81,12 @@ async def connect_db():
     await User.get_motor_collection().create_index("email", unique=True)
     await User.get_motor_collection().create_index("google_id", sparse=True)
     await EmployabilityScore.get_motor_collection().create_index("student_id", unique=True)
+    await EmployabilityScore.get_motor_collection().create_index(
+        [("overall_score", -1)], name="leaderboard_rank_sort"
+    )  # Leaderboard — sorts all students by score DESC on every request
+    await EmployabilityScore.get_motor_collection().create_index(
+        [("target_role", 1), ("overall_score", -1)], name="leaderboard_role_rank_sort"
+    )  # Leaderboard — role-filtered ranking (role + score compound)
     await StudentRoadmap.get_motor_collection().create_index("student_id", unique=True)
     await Notification.get_motor_collection().create_index([("student_id", 1), ("created_at", -1)])
     await ActivityLog.get_motor_collection().create_index([("student_id", 1), ("created_at", -1)])
@@ -90,6 +96,9 @@ async def connect_db():
     await StudentSkillLevel.get_motor_collection().create_index([("student_id", 1), ("skill", 1)])
     await RoleSkillBenchmark.get_motor_collection().create_index([("role", 1), ("skill", 1)])
     await StudentProfile.get_motor_collection().create_index("student_id", unique=True)
+    await StudentProfile.get_motor_collection().create_index(
+        "college", name="leaderboard_college_filter"
+    )  # Leaderboard — college-scope filter queries students by college name
     await CompanyProfile.get_motor_collection().create_index("company_id", unique=True)
     await StudentTargetCompany.get_motor_collection().create_index([("student_id", 1), ("company_id", 1)], unique=True)
     await JobRequirement.get_motor_collection().create_index("company_id")

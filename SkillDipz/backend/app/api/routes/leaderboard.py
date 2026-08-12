@@ -59,7 +59,7 @@ class MyRankOut(BaseModel):
     percentile: float
     college_rank: Optional[int] = None
     college_total: Optional[int] = None
-    rank_changes_7d: int
+    rank_change_7d: int
 
 class LeaderboardResponse(BaseModel):
     total_students: int
@@ -162,7 +162,8 @@ async def _compute_my_rank_details(
     total = len(all_scores)
     my_overall = my_score_doc.overall_score if my_score_doc else 0.0
     my_rank = next(
-        (i + 1 for i, s in enumerate(all_scores) if s.student_id == me_id), total
+        (i + 1 for i, s in enumerate(all_scores) if s.student_id == me_id),
+        total + 1,   # not yet on the board → place after the last ranked student
     )
     percentile = round((1 - (my_rank - 1) / max(total, 1)) * 100, 2)
 
