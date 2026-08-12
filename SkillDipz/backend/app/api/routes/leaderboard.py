@@ -1,6 +1,6 @@
 import asyncio
 import logging
-from datetime import datetime, timedelta, timezone
+from datetime import datetime, timedelta
 from typing import List, Literal, Optional
 
 from fastapi import APIRouter, Depends, Query
@@ -183,7 +183,8 @@ async def _compute_my_rank_details(
 
     rank_change_7d = 0
     if my_score_doc and my_score_doc.history:
-        cutoff = datetime.now(timezone.utc) - timedelta(days=7)
+        # MongoDB stores datetimes as naive UTC — use utcnow() to stay naive
+        cutoff = datetime.utcnow() - timedelta(days=7)
         old_snaps = [h for h in my_score_doc.history if h.recorded_at <= cutoff]
         if old_snaps:
             old_score = max(old_snaps, key=lambda h: h.recorded_at).score
