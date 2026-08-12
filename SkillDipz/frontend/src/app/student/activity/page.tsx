@@ -301,7 +301,7 @@ function ActivityHeatmap({
 
       {/* Grid Wrapper */}
       <div className="overflow-x-auto pb-3 pt-1 scrollbar-thin scrollbar-thumb-slate-700/50 scrollbar-track-transparent">
-        <div className="min-w-[710px] select-none">
+        <div className="min-w-177.5 select-none">
           {/* Month labels header — JAN through DEC */}
           <div className="relative h-6 mb-2 select-none" style={{ marginLeft: "30px" }}>
             {monthLabels.map((l, i) => {
@@ -329,7 +329,7 @@ function ActivityHeatmap({
 
           <div className="flex gap-0.5">
             {/* Day-of-week labels */}
-            <div className="flex flex-col pr-2.5 pt-0.5 text-right w-[30px] shrink-0">
+            <div className="flex flex-col pr-2.5 pt-0.5 text-right w-7.5 shrink-0">
               {DAY_LABELS.map((d, i) => (
                 <div
                   key={d}
@@ -366,7 +366,7 @@ function ActivityHeatmap({
                     <div key={dateKey} className="relative group">
                       <div
                         className={`
-                          w-[11px] h-[11px] rounded-[3px] cursor-pointer
+                          w-2.75 h-2.75 rounded-[3px] cursor-pointer
                           ${activeColors[level]}
                           hover:scale-125 transition-all duration-150
                         `}

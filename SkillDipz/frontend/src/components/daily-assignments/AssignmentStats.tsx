@@ -80,7 +80,7 @@ export function AssignmentStats({ assignment, liveStreak }: AssignmentStatsProps
       <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
         {/* Streak — live from /me/streak */}
         <div className="bg-[#0b0f19]/90 border border-slate-800/80 rounded-2xl p-4 flex flex-col gap-1 shadow-xl relative overflow-hidden group">
-          <div className="absolute inset-0 bg-gradient-to-br from-amber-500/5 to-transparent opacity-0 group-hover:opacity-100 transition-opacity rounded-2xl pointer-events-none" />
+          <div className="absolute inset-0 bg-linear-to-br from-amber-500/5 to-transparent opacity-0 group-hover:opacity-100 transition-opacity rounded-2xl pointer-events-none" />
           <div className="flex items-center gap-2">
             <Flame className={`w-4 h-4 ${tierCfg?.color ?? "text-amber-400"} ${currentStreak > 0 ? "animate-pulse" : ""}`} />
             <span className="text-slate-400 text-xs">Streak</span>
