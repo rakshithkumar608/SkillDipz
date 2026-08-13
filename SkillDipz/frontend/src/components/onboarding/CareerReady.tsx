@@ -160,13 +160,13 @@ export default function CareerReady() {
           </div>
 
           {/* Right Side: Realistic Interview Photo */}
-          <div className="relative min-h-[360px] lg:min-h-[420px] rounded-3xl overflow-hidden shadow-sm border border-gray-200/80">
+          <div className="relative min-h-90 lg:min-h-105 rounded-3xl overflow-hidden shadow-sm border border-gray-200/80">
             <img
               src="/images/img3.png"
               alt="Realistic interview setting with professionals"
               className="w-full h-full object-cover"
             />
-            <div className="absolute inset-0 bg-gradient-to-t from-black/30 via-transparent to-transparent pointer-events-none" />
+            <div className="absolute inset-0 bg-linear-to-t from-black/30 via-transparent to-transparent pointer-events-none" />
           </div>
         </div>
       </div>

@@ -1,7 +1,10 @@
 "use client";
 
+import BuildPractice from "@/components/onboarding/BuildPractice";
 import CareerReady from "@/components/onboarding/CareerReady";
+import DiscoverSkillGaps from "@/components/onboarding/DiscoverSkillGaps";
 import PersonalizedRoadmap from "@/components/onboarding/PersonalizedRoadmap";
+import SkillDipzFooter from "@/components/onboarding/SkillDipzFooter";
 import Image from "next/image";
 import Link from "next/link";
 import React from "react";
@@ -12,7 +15,10 @@ export default function OnboardingPage() {
       {/* BEGIN: Header */}
       <header className="w-full px-6 lg:px-12 py-3 lg:py-4 flex items-center justify-between absolute  left-0 right-0 z-50  -top-5 sm:-top-10 md:-top-2 lg:-top-8">
         {/* Logo */}
-        <Link href="/" className="flex items-center gap-2 cursor-pointer shrink-0">
+        <Link
+          href="/"
+          className="flex items-center gap-2 cursor-pointer shrink-0"
+        >
           <Image
             src="/images/skilldepz.png"
             alt="SkillDipz Logo"
@@ -274,23 +280,16 @@ export default function OnboardingPage() {
       <CareerReady />
       {/* END: Career Ready Section */}
 
+      {/* BEGIN: Build & Practice Section */}
+      <BuildPractice />
+      {/* END: Build & Practice Section */}
+
+      {/* BEGIN: Discover Skill Gaps Section */}
+      <DiscoverSkillGaps />
+      {/* END: Discover Skill Gaps Section */}
+
       {/* BEGIN: Footer */}
-      <footer className="w-full bg-white/80 backdrop-blur-sm border-t border-gray-100 py-6 px-4 sm:px-8 lg:px-16 relative z-30 mt-12 lg:mt-auto">
-        <div className="max-w-7xl mx-auto flex flex-col sm:flex-row items-center justify-between gap-4 text-xs sm:text-sm text-gray-500 text-center sm:text-left">
-          <p>© 2026 SkillDipz. All rights reserved.</p>
-          <div className="flex flex-wrap justify-center gap-4 sm:gap-6">
-            <Link href="#" className="hover:text-gray-900 transition-colors">
-              Privacy Policy
-            </Link>
-            <Link href="#" className="hover:text-gray-900 transition-colors">
-              Terms of Service
-            </Link>
-            <Link href="#" className="hover:text-gray-900 transition-colors">
-              Contact Support
-            </Link>
-          </div>
-        </div>
-      </footer>
+      <SkillDipzFooter />
       {/* END: Footer */}
     </div>
   );
