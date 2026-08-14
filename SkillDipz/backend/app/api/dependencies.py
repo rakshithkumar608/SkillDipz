@@ -21,13 +21,18 @@ async def get_current_company(
     """
     Dependency that validates the bearer token and checks that the user is a company user.
     """
-    if current_user.role not in ("company", "company_admin", "admin"):
+    role_lower = (current_user.role or "").lower()
+    if role_lower not in ("company", "company_admin", "admin"):
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Requires company privileges",
         )
     company_id = current_user.company_name or str(current_user.id)
-    return {"company_id": company_id, "user": current_user}
+    return {
+        "company_id": company_id, 
+        "user_id": str(current_user.id),
+        "user": current_user,
+        }
 
 
 async def get_current_admin(
@@ -36,7 +41,7 @@ async def get_current_admin(
     """
     Dependency that validates the bearer token and checks that the user is an admin.
     """
-    if current_user.role != "admin":
+    if (current_user.role or "").lower() != "admin":
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Requires admin privileges",

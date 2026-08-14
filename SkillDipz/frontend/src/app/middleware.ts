@@ -1,38 +1,55 @@
 import { NextRequest, NextResponse } from "next/server";
 
 const PUBLIC_ROUTES = ["/", "/login", "/register", "/onboarding", "/verify-otp"];
-const STUDENT_ROUTES = ["/student"];
-const COMPANY_ROUTES = ["/company"];
+
+// const STUDENT_ROUTES = ["/student"];
+// const COMPANY_ROUTES = ["/company"];
 
 export function middleware(req: NextRequest) {
-  const token = req.cookies.get("accessToken")?.value;
-  const role = req.cookies.get("userRole")?.value;
   const { pathname } = req.nextUrl;
 
-  const isPublic = PUBLIC_ROUTES.some((r) => pathname.startsWith(r));
+  // Always allow public routes through
+  const isPublic = PUBLIC_ROUTES.some(
+    (r) => pathname === r || pathname.startsWith(r+"/")
+  );
+  if(isPublic) return NextResponse.next();
+
+  
+  // Read the role cookie written by auth.ts on login
+  const role = req.cookies.get("sd_role")?.value;
+  const isLoggedIn = !!role;
 
   // Not logged in — block protected routes
-  if (!token && !isPublic) {
-    return NextResponse.redirect(new URL("/login", req.url));
+  if(!isLoggedIn) {
+    if(
+      pathname.startsWith("/student") ||
+      pathname.startsWith("/company")
+    ) {
+      return NextResponse.redirect(new URL("/login", req.url));
+    }
+    return NextResponse.next();
   }
 
-  // logged in - block auth pages
-  if (token && (pathname === "/login" || pathname === "/register")) {
-    return NextResponse.redirect(new URL(getRedirectPath(role || ""), req.url));
-  }
+  // Logged in - redirect away from login/register
+  if(pathname === "/login" || pathname === "/register") {
+    return NextResponse.redirect(
+      new URL(getRedirectPath(role), req.url)
+    );
+  } 
 
-  // Role-based guards
-  if (token && pathname.startsWith("/student") && role !== "STUDENT") {
+  // Role baesd guard: STUDENT cannot visit / company, COMPANY cannot visit/ student
+  if (pathname.startsWith("/student")&& role !== "STUDENT") {
     return NextResponse.redirect(new URL("/login", req.url));
   }
-  if (token && pathname.startsWith("/company") && role !== "COMPANY") {
-    return NextResponse.redirect(new URL("/login", req.url));
+  if(pathname.startsWith("/company") && role !== "COMPANY") {
+    return NextResponse.redirect(new URL("/login", req.url));  
   }
 
   return NextResponse.next();
 }
 
-function getRedirectPath(role: string) {
+
+function getRedirectPath(role: string): string {
   if (role === "STUDENT") return "/student/overview";
   if (role === "COMPANY") return "/company/dashboard";
   return "/";

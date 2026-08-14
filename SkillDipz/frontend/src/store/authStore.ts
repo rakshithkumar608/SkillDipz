@@ -12,6 +12,8 @@ export interface AuthUser {
     avatar_url?: string;
     target_role?: string;
     is_verified: boolean;
+    company_name?: string;
+    industry?: string;
 }
 
 interface AuthState {

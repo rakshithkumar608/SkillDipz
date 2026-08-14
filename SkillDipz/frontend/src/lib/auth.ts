@@ -24,6 +24,21 @@ export interface AuthResponse {
   needs_verification?: boolean;
 }
 
+
+// Cookie helper (middleware reads sd_role to protect routes)
+
+function setRoleCookie(role: string):void{
+  if(typeof document === "undefined") return;
+  document.cookie = `sd_role=${role};path=/;SameSie=Lax;max-age=${7*24*3600}`;
+}
+
+function clearRoleCookie():void{
+  if(typeof document === "undefined") return;
+  document.cookie = `sd_role=;path=/;max-age=0`;
+}
+
+//  Auth functions
+
 export async function loginWithCredentials(
   payload: LoginPayload,
 ): Promise<AuthResponse> {
@@ -32,6 +47,7 @@ export async function loginWithCredentials(
   useAuthStore
     .getState()
     .setAuth(data.user, data.access_token, data.refresh_token);
+    setRoleCookie(data.user.role);
     // HttpOnly cookie is set by the backend — browser handles it automatically
   return data;
 }
@@ -47,6 +63,7 @@ export async function loginWithGoogle(
   useAuthStore
     .getState()
     .setAuth(data.user, data.access_token, data.refresh_token);
+    setRoleCookie(data.user.role);
   return data;
 }
 
@@ -70,6 +87,7 @@ export async function logout(): Promise<void> {
     await api.post("/auth/logout", { refresh_token: refreshToken });
   } finally {
     useAuthStore.getState().clearAuth();
+    clearRoleCookie(); // wipe sd_role so middleware stops protecting routes
   }
 }
 
