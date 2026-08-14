@@ -155,6 +155,29 @@ async def select_target_company(
         )
         await record.insert()
 
+    # ── Notify company via WebSocket (real-time toast on their dashboard) ──────
+    try:
+        from app.models.user import User as UserModel
+        company_user = await UserModel.find_one(
+            UserModel.company_name == company_id,
+            UserModel.role == "COMPANY",
+        )
+        if company_user:
+            student_name = student.name or "A student"
+            await ws_manager.broadcast(
+                str(company_user.id),
+                "new_candidate",
+                {
+                    "student_id": student_id,
+                    "student_name": student_name,
+                    "skill_match_pct": round(match_result["skill_match_pct"], 1),
+                    "company_id": company_id,
+                },
+            )
+    except Exception as _ws_err:
+        logger.warning(f"Company WS notify failed (non-critical): {_ws_err}")
+    # ──────────────────────────────────────────────────────────────────────────
+
     if match_result["missing_skills"] and not record.notification_sent:
         missing_str = ", ".join(match_result["missing_skills"][:3])
         await event_bus.publish("company.gap_detected", {

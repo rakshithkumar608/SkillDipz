@@ -21,10 +21,13 @@ interface AuthState {
     accessToken: string | null;
     refreshToken: string | null;
     isLoading: boolean;
+    _hasHydrated: boolean;                                       // true once localStorage has been read
     setAuth: (user: AuthUser, accessToken: string, refreshToken: string) => void;
     clearAuth: () => void;
     setLoading: (v: boolean) => void;
+    setHasHydrated: (v: boolean) => void;
 }
+
 
 export const useAuthStore = create<AuthState>()(
   persist(
@@ -33,11 +36,13 @@ export const useAuthStore = create<AuthState>()(
       accessToken: null,
       refreshToken: null,
       isLoading: false,
+      _hasHydrated: false,
       setAuth: (user, accessToken, refreshToken) =>
         set({ user, accessToken, refreshToken }),
       clearAuth: () =>
         set({ user: null, accessToken: null, refreshToken: null }),
       setLoading: (isLoading) => set({ isLoading }),
+      setHasHydrated: (v) => set({ _hasHydrated: v }),
     }),
     {
       name: "skilldipz-auth",
@@ -46,6 +51,10 @@ export const useAuthStore = create<AuthState>()(
         accessToken: state.accessToken,
         refreshToken: state.refreshToken,
       }),
+      // Called once localStorage has been read and state restored
+      onRehydrateStorage: () => (state) => {
+        state?.setHasHydrated(true);
+      },
     }
 )
 );

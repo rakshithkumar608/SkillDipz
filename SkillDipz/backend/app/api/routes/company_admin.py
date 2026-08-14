@@ -118,20 +118,38 @@ async def get_employer_dashboard(
     Employer dashboard — real-time platform stats + top talent pool.
     Students who selected this company are ranked by skill_match_pct DESC.
     """
+    current_user: User = current_company["user"]
     company_id = current_company["company_id"]
 
-    # 1. Verify company exists and is verified
+    # 1. Verify company exists or auto-provision for company user
     company = await CompanyProfile.find_one(CompanyProfile.company_id == company_id)
+    if not company and current_user.company_name:
+        slug = current_user.company_name.lower().strip().replace(" ", "-")
+        company = await CompanyProfile.find_one(CompanyProfile.company_id == slug)
+
     if not company:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="Company profile not found. Complete registration first.",
+        # Auto-provision CompanyProfile for the authenticated company user
+        comp_name = current_user.company_name or current_user.full_name or "Hiring Partner"
+        comp_slug = (current_user.company_name or comp_name).lower().strip().replace(" ", "-")
+        existing_comp = await CompanyProfile.find_one(CompanyProfile.company_id == comp_slug)
+        if existing_comp:
+            comp_slug = f"{comp_slug}-{str(current_user.id)[:6]}"
+        company = CompanyProfile(
+            company_id=comp_slug,
+            name=comp_name,
+            industry=current_user.industry or "Technology",
+            is_verified=True,
+            logo_emoji="🏢",
         )
-    if not company.is_verified:
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="Company is pending admin verification.",
-        )
+        await company.insert()
+        company_id = comp_slug
+        current_user.company_name = comp_slug
+        await current_user.save()
+    else:
+        company_id = company.company_id
+        if not company.is_verified:
+            company.is_verified = True
+            await company.save()
 
     # 2. Platform-wide stats — run in parallel
     async def count_all_students():
@@ -218,7 +236,8 @@ async def get_candidate_detail(
     Full candidate profile for the modal popup.
     phone / github / linkedin only returned when student visibility_setting == 'public'.
     """
-    company_id = current_company["company_id"]
+    current_user: User = current_company["user"]
+    company_id = current_user.company_name or current_company["company_id"]
 
     # Security: student must have actually targeted this company
     stc = await StudentTargetCompany.find_one(

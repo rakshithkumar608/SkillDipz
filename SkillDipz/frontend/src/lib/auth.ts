@@ -27,14 +27,14 @@ export interface AuthResponse {
 
 // Cookie helper (middleware reads sd_role to protect routes)
 
-function setRoleCookie(role: string):void{
-  if(typeof document === "undefined") return;
-  document.cookie = `sd_role=${role};path=/;SameSie=Lax;max-age=${7*24*3600}`;
+function setRoleCookie(role: string): void {
+  if (typeof document === "undefined") return;
+  document.cookie = `sd_role=${role}; path=/; SameSite=Lax; max-age=${7 * 24 * 3600}`;
 }
 
-function clearRoleCookie():void{
-  if(typeof document === "undefined") return;
-  document.cookie = `sd_role=;path=/;max-age=0`;
+function clearRoleCookie(): void {
+  if (typeof document === "undefined") return;
+  document.cookie = `sd_role=; path=/; max-age=0`;
 }
 
 //  Auth functions
