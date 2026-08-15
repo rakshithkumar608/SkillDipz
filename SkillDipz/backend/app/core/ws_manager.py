@@ -2,6 +2,7 @@ import json
 import logging
 from typing import Any, Dict
 from fastapi import WebSocket
+from starlette.websockets import WebSocketState
 
 logger = logging.getLogger(__name__)
 
@@ -10,9 +11,13 @@ class WebSocketManager:
         self._connections: Dict[str, WebSocket] = {}
 
     async def connect(self, student_id: str, websocket: WebSocket):
-        await websocket.accept()
-        self._connections[student_id] = websocket
-        logger.info(f"WS connected: {student_id}")
+        try:
+            if websocket.client_state != WebSocketState.CONNECTED:
+                await websocket.accept()
+            self._connections[student_id] = websocket
+            logger.info(f"WS connected: {student_id}")
+        except Exception as e:
+            logger.warning(f"Error connecting WS for {student_id}: {e}")
 
     def disconnect(self, student_id: str):
         self._connections.pop(student_id, None)
@@ -22,10 +27,11 @@ class WebSocketManager:
         ws = self._connections.get(student_id)
         if ws:
             try:
-                await ws.send_text(json.dumps({
-                    "type": event_type,
-                    "payload": payload
-                }))
+                if ws.client_state == WebSocketState.CONNECTED:
+                    await ws.send_text(json.dumps({
+                        "type": event_type,
+                        "payload": payload
+                    }))
             except Exception as e:
                 logger.warning(f"WS send error for {student_id}: {e}")
                 self.disconnect(student_id)
@@ -38,7 +44,8 @@ class WebSocketManager:
             if uid == exclude_user_id:
                 continue
             try:
-                await ws.send_text(message)
+                if ws.client_state == WebSocketState.CONNECTED:
+                    await ws.send_text(message)
             except Exception as e:
                 logger.warning(f"WS broadcast_all error for {uid}: {e}")
                 disconnected.append(uid)

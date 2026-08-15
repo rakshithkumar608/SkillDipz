@@ -11,6 +11,7 @@ import {
   Menu,
   Trophy,
   Users,
+  Video,
   X,
 } from "lucide-react";
 import { usePathname, useRouter } from "next/navigation";
@@ -24,10 +25,11 @@ const navItems = [
     href: "/company/dashboard",
     icon: LayoutDashboard,
   },
-  { label: "Browse Candidates", href: "/company/database", icon: Users },
+  { label: "Browse Candidates", href: "/company/browse", icon: Users },
+  { label: "Student Database", href: "/company/database", icon: Database },
+  { label: "Scheduled Interviews", href: "/company/interviews", icon: Video },
   { label: "Global Leaderboard", href: "/company/leaderboard", icon: Trophy },
   { label: "Jobs & Applicants Center", href: "/company/jobs", icon: Briefcase },
-  { label: "Student Database", href: "/company/database", icon: Database },
   { label: "Activity Analytics", href: "/company/analytics", icon: Activity },
 ];
 
@@ -38,16 +40,16 @@ export default function CompanyLayout({
 }) {
   const pathname = usePathname();
   const router = useRouter();
-  const { user } = useAuthStore();
+  const { user, _hasHydrated } = useAuthStore();
   const [sidebarOpen, setSidebarOpen] = useState(false);
 
   useEffect(() => {
-    if (typeof window !== "undefined") {
+    if (_hasHydrated) {
       if (!user || user.role !== "COMPANY") {
         router.push("/login");
       }
     }
-  }, [user, router]);
+  }, [_hasHydrated, user, router]);
 
   const handleLogout = async () => {
     await logout();

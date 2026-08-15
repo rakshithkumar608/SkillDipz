@@ -54,4 +54,8 @@ async def student_ws(
             if data == "ping":
                 await websocket.send_text("pong")
     except WebSocketDisconnect:
+        pass
+    except Exception as e:
+        logger.info(f"WS connection closed for {user_id}: {e}")
+    finally:
         ws_manager.disconnect(user_id)

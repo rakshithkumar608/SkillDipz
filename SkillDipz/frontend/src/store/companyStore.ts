@@ -47,25 +47,32 @@ export interface CandidateDetail {
   skill_index_pct?: number;
 }
 
-// ── Browse Candidate Types ──────────────────────────────────────────────────
+//  Browse Candidate Types 
 
 export interface BrowseCandidate {
   student_id: string;
   name: string;
   avatar_initials: string;
+  email?: string | null;
+  phone?: string | null;
   college: string | null;
+  branch?: string | null;
+  grad_year?: number | null;
   skills: string[];
   additional_skills_count: number;
   skill_index_pct: number;
   tests_completed: number;
   projects_completed: number;
   target_role: string | null;
+  matched_domain?: string | null;
+  target_company?: string | null;
 }
 
 export interface BrowseHints {
   names: string[];
   colleges: string[];
   skills: string[];
+  roles?: string[];
 }
 
 export interface BrowseFilters {
@@ -77,8 +84,7 @@ export interface BrowseFilters {
   page: number;
 }
 
-// ── Store State ─────────────────────────────────────────────────────────────
-
+//  Store State 
 interface CompanyState {
   // Employer Dashboard
   dashboard: CompanyDashboard | null;

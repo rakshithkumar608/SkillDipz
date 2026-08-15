@@ -23,6 +23,7 @@ async def send_notification(
             body=body,
             action_url=action_url,
             is_read=False,
+            notification_type=notification_type,
         )
         await notif.insert()
 

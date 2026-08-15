@@ -59,7 +59,7 @@ export async function fetchBrowseCandidates(params: BrowseParams): Promise<Brows
   return data;
 }
 
-// ── Browse Hints (Autocomplete) ──────────────────────────────────────────────
+//  Browse Hints (Autocomplete) 
 
 export async function fetchBrowseHints(q: string): Promise<BrowseHints> {
   const { data } = await api.get<BrowseHints>("/companies/me/browse/hints", {
@@ -68,7 +68,14 @@ export async function fetchBrowseHints(q: string): Promise<BrowseHints> {
   return data;
 }
 
-// ── Browse Candidate Detail (All students) ────────────────────────────────────
+//  Browse Distinct Roles 
+
+export async function fetchBrowseRoles(): Promise<string[]> {
+  const { data } = await api.get<string[]>("/companies/me/browse/roles");
+  return data;
+}
+
+//  Browse Candidate Detail (All students) 
 
 export async function fetchBrowseCandidateDetail(student_id: string): Promise<CandidateDetail> {
   const { data } = await api.get<CandidateDetail>(

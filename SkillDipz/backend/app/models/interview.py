@@ -35,9 +35,7 @@ class InterviewSession(Document):
     company_name: Optional[str] = None
 
     mode: Literal["company", "ai"] = "ai"
-    interview_type: Literal[
-        "technical", "hr", "coding", "system_design"
-    ] = "technical"
+    interview_type: str = "technical"
 
     # Scheduling (Mode A)
     scheduled_at: Optional[datetime] = None

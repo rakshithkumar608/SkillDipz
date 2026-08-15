@@ -21,13 +21,12 @@ import {
   Zap,
 } from "lucide-react";
 
-// ── Skeleton ──────────────────────────────────────────────────────────────────
 
 function Skeleton({ className = "" }: { className?: string }) {
   return <div className={`animate-pulse rounded-2xl bg-white/5 ${className}`} />;
 }
 
-// ── Number formatter ──────────────────────────────────────────────────────────
+//  Number formatter 
 
 function fmt(n: number): string {
   if (n >= 100000) return (n / 100000).toFixed(1).replace(/\.0$/, "") + " L";
@@ -35,7 +34,7 @@ function fmt(n: number): string {
   return String(n);
 }
 
-// ── Page ──────────────────────────────────────────────────────────────────────
+//  Page 
 
 export default function EmployerDashboardPage() {
   const router = useRouter();
@@ -93,7 +92,7 @@ export default function EmployerDashboardPage() {
   // Connect to WS using company user's ID + token
   useCompanySocket(user?.id, accessToken, handleWsEvent);
 
-  // ── Open candidate modal ───────────────────────────────────
+  //  Open candidate modal 
   const openCandidate = useCallback(async (card: TalentCard) => {
     setCandidateLoading(true);
     setSelectedCandidate(null);
@@ -160,7 +159,7 @@ export default function EmployerDashboardPage() {
           <div className="self-start sm:self-auto shrink-0 flex items-center gap-2.5 px-3.5 py-2 rounded-xl sm:rounded-2xl bg-slate-900 border border-slate-800 shadow-md">
             {dashboard.company_logo_emoji
               ? <span className="text-xl sm:text-2xl">{dashboard.company_logo_emoji}</span>
-              : <div className="w-8 h-8 rounded-lg bg-gradient-to-br from-emerald-400 to-teal-500 flex items-center justify-center shadow-md shadow-emerald-500/20">
+              : <div className="w-8 h-8 rounded-lg bg-linear-to-br from-emerald-400 to-teal-500 flex items-center justify-center shadow-md shadow-emerald-500/20">
                   <Building2 className="w-4 h-4 text-white" />
                 </div>
             }
@@ -228,7 +227,7 @@ export default function EmployerDashboardPage() {
             <h2 className="text-xs sm:text-sm font-semibold text-slate-100">Outstanding Active Talent Pools</h2>
           </div>
           <button
-            onClick={() => router.push("/company/database")}
+            onClick={() => router.push("/company/browse")}
             className="flex items-center gap-1 text-xs text-sky-400 hover:text-sky-300 transition-colors font-medium"
           >
             <span className="hidden sm:inline">View All Candidates</span>

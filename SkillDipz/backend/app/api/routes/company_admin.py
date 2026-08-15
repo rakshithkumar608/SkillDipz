@@ -14,6 +14,8 @@ from app.models.employability_score import EmployabilityScore
 from app.models.assessment import AssessmentResult
 from app.models.project import StudentProjectSubmission
 from app.models.user import User
+from app.models.interview import InterviewSession
+from app.services.notification_service import send_notification
 from app.core.event_bus import event_bus
 
 logger = logging.getLogger(__name__)
@@ -86,13 +88,19 @@ class BrowseCandidateOut(BaseModel):
     student_id: str
     name: str
     avatar_initials: str
+    email: Optional[str] = None
+    phone: Optional[str] = None
     college: Optional[str] = None
+    branch: Optional[str] = None
+    grad_year: Optional[int] = None
     skills: List[str] = []
     additional_skills_count: int = 0
     skill_index_pct: float = 0.0
     tests_completed: int = 0
     projects_completed: int = 0
     target_role: Optional[str] = None
+    matched_domain: Optional[str] = None
+    target_company: Optional[str] = None
 
 
 class BrowseListOut(BaseModel):
@@ -106,6 +114,7 @@ class BrowseHintsOut(BaseModel):
     names: List[str] = []
     colleges: List[str] = []
     skills: List[str] = []
+    roles: List[str] = []
 
 
 class BrowseCandidateDetailOut(BaseModel):
@@ -414,9 +423,9 @@ async def post_job(
     return {"message": "Job posted successfully", "job_id": job.job_id}
 
 
-# ─────────────────────────────────────────────────────────────────────────────
+
 #  GET /companies/me/browse  — Browse All Platform Candidates
-# ─────────────────────────────────────────────────────────────────────────────
+
 
 @router.get("/browse", response_model=BrowseListOut)
 async def browse_candidates(
@@ -462,12 +471,17 @@ async def browse_candidates(
             if not prof.target_roles or not role_re.search(prof.target_roles):
                 continue
 
-        # Direct search filter (name, college, skills)
+        # Direct search filter (name, email, phone, college, branch, role, company, skills)
         if search_re:
             name_match = bool(search_re.search(prof.name or ""))
+            email_match = bool(search_re.search(prof.email or ""))
+            phone_match = bool(search_re.search(prof.phone or ""))
             college_match = bool(search_re.search(prof.college or ""))
+            branch_match = bool(search_re.search(prof.branch or ""))
+            role_match = bool(search_re.search(prof.target_roles or ""))
+            company_match = bool(search_re.search(prof.target_company or ""))
             skill_match = any(bool(search_re.search(s)) for s in (prof.skills or []))
-            if not (name_match or college_match or skill_match):
+            if not (name_match or email_match or phone_match or college_match or branch_match or role_match or company_match or skill_match):
                 continue
 
         filtered_profiles.append(prof)
@@ -543,6 +557,14 @@ async def browse_candidates(
     start = (page - 1) * per_page
     page_profiles = filtered_profiles[start: start + per_page]
 
+    # Batch load user accounts & target companies for current page
+    page_sids = [p.student_id for p in page_profiles]
+    user_docs = await User.find({"_id": {"$in": page_sids}}).to_list() if page_sids else []
+    user_map = {str(u.id): u for u in user_docs}
+
+    stc_docs = await StudentTargetCompany.find({"student_id": {"$in": page_sids}}).to_list() if page_sids else []
+    stc_map = {s.student_id: s.company_id for s in stc_docs}
+
     # 8. Assemble response
     candidates: List[BrowseCandidateOut] = []
     for prof in page_profiles:
@@ -553,19 +575,29 @@ async def browse_candidates(
         skills = prof.skills or []
         displayed_skills = skills[:4]
         extra_count = max(0, len(skills) - 4)
+        u_doc = user_map.get(sid)
+        email = prof.email or (u_doc.email if u_doc else "")
+        phone = prof.phone or (getattr(u_doc, "phone", None) if u_doc else None)
+        target_comp = prof.target_company or stc_map.get(sid)
 
         candidates.append(
             BrowseCandidateOut(
                 student_id=sid,
                 name=name,
                 avatar_initials=_initials(name),
+                email=email,
+                phone=phone,
                 college=prof.college,
+                branch=prof.branch,
+                grad_year=prof.grad_year,
                 skills=displayed_skills,
                 additional_skills_count=extra_count,
                 skill_index_pct=round(overall, 1),
                 tests_completed=test_map.get(sid, 0),
                 projects_completed=proj_map.get(sid, 0),
                 target_role=prof.target_roles or None,
+                matched_domain=prof.target_roles or None,
+                target_company=target_comp,
             )
         )
 
@@ -577,9 +609,27 @@ async def browse_candidates(
     )
 
 
-# ─────────────────────────────────────────────────────────────────────────────
+
+#  GET /companies/me/browse/roles  — Live Distinct Roles from Database
+
+
+@router.get("/browse/roles", response_model=List[str])
+async def get_browse_roles(
+    current_company: dict = Depends(get_current_company),
+):
+    """
+    Returns all real distinct roles/specialties currently registered in MongoDB.
+    """
+    profiles = await StudentProfile.find().to_list()
+    roles_set = set()
+    for p in profiles:
+        if p.target_roles and p.target_roles.strip():
+            roles_set.add(p.target_roles.strip())
+    return sorted(list(roles_set))
+
+
 #  GET /companies/me/browse/hints  — Autocomplete Hints
-# ─────────────────────────────────────────────────────────────────────────────
+
 
 @router.get("/browse/hints", response_model=BrowseHintsOut)
 async def browse_hints(
@@ -587,7 +637,7 @@ async def browse_hints(
     current_company: dict = Depends(get_current_company),
 ):
     """
-    Returns live matching student names, colleges, and skills for search hints.
+    Returns live matching student names, colleges, skills, and roles for search hints.
     """
     import re
     query_str = q.strip()
@@ -628,8 +678,22 @@ async def browse_hints(
                         return skills
         return skills
 
-    names, colleges, skills = await asyncio.gather(
-        get_names(), get_colleges(), get_skills(),
+    async def get_roles():
+        profiles = await StudentProfile.find(
+            {"target_roles": {"$regex": re.escape(query_str), "$options": "i"}}
+        ).limit(15).to_list()
+        seen = set()
+        roles = []
+        for p in profiles:
+            if p.target_roles and p.target_roles not in seen:
+                seen.add(p.target_roles)
+                roles.append(p.target_roles)
+                if len(roles) >= 6:
+                    break
+        return roles
+
+    names, colleges, skills, roles = await asyncio.gather(
+        get_names(), get_colleges(), get_skills(), get_roles(),
         return_exceptions=True,
     )
 
@@ -637,12 +701,13 @@ async def browse_hints(
         names=names if isinstance(names, list) else [],
         colleges=colleges if isinstance(colleges, list) else [],
         skills=skills if isinstance(skills, list) else [],
+        roles=roles if isinstance(roles, list) else [],
     )
 
 
-# ─────────────────────────────────────────────────────────────────────────────
+
 #  GET /companies/me/browse/{student_id}  — Candidate Detail for Browse
-# ─────────────────────────────────────────────────────────────────────────────
+
 
 @router.get("/browse/{student_id}", response_model=BrowseCandidateDetailOut)
 async def get_browse_candidate_detail(
@@ -693,6 +758,139 @@ async def get_browse_candidate_detail(
         overall_score=round(overall, 1),
         ai_skill_fit_pct=round(overall, 1),
     )
+
+
+
+#  GET /companies/me/interviews  — Company Scheduled Interviews Directory
+
+
+@router.get("/interviews")
+async def get_company_interviews(
+    current_company: dict = Depends(get_current_company),
+):
+    """
+    Returns all real-time interviews scheduled by this company.
+    """
+    try:
+        company_id = current_company.get("company_id") or ""
+        user_id = current_company.get("user_id") or ""
+        user_obj = current_company.get("user")
+        c_name = getattr(user_obj, "company_name", None) or getattr(user_obj, "full_name", None) or ""
+
+        query_parts = []
+        if company_id:
+            query_parts.append({"company_id": company_id})
+        if user_id and user_id != company_id:
+            query_parts.append({"company_id": user_id})
+        if c_name:
+            query_parts.append({"company_name": c_name})
+
+        if query_parts:
+            sessions = await InterviewSession.find({"$or": query_parts}).sort(-InterviewSession.created_at).to_list(100)
+        else:
+            sessions = await InterviewSession.find().sort(-InterviewSession.created_at).to_list(100)
+
+        # Fetch candidate profiles from MongoDB
+        student_ids = list({s.student_id for s in sessions if s.student_id})
+        profiles = await StudentProfile.find({"student_id": {"$in": student_ids}}).to_list() if student_ids else []
+        profile_map = {p.student_id: p for p in profiles}
+
+        result = []
+        for s in sessions:
+            prof = profile_map.get(s.student_id)
+            result.append({
+                "session_id": s.session_id,
+                "student_id": s.student_id,
+                "student_name": prof.name if prof and prof.name else "Candidate",
+                "student_email": prof.email if prof and prof.email else "",
+                "student_college": prof.college if prof and prof.college else "",
+                "target_role": prof.target_roles if prof and prof.target_roles else s.interview_type.title(),
+                "interview_type": s.interview_type,
+                "scheduled_at": s.scheduled_at.isoformat() if s.scheduled_at else None,
+                "duration_mins": s.duration_mins,
+                "interviewer_name": s.interviewer_name,
+                "video_call_url": s.video_call_url,
+                "status": s.status,
+                "overall_score": s.overall_score,
+                "feedback": s.feedback,
+                "tab_switch_count": s.tab_switch_count,
+                "fullscreen_exit_count": s.fullscreen_exit_count,
+                "created_at": s.created_at.isoformat(),
+                "ended_at": s.ended_at.isoformat() if s.ended_at else None,
+            })
+
+        return {"sessions": result, "total": len(result)}
+    except Exception as e:
+        logger.error(f"Error fetching company interviews: {e}", exc_info=True)
+        return {"sessions": [], "total": 0}
+
+
+
+#  POST /companies/me/interviews/schedule  — Schedule Interview
+
+
+class ScheduleCompanyInterviewBody(BaseModel):
+    student_id: str
+    job_id: Optional[str] = None
+    interview_type: str = "technical"
+    scheduled_at: datetime
+    duration_mins: int = 45
+    interviewer_name: Optional[str] = None
+    video_call_url: Optional[str] = None
+    proctoring_enabled: bool = True
+
+
+@router.post("/interviews/schedule", status_code=201)
+async def schedule_company_interview_endpoint(
+    body: ScheduleCompanyInterviewBody,
+    current_company: dict = Depends(get_current_company),
+):
+    company_id = current_company.get("company_id") or ""
+    user_obj = current_company.get("user")
+    c_name = getattr(user_obj, "company_name", None) or getattr(user_obj, "full_name", None) or company_id
+
+    company = await CompanyProfile.find_one(CompanyProfile.company_id == company_id) if company_id else None
+    if company:
+        c_name = company.name
+
+    session = InterviewSession(
+        student_id=body.student_id,
+        company_id=company_id,
+        company_name=c_name,
+        job_id=body.job_id,
+        mode="company",
+        interview_type=body.interview_type,
+        scheduled_at=body.scheduled_at,
+        duration_mins=body.duration_mins,
+        interviewer_name=body.interviewer_name or "Senior Technical Interviewer",
+        video_call_url=body.video_call_url,
+        proctoring_enabled=body.proctoring_enabled,
+        status="scheduled",
+    )
+    await session.insert()
+
+    scheduled_str = body.scheduled_at.strftime("%b %d, %I:%M %p IST")
+    await send_notification(
+        student_id=body.student_id,
+        title=f"{c_name} scheduled a {body.interview_type.title()} Interview",
+        body=f"{c_name} scheduled a {body.interview_type.title()} Interview on {scheduled_str}. Fully proctored session.",
+        action_url="/student/mock-interview",
+        notification_type="interview_scheduled",
+    )
+
+    await event_bus.publish("interview.scheduled", {
+        "session_id": session.session_id,
+        "student_id": body.student_id,
+        "company_id": company_id,
+        "company_name": c_name,
+        "interview_type": body.interview_type,
+        "scheduled_at": body.scheduled_at.isoformat(),
+    })
+
+    return {
+        "message": "Interview scheduled successfully",
+        "session_id": session.session_id,
+    }
 
 
 #  Admin router 

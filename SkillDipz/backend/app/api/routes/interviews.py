@@ -21,6 +21,7 @@ from app.models.user import User
 from app.models.interview import InterviewSession, InterviewViolation, ProctoringReport
 from app.models.employability_score import EmployabilityScore, ScoreHistory
 from app.models.target_company import CompanyProfile
+from app.models.student_profile import StudentProfile
 from app.core.event_bus import event_bus
 from app.core.config import settings
 from app.core.ws_manager import ws_manager
@@ -47,14 +48,12 @@ def _get_groq_client():
 class ScheduleInterviewRequest(BaseModel):
     student_id: str
     job_id: Optional[str] = None
-    interview_type: Literal[
-        "technical", "hr", "coding", "system_design"
-    ] = "technical"
+    interview_type: str = "technical"
     scheduled_at: datetime
     duration_mins: int = 45
     interviewer_name: Optional[str] = None
     video_call_url: Optional[str] = None
-    protecting_enabled: bool = True
+    proctoring_enabled: bool = True
 
 class ViolationRequest(BaseModel):
     type: Literal[
@@ -149,12 +148,67 @@ async def schedule_interview(
         "session_id": session.session_id,
     }
 
+
+@company_router.get("")
+@company_router.get("/")
+async def get_company_interviews(
+    current_company: dict = Depends(get_current_company),
+):
+    company_id = current_company["company_id"]
+    user_id = current_company.get("user_id", "")
+
+    # Query all sessions created by / assigned to this company
+    sessions = await InterviewSession.find(
+        {"$or": [
+            {"company_id": company_id},
+            {"company_id": user_id},
+        ]}
+    ).sort(-InterviewSession.created_at).to_list(100)
+
+    # Fetch candidate details for each session from StudentProfile
+    student_ids = list({s.student_id for s in sessions if s.student_id})
+    profiles = await StudentProfile.find({"student_id": {"$in": student_ids}}).to_list() if student_ids else []
+    profile_map = {p.student_id: p for p in profiles}
+
+    result = []
+    for s in sessions:
+        prof = profile_map.get(s.student_id)
+        result.append({
+            "session_id": s.session_id,
+            "student_id": s.student_id,
+            "student_name": prof.name if prof and prof.name else "Candidate",
+            "student_email": prof.email if prof and prof.email else "",
+            "student_college": prof.college if prof and prof.college else "",
+            "target_role": prof.target_roles if prof and prof.target_roles else s.interview_type.title(),
+            "interview_type": s.interview_type,
+            "scheduled_at": s.scheduled_at.isoformat() if s.scheduled_at else None,
+            "duration_mins": s.duration_mins,
+            "interviewer_name": s.interviewer_name,
+            "video_call_url": s.video_call_url,
+            "status": s.status,
+            "overall_score": s.overall_score,
+            "feedback": s.feedback,
+            "tab_switch_count": s.tab_switch_count,
+            "fullscreen_exit_count": s.fullscreen_exit_count,
+            "created_at": s.created_at.isoformat(),
+            "ended_at": s.ended_at.isoformat() if s.ended_at else None,
+        })
+
+    return {"sessions": result, "total": len(result)}
+
+def _normalize_dt(dt: Optional[datetime]) -> Optional[datetime]:
+    if dt is None:
+        return None
+    if dt.tzinfo is None:
+        return dt.replace(tzinfo=timezone.utc)
+    return dt.astimezone(timezone.utc)
+
+
 @router.get("/my")
 async def get_my_interviews(
     current: dict = Depends(get_current_student),
 ):
     # Fetch all scheduled and practice mock interviews for the authenticated student
-    
     student_id = current["student_id"]
     sessions = await InterviewSession.find(
         InterviewSession.student_id == student_id
@@ -163,10 +217,11 @@ async def get_my_interviews(
     now = datetime.now(timezone.utc)
     result = []
     for s in sessions:
+        sched = _normalize_dt(s.scheduled_at)
         if (
             s.status == "scheduled"
-            and s.scheduled_at
-            and abs((now - s.scheduled_at).total_seconds()) <= 300
+            and sched
+            and abs((now - sched).total_seconds()) <= 300
         ):
             s.status = "waiting"
             await s.save()
@@ -179,7 +234,7 @@ async def get_my_interviews(
             "company_id": s.company_id,
             "interviewer_name": s.interviewer_name,
             "video_call_url": s.video_call_url,
-            "scheduled_at": s.scheduled_at.isoformat() if s.scheduled_at else None,
+            "scheduled_at": sched.isoformat() if sched else (s.scheduled_at.isoformat() if s.scheduled_at else None),
             "duration_mins": s.duration_mins,
             "status": s.status,
             "overall_score": s.overall_score,
@@ -187,7 +242,7 @@ async def get_my_interviews(
             "tab_switch_count": s.tab_switch_count,
             "fullscreen_exit_count": s.fullscreen_exit_count,
             "violations_total": len(s.violations),
-            "created_at": s.created_at.isoformat(),
+            "created_at": s.created_at.isoformat() if s.created_at else "",
             "ended_at": s.ended_at.isoformat() if s.ended_at else None,
         })
 

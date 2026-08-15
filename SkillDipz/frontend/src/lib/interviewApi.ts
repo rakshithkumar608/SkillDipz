@@ -134,3 +134,51 @@ export async function completeInterview(
   });
   return data;
 }
+
+//  Company Interview Endpoints 
+
+export interface CompanyInterviewSession {
+  session_id: string;
+  student_id: string;
+  student_name: string;
+  student_email: string;
+  student_college: string;
+  target_role: string | null;
+  interview_type: string;
+  scheduled_at: string | null;
+  duration_mins: number;
+  interviewer_name?: string | null;
+  video_call_url?: string | null;
+  status: string;
+  overall_score?: number | null;
+  feedback?: string | null;
+  tab_switch_count: number;
+  fullscreen_exit_count: number;
+  created_at: string;
+  ended_at?: string | null;
+}
+
+export interface ScheduleInterviewPayload {
+  student_id: string;
+  interview_type: string;
+  scheduled_at: string;
+  duration_mins?: number;
+  interviewer_name?: string;
+  video_call_url?: string;
+  proctoring_enabled?: boolean;
+}
+
+export async function scheduleCompanyInterview(
+  payload: ScheduleInterviewPayload
+): Promise<{ message: string; session_id: string }> {
+  const { data } = await api.post("/companies/me/interviews/schedule", payload);
+  return data;
+}
+
+export async function getCompanyInterviews(): Promise<{
+  sessions: CompanyInterviewSession[];
+  total: number;
+}> {
+  const { data } = await api.get("/companies/me/interviews");
+  return data;
+}

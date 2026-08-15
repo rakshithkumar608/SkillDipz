@@ -1,7 +1,7 @@
 "use client";
 
 import React, { useRef, useEffect } from "react";
-import { Search, X, Loader2, Users, GraduationCap, Zap } from "lucide-react";
+import { Search, X, Loader2, Users, GraduationCap, Zap, Briefcase } from "lucide-react";
 import type { BrowseHints } from "@/store/companyStore";
 
 interface Props {
@@ -47,8 +47,9 @@ export function SearchWithHints({
   const names = Array.isArray(hints?.names) ? hints.names : [];
   const colleges = Array.isArray(hints?.colleges) ? hints.colleges : [];
   const skills = Array.isArray(hints?.skills) ? hints.skills : [];
+  const roles = Array.isArray(hints?.roles) ? hints.roles : [];
 
-  const hasAnyHints = names.length > 0 || colleges.length > 0 || skills.length > 0;
+  const hasAnyHints = names.length > 0 || colleges.length > 0 || skills.length > 0 || roles.length > 0;
 
   return (
     <div className="space-y-1 relative">
@@ -134,6 +135,28 @@ export function SearchWithHints({
                       >
                         <GraduationCap className="w-3.5 h-3.5 text-emerald-400 shrink-0" />
                         <span className="truncate">{college}</span>
+                      </button>
+                    </li>
+                  ))}
+                </div>
+              )}
+
+              {/* Roles / Specializations */}
+              {roles.length > 0 && (
+                <div>
+                  <li className="px-3 py-1.5 text-[10px] font-bold text-slate-500 uppercase tracking-wider bg-black/20">
+                    Roles / Specializations
+                  </li>
+                  {roles.map((role) => (
+                    <li key={`hint-role-${role}`}>
+                      <button
+                        type="button"
+                        onMouseDown={() => onSelectHint(role)}
+                        className="w-full text-left px-4 py-2 text-sm text-slate-300
+                                   hover:bg-white/5 hover:text-white flex items-center gap-2 transition-colors"
+                      >
+                        <Briefcase className="w-3.5 h-3.5 text-sky-400 shrink-0" />
+                        <span className="truncate">{role}</span>
                       </button>
                     </li>
                   ))}
