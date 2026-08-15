@@ -1,6 +1,7 @@
 import asyncio
 import logging
-from datetime import datetime, timedelta
+import re
+from datetime import datetime, timedelta, timezone
 from typing import List, Literal, Optional
 
 from fastapi import APIRouter, Depends, Query
@@ -39,6 +40,7 @@ class LeaderboardEntry(BaseModel):
     activity_consistency: float
     is_me: bool = False
 
+
 class Top3Entry(BaseModel):
     rank: int
     student_id: str
@@ -52,6 +54,7 @@ class Top3Entry(BaseModel):
     assignments_completed: int
     current_streak: int
 
+
 class MyRankOut(BaseModel):
     rank: int
     total_students: int
@@ -60,6 +63,7 @@ class MyRankOut(BaseModel):
     college_rank: Optional[int] = None
     college_total: Optional[int] = None
     rank_change_7d: int
+
 
 class LeaderboardResponse(BaseModel):
     total_students: int
@@ -76,7 +80,7 @@ class LeaderboardResponse(BaseModel):
 def _initials(name: str) -> str:
     parts = (name or "").strip().split()
     if not parts:
-        return "??"
+        return "ST"
     if len(parts) == 1:
         return parts[0][:2].upper()
     return (parts[0][0] + parts[-1][0]).upper()
@@ -84,7 +88,6 @@ def _initials(name: str) -> str:
 
 async def _fetch_activity_counts(student_id: str) -> dict:
     """Four concurrent count queries — real activity data per student."""
-
     async def count_assessments():
         return await AssessmentResult.find(
             AssessmentResult.student_id == student_id
@@ -109,175 +112,219 @@ async def _fetch_activity_counts(student_id: str) -> dict:
         return doc.current_streak if doc else 0
 
     results = await asyncio.gather(
-        count_assessments(), count_projects(),
-        count_assignments(), get_streak(),
+        count_assessments(),
+        count_projects(),
+        count_assignments(),
+        get_streak(),
         return_exceptions=True,
     )
     return {
-        "assessments_taken":     results[0] if isinstance(results[0], int) else 0,
-        "projects_completed":    results[1] if isinstance(results[1], int) else 0,
+        "assessments_taken": results[0] if isinstance(results[0], int) else 0,
+        "projects_completed": results[1] if isinstance(results[1], int) else 0,
         "assignments_completed": results[2] if isinstance(results[2], int) else 0,
-        "current_streak":        results[3] if isinstance(results[3], int) else 0,
+        "current_streak": results[3] if isinstance(results[3], int) else 0,
     }
 
 
-async def _build_entry(
-    rank: int,
-    score_doc: EmployabilityScore,
-    profile: Optional[StudentProfile],
-    me_id: str,
-) -> LeaderboardEntry:
-    name = (profile.name if profile else "") or "Student"
-    activity = await _fetch_activity_counts(score_doc.student_id)
-    c = score_doc.components
-    return LeaderboardEntry(
-        rank=rank,
-        student_id=score_doc.student_id,
-        name=name,
-        avatar_initials=_initials(name),
-        college=profile.college if profile else None,
-        branch=profile.branch if profile else None,
-        target_role=score_doc.target_role or (
-            profile.target_roles if profile else None
-        ),
-        overall_score=round(score_doc.overall_score, 1),
-        assessments_taken=activity["assessments_taken"],
-        projects_completed=activity["projects_completed"],
-        assignments_completed=activity["assignments_completed"],
-        current_streak=activity["current_streak"],
-        resume_quality=round(c.resume_quality, 1),
-        assessment_score=round(c.assessment_score, 1),
-        project_strength=round(c.project_strength, 1),
-        interview_readiness=round(c.interview_readiness, 1),
-        activity_consistency=round(c.activity_consistency, 1),
-        is_me=(score_doc.student_id == me_id),
-    )
+
+#  GET /leaderboard/roles  — Live Distinct Roles from Database
 
 
-async def _compute_my_rank_details(
-    me_id: str,
-    all_scores: List[EmployabilityScore],
-    my_score_doc: Optional[EmployabilityScore],
-) -> tuple:
-    total = len(all_scores)
-    my_overall = my_score_doc.overall_score if my_score_doc else 0.0
-    my_rank = next(
-        (i + 1 for i, s in enumerate(all_scores) if s.student_id == me_id),
-        total + 1,   # not yet on the board → place after the last ranked student
-    )
-    percentile = round((1 - (my_rank - 1) / max(total, 1)) * 100, 2)
-
-    college_rank: Optional[int] = None
-    college_total: Optional[int] = None
-    my_profile = await StudentProfile.find_one(StudentProfile.student_id == me_id)
-    if my_profile and my_profile.college:
-        c_profs = await StudentProfile.find(
-            StudentProfile.college == my_profile.college
-        ).to_list()
-        c_ids = {p.student_id for p in c_profs}
-        c_scores = [s for s in all_scores if s.student_id in c_ids]
-        college_total = len(c_scores)
-        college_rank = next(
-            (i + 1 for i, s in enumerate(c_scores) if s.student_id == me_id), None
-        )
-
-    rank_change_7d = 0
-    if my_score_doc and my_score_doc.history:
-        # MongoDB stores datetimes as naive UTC — use utcnow() to stay naive
-        cutoff = datetime.utcnow() - timedelta(days=7)
-        old_snaps = [h for h in my_score_doc.history if h.recorded_at <= cutoff]
-        if old_snaps:
-            old_score = max(old_snaps, key=lambda h: h.recorded_at).score
-            above_now  = sum(1 for s in all_scores if s.overall_score > my_overall)
-            above_then = sum(1 for s in all_scores if s.overall_score > old_score)
-            rank_change_7d = above_then - above_now   # positive = moved up
-
-    return my_rank, MyRankOut(
-        rank=my_rank,
-        total_students=total,
-        overall_score=round(my_overall, 1),
-        percentile=percentile,
-        college_rank=college_rank,
-        college_total=college_total,
-        rank_change_7d=rank_change_7d,
-    )
+@router.get("/roles", response_model=List[str])
+async def get_leaderboard_roles():
+    """Returns all distinct target roles present across student profiles in MongoDB."""
+    profiles = await StudentProfile.find().to_list()
+    roles_set = set()
+    for p in profiles:
+        if p.target_roles:
+            for r in p.target_roles.split(","):
+                r_clean = r.strip()
+                if r_clean:
+                    roles_set.add(r_clean)
+    scores = await EmployabilityScore.find().to_list()
+    for s in scores:
+        if s.target_role and s.target_role.strip():
+            roles_set.add(s.target_role.strip())
+    return sorted(list(roles_set))
 
 
-# GET / Leaderboard
+
+#  GET /leaderboard  — Global Platform Leaderboard
+
 
 @router.get("", response_model=LeaderboardResponse)
 async def get_leaderboard(
-    role: Optional[str] = Query(None),
+    role: Optional[str] = Query(None, description="Filter by target role"),
+    search: Optional[str] = Query(None, description="Search candidate name, college, or role"),
+    sort_by: str = Query("score", description="score | tests | projects | streak"),
     scope: Literal["global", "college"] = Query("global"),
     page: int = Query(1, ge=1),
-    per_page: int = Query(50, ge=10, le=100),
+    per_page: int = Query(20, ge=5, le=100),
     around_me: bool = Query(False),
     current_user: User = Depends(get_current_user),
 ) -> LeaderboardResponse:
     me_id = str(current_user.id)
 
-    q_args = [EmployabilityScore.target_role == role] if role else []
-    all_scores: List[EmployabilityScore] = (
-        await EmployabilityScore.find(*q_args)
-        .sort(-EmployabilityScore.overall_score)
-        .to_list()
-    )
+    # 1. Fetch all Student Profiles & Employability Scores from MongoDB
+    all_profiles = await StudentProfile.find().to_list()
+    all_scores = await EmployabilityScore.find().to_list()
+    score_map = {s.student_id: s for s in all_scores}
 
+    # Map of all active student IDs
+    all_student_ids = list(set([p.student_id for p in all_profiles] + [s.student_id for s in all_scores]))
+
+    # Profile lookup
+    profile_map = {p.student_id: p for p in all_profiles}
+
+    # 2. Build candidate aggregated records
+    candidates_data = []
+    search_re = re.compile(re.escape(search.strip()), re.IGNORECASE) if search and search.strip() else None
+    role_re = re.compile(re.escape(role.strip()), re.IGNORECASE) if role and role.strip() else None
+
+    # College scope filter check
+    college_filter: Optional[str] = None
     if scope == "college":
-        my_p = await StudentProfile.find_one(StudentProfile.student_id == me_id)
-        if my_p and my_p.college:
-            c_profs = await StudentProfile.find(
-                StudentProfile.college == my_p.college
-            ).to_list()
-            c_ids = {p.student_id for p in c_profs}
-            all_scores = [s for s in all_scores if s.student_id in c_ids]
+        my_prof = profile_map.get(me_id)
+        if my_prof and my_prof.college:
+            college_filter = my_prof.college.lower().strip()
 
-    total_students = len(all_scores)
-    my_score_doc = await EmployabilityScore.find_one(
-        EmployabilityScore.student_id == me_id
+    for sid in all_student_ids:
+        prof = profile_map.get(sid)
+        sc = score_map.get(sid)
+
+        name = (prof.name if prof else "") or "Student"
+        college = (prof.college if prof else "") or ""
+        branch = (prof.branch if prof else "") or ""
+        target_role = (sc.target_role if sc else None) or (prof.target_roles if prof else None) or ""
+        overall_score = round(sc.overall_score, 1) if sc else 0.0
+
+        # Scope filter (College)
+        if college_filter and college.lower().strip() != college_filter:
+            continue
+
+        # Role filter
+        if role_re:
+            if not target_role or not role_re.search(target_role):
+                continue
+
+        # Search filter
+        if search_re:
+            name_match = bool(search_re.search(name))
+            college_match = bool(search_re.search(college))
+            branch_match = bool(search_re.search(branch))
+            role_match = bool(search_re.search(target_role))
+            skills_match = any(bool(search_re.search(s)) for s in (prof.skills if prof and prof.skills else []))
+            if not (name_match or college_match or branch_match or role_match or skills_match):
+                continue
+
+        candidates_data.append({
+            "student_id": sid,
+            "profile": prof,
+            "score_doc": sc,
+            "name": name,
+            "college": college or None,
+            "branch": branch or None,
+            "target_role": target_role or None,
+            "overall_score": overall_score,
+        })
+
+    # 3. Concurrently fetch live activity counts for all filtered candidates
+    candidate_ids = [c["student_id"] for c in candidates_data]
+    activity_results = await asyncio.gather(
+        *[_fetch_activity_counts(sid) for sid in candidate_ids],
+        return_exceptions=True,
     )
-    my_rank, my_rank_details = await _compute_my_rank_details(
-        me_id, all_scores, my_score_doc
+    for c, act in zip(candidates_data, activity_results):
+        act_dict = act if isinstance(act, dict) else {
+            "assessments_taken": 0,
+            "projects_completed": 0,
+            "assignments_completed": 0,
+            "current_streak": 0,
+        }
+        c.update(act_dict)
+
+    # 4. Sort candidates
+    if sort_by == "tests":
+        candidates_data.sort(key=lambda x: (-x["assessments_taken"], -x["overall_score"]))
+    elif sort_by == "projects":
+        candidates_data.sort(key=lambda x: (-x["projects_completed"], -x["overall_score"]))
+    elif sort_by == "streak":
+        candidates_data.sort(key=lambda x: (-x["current_streak"], -x["overall_score"]))
+    else:
+        # Default sort by overall_score descending, then tests, then projects
+        candidates_data.sort(key=lambda x: (-x["overall_score"], -x["assessments_taken"], -x["projects_completed"]))
+
+    total_students = len(candidates_data)
+
+    # 5. Top 3 entries
+    top_3: List[Top3Entry] = []
+    for rank_idx, c in enumerate(candidates_data[:3], start=1):
+        top_3.append(Top3Entry(
+            rank=rank_idx,
+            student_id=c["student_id"],
+            name=c["name"],
+            avatar_initials=_initials(c["name"]),
+            college=c["college"],
+            target_role=c["target_role"],
+            overall_score=c["overall_score"],
+            assessments_taken=c["assessments_taken"],
+            projects_completed=c["projects_completed"],
+            assignments_completed=c["assignments_completed"],
+            current_streak=c["current_streak"],
+        ))
+
+    # 6. Compute user rank details
+    my_rank = next(
+        (i + 1 for i, c in enumerate(candidates_data) if c["student_id"] == me_id),
+        total_students + 1,
+    )
+    my_score_doc = score_map.get(me_id)
+    my_overall = my_score_doc.overall_score if my_score_doc else 0.0
+    percentile = round((1 - (my_rank - 1) / max(total_students, 1)) * 100, 2)
+
+    my_rank_details = MyRankOut(
+        rank=my_rank,
+        total_students=total_students,
+        overall_score=round(my_overall, 1),
+        percentile=percentile,
+        college_rank=None,
+        college_total=None,
+        rank_change_7d=0,
     )
 
+    # 7. Pagination
     if around_me:
         page = max(1, (my_rank - 1) // per_page + 1)
     total_pages = max(1, (total_students + per_page - 1) // per_page)
     page = min(page, total_pages)
 
     start = (page - 1) * per_page
-    page_scores = all_scores[start : start + per_page]
+    page_items = candidates_data[start : start + per_page]
 
-    page_ids = [s.student_id for s in page_scores]
-    profiles = await StudentProfile.find({"student_id": {"$in": page_ids}}).to_list()
-    profile_map = {p.student_id: p for p in profiles}
-
+    # 8. Build LeaderboardEntry list for this page
     entries: List[LeaderboardEntry] = []
-    for i, sd in enumerate(page_scores):
-        e = await _build_entry(start + i + 1, sd, profile_map.get(sd.student_id), me_id)
-        entries.append(e)
-
-    top3_ids = [s.student_id for s in all_scores[:3]]
-    t3_profs = await StudentProfile.find({"student_id": {"$in": top3_ids}}).to_list()
-    t3_map = {p.student_id: p for p in t3_profs}
-
-    top_3: List[Top3Entry] = []
-    for t_rank, ts in enumerate(all_scores[:3], start=1):
-        tp = t3_map.get(ts.student_id)
-        t_name = (tp.name if tp else "") or "Student"
-        act = await _fetch_activity_counts(ts.student_id)
-        top_3.append(Top3Entry(
-            rank=t_rank,
-            student_id=ts.student_id,
-            name=t_name,
-            avatar_initials=_initials(t_name),
-            college=tp.college if tp else None,
-            target_role=ts.target_role,
-            overall_score=round(ts.overall_score, 1),
-            assessments_taken=act["assessments_taken"],
-            projects_completed=act["projects_completed"],
-            assignments_completed=act["assignments_completed"],
-            current_streak=act["current_streak"],
+    for i, c in enumerate(page_items):
+        sc = c["score_doc"]
+        c_comp = sc.components if sc else None
+        entries.append(LeaderboardEntry(
+            rank=start + i + 1,
+            student_id=c["student_id"],
+            name=c["name"],
+            avatar_initials=_initials(c["name"]),
+            college=c["college"],
+            branch=c["branch"],
+            target_role=c["target_role"],
+            overall_score=c["overall_score"],
+            assessments_taken=c["assessments_taken"],
+            projects_completed=c["projects_completed"],
+            assignments_completed=c["assignments_completed"],
+            current_streak=c["current_streak"],
+            resume_quality=round(c_comp.resume_quality, 1) if c_comp else 0.0,
+            assessment_score=round(c_comp.assessment_score, 1) if c_comp else 0.0,
+            project_strength=round(c_comp.project_strength, 1) if c_comp else 0.0,
+            interview_readiness=round(c_comp.interview_readiness, 1) if c_comp else 0.0,
+            activity_consistency=round(c_comp.activity_consistency, 1) if c_comp else 0.0,
+            is_me=(c["student_id"] == me_id),
         ))
 
     return LeaderboardResponse(
@@ -286,14 +333,16 @@ async def get_leaderboard(
         per_page=per_page,
         total_pages=total_pages,
         my_rank=my_rank,
-        my_score=round(my_score_doc.overall_score if my_score_doc else 0.0, 1),
+        my_score=round(my_overall, 1),
         top_3=top_3,
         students=entries,
         my_rank_details=my_rank_details,
     )
 
 
-# GET/ leaderboard/me
+
+#  GET /leaderboard/me  — User Rank Summary
+
 
 @router.get("/me", response_model=MyRankOut)
 async def get_my_rank(
@@ -301,14 +350,18 @@ async def get_my_rank(
     current_user: User = Depends(get_current_user),
 ) -> MyRankOut:
     me_id = str(current_user.id)
-    q_args = [EmployabilityScore.target_role == role] if role else []
-    all_scores = (
-        await EmployabilityScore.find(*q_args)
-        .sort(-EmployabilityScore.overall_score)
-        .to_list()
+    all_scores = await EmployabilityScore.find().sort(-EmployabilityScore.overall_score).to_list()
+    total = len(all_scores)
+    my_score_doc = await EmployabilityScore.find_one(EmployabilityScore.student_id == me_id)
+    my_overall = my_score_doc.overall_score if my_score_doc else 0.0
+    my_rank = next((i + 1 for i, s in enumerate(all_scores) if s.student_id == me_id), total + 1)
+    percentile = round((1 - (my_rank - 1) / max(total, 1)) * 100, 2)
+    return MyRankOut(
+        rank=my_rank,
+        total_students=total,
+        overall_score=round(my_overall, 1),
+        percentile=percentile,
+        college_rank=None,
+        college_total=None,
+        rank_change_7d=0,
     )
-    my_score_doc = await EmployabilityScore.find_one(
-        EmployabilityScore.student_id == me_id
-    )
-    _, details = await _compute_my_rank_details(me_id, all_scores, my_score_doc)
-    return details

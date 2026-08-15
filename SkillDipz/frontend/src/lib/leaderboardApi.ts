@@ -61,18 +61,42 @@ export interface LeaderboardResponse {
 
 export async function fetchLeaderboard(params: {
   role?: string;
+  search?: string;
+  sort_by?: "score" | "tests" | "projects" | "streak";
   scope?: "global" | "college";
   page?: number;
   per_page?: number;
   around_me?: boolean;
 }): Promise<LeaderboardResponse> {
   const q = new URLSearchParams();
-  if (params.role)     q.set("role",      params.role);
-  if (params.scope)    q.set("scope",     params.scope);
-  if (params.page)     q.set("page",      String(params.page));
-  if (params.per_page) q.set("per_page",  String(params.per_page));
-  if (params.around_me) q.set("around_me", "true");
-  const { data } = await api.get<LeaderboardResponse>(`/leaderboard?${q}`);
+  if (params.role && params.role !== "All Roles" && params.role !== "All Specialties") {
+    q.set("role", params.role);
+  }
+  if (params.search && params.search.trim()) {
+    q.set("search", params.search.trim());
+  }
+  if (params.sort_by) {
+    q.set("sort_by", params.sort_by);
+  }
+  if (params.scope) {
+    q.set("scope", params.scope);
+  }
+  if (params.page) {
+    q.set("page", String(params.page));
+  }
+  if (params.per_page) {
+    q.set("per_page", String(params.per_page));
+  }
+  if (params.around_me) {
+    q.set("around_me", "true");
+  }
+
+  const { data } = await api.get<LeaderboardResponse>(`/leaderboard?${q.toString()}`);
+  return data;
+}
+
+export async function fetchLeaderboardRoles(): Promise<string[]> {
+  const { data } = await api.get<string[]>("/leaderboard/roles");
   return data;
 }
 
