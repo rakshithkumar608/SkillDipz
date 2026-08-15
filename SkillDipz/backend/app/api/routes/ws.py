@@ -30,13 +30,20 @@ async def student_ws(
         payload = decode_token(token)
         if payload and payload.get("type") == "access" and payload.get("sub") == user_id:
             authenticated = True
+        else:
+            if not payload:
+                logger.warning(f"⚠️ WebSocket Auth Failed: Token invalid or JWT_SECRET_KEY mismatch for user {user_id}")
+            else:
+                logger.warning(f"⚠️ WebSocket Auth Failed: Token claims mismatch for user {user_id} (token sub={payload.get('sub')}, type={payload.get('type')})")
 
     if not authenticated:
+        logger.warning(f"❌ WebSocket Connection Rejected (403): User {user_id} is not authenticated via cookie or token.")
         await websocket.close(code=status.WS_1008_POLICY_VIOLATION)
         return
 
     user = await User.get(user_id)
     if not user:
+        logger.warning(f"❌ WebSocket Connection Rejected (403): User {user_id} not found in database.")
         await websocket.close(code=status.WS_1008_POLICY_VIOLATION)
         return
 

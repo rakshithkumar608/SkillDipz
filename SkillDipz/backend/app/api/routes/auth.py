@@ -164,7 +164,12 @@ async def register(body: RegisterRequest, request: Request, response: Response):
 
         otp = generate_otp()
         if await store_otp(body.email, otp):
-            send_otp_email(body.email, otp, existing.full_name)
+            sent = send_otp_email(body.email, otp, existing.full_name)
+            if not sent:
+                raise HTTPException(
+                    status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                    detail="Failed to send OTP email. Please check server SMTP configuration.",
+                )
         else:
             logger.warning(f"Could not store OTP for {body.email} — Redis down.")
 
@@ -198,7 +203,12 @@ async def register(body: RegisterRequest, request: Request, response: Response):
     # Generate & send OTP
     otp = generate_otp()
     if await store_otp(body.email, otp):
-        send_otp_email(body.email, otp, body.full_name)
+        sent = send_otp_email(body.email, otp, body.full_name)
+        if not sent:
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail="Failed to send OTP email. Please check server SMTP configuration.",
+            )
     else:
         logger.warning(f"Could not store OTP for {body.email} — Redis down.")
 
@@ -268,7 +278,12 @@ async def resend_otp(body: ResendOTPRequest):
     otp = generate_otp()
     stored = await store_otp(body.email, otp)
     if stored:
-        send_otp_email(body.email, otp, user.full_name)
+        sent = send_otp_email(body.email, otp, user.full_name)
+        if not sent:
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail="Failed to send OTP email. Please check server SMTP configuration.",
+            )
     return MessageResponse(message="A new verification code has been sent to your email.")
 
 
@@ -302,7 +317,12 @@ async def login(body: LoginRequest, request: Request, response: Response):
         # Resend OTP automatically on login attempt
         otp = generate_otp()
         if await store_otp(body.email, otp):
-            send_otp_email(body.email, otp, user.full_name)
+            sent = send_otp_email(body.email, otp, user.full_name)
+            if not sent:
+                raise HTTPException(
+                    status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                    detail="Failed to send OTP email. Please check server SMTP configuration.",
+                )
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Email not verified. A new verification code has been sent to your email.",
@@ -352,10 +372,21 @@ async def google_login(body: GoogleLoginRequest, request: Request, response: Res
     if not email or not google_id:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Incomplete Google profile.")
 
-    user = await User.find_one(User.email == email)
     desired_role = body.role if body.role in ["STUDENT", "COMPANY"] else "STUDENT"
+    if desired_role == "COMPANY":
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Google Sign-In is disabled for Company accounts. Please sign in using your company email and password.",
+        )
+
+    user = await User.find_one(User.email == email)
 
     if user:
+        if user.role == "COMPANY":
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Google Sign-In is disabled for Company accounts. Please sign in using your company email and password.",
+            )
         if not user.google_id:
             user.google_id = google_id
         if not user.avatar_url and avatar_url:

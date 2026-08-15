@@ -14,7 +14,7 @@ import {
   X,
 } from "lucide-react";
 import { usePathname, useRouter } from "next/navigation";
-import { useState } from "react";
+import { useEffect, useState} from "react";
 import Image from "next/image";
 import Link from "next/link";
 
@@ -40,6 +40,14 @@ export default function CompanyLayout({
   const router = useRouter();
   const { user } = useAuthStore();
   const [sidebarOpen, setSidebarOpen] = useState(false);
+
+  useEffect(() => {
+    if (typeof window !== "undefined") {
+      if (!user || user.role !== "COMPANY") {
+        router.push("/login");
+      }
+    }
+  }, [user, router]);
 
   const handleLogout = async () => {
     await logout();

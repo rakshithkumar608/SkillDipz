@@ -116,27 +116,31 @@ export default function LoginScreen() {
             ))}
           </div>
 
-          {/* Google Login */}
-          <button
-            type="button"
-            onClick={() => googleLogin()}
-            disabled={googleLoading}
-            className="w-full flex items-center justify-center gap-3 py-3 rounded-xl border border-white/15 bg-white/5 hover:bg-white/10 transition-all text-sm font-medium mb-4 disabled:opacity-50"
-          >
-            {googleLoading ? (
-              <Loader2 className="w-4 h-4 animate-spin" />
-            ) : (
-              <FcGoogle className="w-5 h-5" />
-            )}
-            Continue with Google
-          </button>
+          {/* Google Login — Students only */}
+          {tab === "STUDENT" && (
+            <>
+              <button
+                type="button"
+                onClick={() => googleLogin()}
+                disabled={googleLoading}
+                className="w-full flex items-center justify-center gap-3 py-3 rounded-xl border border-white/15 bg-white/5 hover:bg-white/10 transition-all text-sm font-medium mb-4 disabled:opacity-50"
+              >
+                {googleLoading ? (
+                  <Loader2 className="w-4 h-4 animate-spin" />
+                ) : (
+                  <FcGoogle className="w-5 h-5" />
+                )}
+                Continue with Google
+              </button>
 
-          {/* Divder */}
-          <div className="flex items-center gap-3 mb-4">
-            <div className="flex-1 h-px bg-white/10" />
-            <span className="text-neutral-500 text-xs uppercase tracking-wider">or</span>
-            <div className="flex-1 h-px bg-white/10"/>
-          </div>
+              {/* Divider */}
+              <div className="flex items-center gap-3 mb-4">
+                <div className="flex-1 h-px bg-white/10" />
+                <span className="text-neutral-500 text-xs uppercase tracking-wider">or</span>
+                <div className="flex-1 h-px bg-white/10"/>
+              </div>
+            </>
+          )}
 
           {/* Form */}
           <form onSubmit={handleSubmit} className="space-y-4">
