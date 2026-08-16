@@ -1,5 +1,5 @@
 export { BrowseHeader } from "./BrowseHeader";
-export { BrowseFiltersBar, ROLE_OPTIONS, SCORE_OPTIONS, PROJECT_OPTIONS } from "./BrowseFiltersBar";
+export { BrowseFiltersBar, SCORE_OPTIONS, PROJECT_OPTIONS } from "./BrowseFiltersBar";
 export { SearchWithHints } from "./SearchWithHints";
 export { BrowseResultsHeader } from "./BrowseResultsHeader";
 export { BrowseCandidateCard } from "./BrowseCandidateCard";

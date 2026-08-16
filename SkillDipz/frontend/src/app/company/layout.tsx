@@ -3,7 +3,6 @@
 import { logout } from "@/lib/auth";
 import { useAuthStore } from "@/store/authStore";
 import {
-  Activity,
   Briefcase,
   Database,
   LayoutDashboard,
@@ -30,7 +29,6 @@ const navItems = [
   { label: "Scheduled Interviews", href: "/company/interviews", icon: Video },
   { label: "Global Leaderboard", href: "/company/leaderboard", icon: Trophy },
   { label: "Jobs & Applicants Center", href: "/company/jobs", icon: Briefcase },
-  { label: "Activity Analytics", href: "/company/analytics", icon: Activity },
 ];
 
 export default function CompanyLayout({

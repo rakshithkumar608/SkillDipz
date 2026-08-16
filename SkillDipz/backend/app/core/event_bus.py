@@ -108,36 +108,59 @@ async def _handle_company_new_match(payload: Dict[str, Any]):
 
 
 async def _handle_job_posted(payload: Dict[str, Any]):
-    """When a company posts a job, notify matching students."""
+    """When a company posts a job, notify students across the platform."""
     from app.models.student_profile import StudentProfile
     from app.models.employability_score import EmployabilityScore
+    from app.models.user import User
 
-    job_title = payload.get("title", "New Job")
-    company_name = payload.get("company_name", "A company")
-    min_score = payload.get("min_score", 0)
-    role_id = payload.get("role_id", "")
+    job_title = payload.get("title", "New Job Opening")
+    company_name = payload.get("company_name", "A Hiring Partner")
+    min_score = payload.get("min_score", 0.0)
+    role_id = payload.get("role_id", "Engineering")
 
-    # Find students whose role matches and score meets minimum
-    all_students = await StudentProfile.find_all().to_list()
-    for student in all_students:
-        student_role = getattr(student, "target_roles", "") or ""
-        if role_id and student_role and student_role.lower() != role_id.lower():
-            continue
+    # 1. Real-time Live WebSocket broadcast to all connected users
+    await ws_manager.broadcast_all(
+        "job_posted",
+        {
+            "job_title": job_title,
+            "company_name": company_name,
+            "role_id": role_id,
+            "min_score": min_score,
+            "action_url": "/student/jobs",
+        },
+    )
 
-        score_doc = await EmployabilityScore.find_one(
-            EmployabilityScore.student_id == student.student_id
-        )
+    # 2. Persist real-time notifications for all student accounts
+    student_users = await User.find(User.role == "STUDENT").to_list()
+    student_ids = [str(u.id) for u in student_users]
+
+    profiles = await StudentProfile.find({"student_id": {"$in": student_ids}}).to_list() if student_ids else []
+    profile_map = {p.student_id: p for p in profiles}
+
+    scores = await EmployabilityScore.find({"student_id": {"$in": student_ids}}).to_list() if student_ids else []
+    score_map = {s.student_id: s for s in scores}
+
+    for sid in student_ids:
+        score_doc = score_map.get(sid)
         student_score = score_doc.overall_score if score_doc else 0.0
 
-        if student_score >= min_score:
-            from app.services.notification_service import send_notification
-            await send_notification(
-                student_id=student.student_id,
-                title=f"New job at {company_name}",
-                body=f"New job opening at {company_name} — {job_title}! You meet the score requirement.",
-                action_url="/student/jobs",
-                notification_type="job_posted",
-            )
+        if min_score > 0 and student_score >= min_score:
+            notif_title = f"New Job Opening: {job_title} at {company_name}"
+            notif_body = f"{company_name} just posted a new vacancy for \"{job_title}\" ({role_id}). You meet the eligibility threshold ({student_score:.1f}% >= {min_score}%). Apply now!"
+        elif min_score > 0:
+            notif_title = f"New Job Opening: {job_title} at {company_name}"
+            notif_body = f"{company_name} just posted a new vacancy for \"{job_title}\" ({role_id}). Check prerequisites and apply."
+        else:
+            notif_title = f"New Job Opening: {job_title} at {company_name}"
+            notif_body = f"{company_name} is actively hiring for \"{job_title}\" ({role_id}). Review the posting and apply now!"
+
+        await send_notification(
+            student_id=sid,
+            title=notif_title,
+            body=notif_body,
+            action_url="/student/jobs",
+            notification_type="job_posted",
+        )
 
 
 async def _handle_job_applied(payload: Dict[str, Any]):

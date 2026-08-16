@@ -67,12 +67,12 @@ export function useWebSocket(userId: string | undefined): WsState {
             s.unreadCount + 1,
           );
 
-          // Show prominent toast for company interview schedules & alerts
+          // Show prominent toast for company interview schedules, job postings & alerts
           if (
             newNotif.type === "interview_scheduled" ||
             (newNotif as any).notification_type === "interview_scheduled"
           ) {
-            toast.success(`🎯 ${newNotif.title}`, {
+            toast.success(newNotif.title, {
               description: newNotif.body,
               duration: 8000,
               action: {
@@ -83,10 +83,24 @@ export function useWebSocket(userId: string | undefined): WsState {
               },
             });
           } else if (
+            newNotif.type === "job_posted" ||
+            (newNotif as any).notification_type === "job_posted"
+          ) {
+            toast.info(newNotif.title, {
+              description: newNotif.body,
+              duration: 8000,
+              action: {
+                label: "View Job",
+                onClick: () =>
+                  (window.location.href =
+                    newNotif.action_url || "/student/jobs"),
+              },
+            });
+          } else if (
             newNotif.type === "interview_terminated" ||
             (newNotif as any).notification_type === "interview_terminated"
           ) {
-            toast.error(`⚠️ ${newNotif.title}`, {
+            toast.error(newNotif.title, {
               description: newNotif.body,
               duration: 8000,
             });
@@ -98,13 +112,28 @@ export function useWebSocket(userId: string | undefined): WsState {
           }
         }
 
+        if (msg.type === "job_posted") {
+          const { job_title, company_name } = msg.payload as {
+            job_title: string;
+            company_name: string;
+          };
+          toast.info(`New Job Opening: ${job_title} at ${company_name}`, {
+            description: `${company_name} is now hiring. Check eligibility and apply!`,
+            duration: 8000,
+            action: {
+              label: "View Jobs",
+              onClick: () => (window.location.href = "/student/jobs"),
+            },
+          });
+        }
+
         if (msg.type === "new_project_group") {
           const { creator_name, title } = msg.payload as {
             creator_name: string;
             title: string;
             project_id: string;
           };
-          toast.info(`🚀 ${creator_name} just created a project group: "${title}"`, {
+          toast.info(`${creator_name} just created a project group: "${title}"`, {
             description: "Head to Projects to collaborate!",
             duration: 6000,
             action: {

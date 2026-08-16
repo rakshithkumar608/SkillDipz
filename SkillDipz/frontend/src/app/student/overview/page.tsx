@@ -26,6 +26,7 @@ import {
   ChevronRight,
   Circle,
   ClipboardList,
+  Code2,
   FileCheck,
   Flame,
   Loader2,
@@ -326,7 +327,7 @@ export default function OverviewPage() {
 
         {/* Card 3: Current Streak — live from /students/me/streak */}
         <Card className="flex flex-col justify-between relative overflow-hidden group">
-          <div className="absolute inset-0 bg-gradient-to-br from-amber-500/5 to-transparent opacity-0 group-hover:opacity-100 transition-opacity rounded-2xl pointer-events-none" />
+          <div className="absolute inset-0 bg-linear-to-br from-amber-500/5 to-transparent opacity-0 group-hover:opacity-100 transition-opacity rounded-2xl pointer-events-none" />
           <div className="flex items-start justify-between">
             {isLoading ? (
               <Skeleton className="h-9 w-16" />

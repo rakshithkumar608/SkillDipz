@@ -125,7 +125,7 @@ async def get_jobs_for_student(
     # Build query filters for active jobs
     query_conditions: List[Dict[str, Any]] = [{"status": "ACTIVE"}]
 
-    filter_role = role if role is not None else student_role
+    filter_role = role if (role is not None and role.strip() != "") else None
     if filter_role and filter_role.strip():
         search_term = filter_role.strip()
         query_conditions.append({
