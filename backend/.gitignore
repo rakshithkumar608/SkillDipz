@@ -1,3 +1,8 @@
-venv
+venv/
 .env
-uploads/
+__pycache__/
+*.pyc
+uploads/photos/*
+!uploads/photos/.gitkeep
+uploads/resumes/*
+!uploads/resumes/.gitkeep

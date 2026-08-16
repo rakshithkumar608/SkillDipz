@@ -39,11 +39,16 @@ from app.api.routes.leaderboard import router as leaderboard_router
 
 from app.core.event_bus import register_target_company_handlers
 
+# Ensure upload directories exist before mounting static files
+UPLOAD_DIR = Path("uploads")
+(UPLOAD_DIR / "photos").mkdir(parents=True, exist_ok=True)
+(UPLOAD_DIR / "resumes").mkdir(parents=True, exist_ok=True)
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    # Ensure upload directories exist before serving
-    Path("uploads/photos").mkdir(parents=True, exist_ok=True)
-    Path("uploads/resumes").mkdir(parents=True, exist_ok=True)
+    # Ensure upload directories exist at runtime
+    (UPLOAD_DIR / "photos").mkdir(parents=True, exist_ok=True)
+    (UPLOAD_DIR / "resumes").mkdir(parents=True, exist_ok=True)
     await connect_db()
     await connect_redis()
     register_target_company_handlers()
