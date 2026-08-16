@@ -1,7 +1,11 @@
+import logging
 from motor.motor_asyncio import AsyncIOMotorClient
 from beanie import init_beanie
 from app.models.user import User
 from app.core.config import settings
+
+logger = logging.getLogger(__name__)
+
 
 from app.models.employability_score import EmployabilityScore
 from app.models.roadmap import StudentRoadmap
@@ -135,10 +139,10 @@ async def connect_db():
     await InterviewSession.get_motor_collection().create_index([("company_id", 1), ("status", 1)])
 
 
-    print("🚀 Database Succesffuly Connected")
+    logger.info("Database Successfully Connected")
 
 
 async def close_db():
     if client:
         client.close()
-        print("❌ Database Connection Closed")
+        logger.info("Database Connection Closed")

@@ -4,7 +4,6 @@ from redis.exceptions import ConnectionError as RedisConnectionError, RedisError
 from app.core.config import settings
 import json
 import uuid
-import logging
 from typing import Optional, List, Dict
 
 
@@ -25,9 +24,9 @@ async def connect_redis():
             retry_on_timeout=False,
         )
         await redis.ping()
-        print("🚀 Redis Connected")
+        logger.info("Redis Connected")
     except (RedisConnectionError, RedisError, OSError) as e:
-        logger.warning(f"⚠️  Redis unavailable at startup: {e}. Rate limiting & token blacklisting disabled.")
+        logger.warning(f"Redis unavailable at startup: {e}. Rate limiting & token blacklisting disabled.")
         redis = None
 
 async def close_redis():
@@ -38,7 +37,7 @@ async def close_redis():
         except Exception:
             pass
         redis = None
-        print("❌ Redis Connection Closed")
+        logger.info("Redis Connection Closed")
 
 def get_redis() -> aioredis.Redis | None:
     return redis
