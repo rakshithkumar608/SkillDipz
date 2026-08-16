@@ -121,6 +121,16 @@ app.include_router(leaderboard_router, prefix="/v1")
 # Path must include /v1 because the frontend baseURL already contains /v1
 app.mount("/v1/uploads", StaticFiles(directory="uploads"), name="uploads")
 
+@app.get("/")
+async def root():
+    return {
+        "name": "SkillDipz API",
+        "status": "online",
+        "version": "0.0.1",
+        "docs_url": "/docs",
+        "health_check": "/health"
+    }
+
 @app.get("/health")
 async def health_check():
     return {"status": "ok"}
