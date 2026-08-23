@@ -334,8 +334,8 @@ async def _handle_project_evaluated(payload: dict) -> None:
         logger.warning(f"Company notification error: {e}")
 
 async def _handle_interview_completed(payload: Dict[str, Any]) -> None:
-    student_id=payload.get("student_id")
-    overall_score = payload("overall_score")
+    student_id = payload.get("student_id")
+    overall_score = payload.get("overall_score")
     feedback = payload.get("feedback", "")
     mode = payload.get("mode", "ai")
     company_name = payload.get("company_name", "SkillDipz AI")

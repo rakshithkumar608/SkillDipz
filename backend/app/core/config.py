@@ -1,4 +1,4 @@
-from pydantic_settings import BaseSettings
+from pydantic_settings import BaseSettings, SettingsConfigDict
 
 class Settings(BaseSettings):
     PORT: int = 8000
@@ -23,8 +23,9 @@ class Settings(BaseSettings):
     COOKIE_SAMESITE: str = "lax"
     SESSION_EXPIRE_DAYS: int = 7
     
-
-    class Config:
-        env_file = ".env"
+    model_config = SettingsConfigDict(
+        env_file=".env",
+        extra="ignore"
+    )
 
 settings = Settings()
