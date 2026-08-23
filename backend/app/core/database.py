@@ -41,6 +41,16 @@ from app.models.assessment import (
 
 from app.models.daily_assignment import DailyAssignment, CompanySponsoredChallenge
 
+from app.models.arena import (
+    ArenaQuestion,
+    ArenaSession,
+    DailyArena,
+    ArenaAttempt,
+    ArenaUserStats,
+    ArenaBadge,
+    UserBadge,
+)
+
 client: AsyncIOMotorClient | None = None
 
 
@@ -80,6 +90,14 @@ async def connect_db():
             InterviewSession,
             DailyAssignment,
             CompanySponsoredChallenge,
+            # Arena — Game Arena
+            ArenaQuestion,
+            ArenaSession,
+            DailyArena,
+            ArenaAttempt,
+            ArenaUserStats,
+            ArenaBadge,
+            UserBadge,
         ],
     )
 
@@ -141,6 +159,18 @@ async def connect_db():
     await InterviewSession.get_motor_collection().create_index([("student_id", 1), ("status", 1), ("scheduled_at", -1)])
     await InterviewSession.get_motor_collection().create_index([("company_id", 1), ("status", 1)])
 
+    # Arena — Game Arena indexes
+    await ArenaQuestion.get_motor_collection().create_index([("game_type", 1), ("is_active", 1)])
+    await ArenaQuestion.get_motor_collection().create_index([("skill", 1), ("game_type", 1)])
+    await ArenaSession.get_motor_collection().create_index("session_id", unique=True)
+    await ArenaSession.get_motor_collection().create_index([("student_id", 1), ("status", 1), ("completed_at", -1)])
+    await DailyArena.get_motor_collection().create_index("date_str", unique=True)
+    await ArenaAttempt.get_motor_collection().create_index([("student_id", 1), ("date_str", 1)], unique=True)
+    await ArenaUserStats.get_motor_collection().create_index("student_id", unique=True)
+    await ArenaUserStats.get_motor_collection().create_index([("weekly_xp", -1)])
+    await ArenaUserStats.get_motor_collection().create_index([("total_xp", -1)])
+    await ArenaBadge.get_motor_collection().create_index("badge_id", unique=True)
+    await UserBadge.get_motor_collection().create_index([("student_id", 1), ("badge_id", 1)], unique=True)
 
     logger.info("Database Successfully Connected")
 

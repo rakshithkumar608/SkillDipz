@@ -37,6 +37,9 @@ from app.api.routes.interviews import (
 
 from app.api.routes.leaderboard import router as leaderboard_router
 
+from app.api.routes.arena import router as arena_router
+from app.api.routes.arena_admin import router as arena_admin_router
+
 from app.core.event_bus import register_target_company_handlers
 
 # Ensure upload directories exist before mounting static files
@@ -116,6 +119,9 @@ app.include_router(ai_interview_router, prefix="/v1")
 app.include_router(company_interview_router, prefix="/v1")
 # Leaderboard
 app.include_router(leaderboard_router, prefix="/v1")
+# Game Arena
+app.include_router(arena_router, prefix="/v1")
+app.include_router(arena_admin_router, prefix="/v1")
 
 # Serve uploaded files (photos, resumes) as static
 # Path must include /v1 because the frontend baseURL already contains /v1
