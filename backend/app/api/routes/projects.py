@@ -68,7 +68,8 @@ async def upload_spec_document(
     """Upload a project specification document (PDF, DOCX, TXT, MD, ZIP - max 20MB)."""
     contents = await file.read()
     if len(contents) > 20 * 1024 * 1024:
-        raise HTTPException(status_code=400, detail="Spec file must be under 20 MB.")
+        raise HTTPException(
+            status_code=400, detail="Spec file must be under 20 MB.")
 
     orig_name = file.filename or "project_spec.pdf"
     ext = Path(orig_name).suffix.lower() or ".pdf"
@@ -97,14 +98,15 @@ async def create_project(
     from app.api.routes.company_admin import _get_or_create_company_profile
     company = await _get_or_create_company_profile(current_company)
     company_id = company.company_id
-        
+
     resources = []
     for r in (body.resources or []):
         if isinstance(r, dict):
-            resources.append(ProjectResource(name=str(r.get("name", "")), url=str(r.get("url", ""))))
+            resources.append(ProjectResource(
+                name=str(r.get("name", "")), url=str(r.get("url", ""))))
         elif hasattr(r, "name"):
             resources.append(ProjectResource(name=str(r.name), url=str(r.url)))
-    
+
     project = CompanyProject(
         company_id=company_id,
         company_name=company.name,
@@ -124,7 +126,7 @@ async def create_project(
         resources=resources,
     )
     await project.insert()
-    
+
     # Dispatch event to notify students
     await event_bus.publish("project.posted", {
         "project_id": str(project.id),
@@ -149,7 +151,8 @@ async def list_company_projects(
     current_user = current_company.get("user")
     user_comp_name = getattr(current_user, "company_name", None)
 
-    match_ids = list(set(filter(None, [company_id, current_company.get("company_id"), user_id, getattr(company, "name", None), user_comp_name])))
+    match_ids = list(set(filter(None, [company_id, current_company.get(
+        "company_id"), user_id, getattr(company, "name", None), user_comp_name])))
 
     projects = await CompanyProject.find(
         {"company_id": {"$in": match_ids}}
@@ -170,7 +173,8 @@ async def list_company_projects(
                 title=proj.title or "",
                 description=proj.description or "",
                 project_idea=getattr(proj, "project_idea", None),
-                architecture_overview=getattr(proj, "architecture_overview", None),
+                architecture_overview=getattr(
+                    proj, "architecture_overview", None),
                 spec_document_url=getattr(proj, "spec_document_url", None),
                 spec_document_name=getattr(proj, "spec_document_name", None),
                 difficulty=proj.difficulty or "Intermediate",
@@ -178,8 +182,10 @@ async def list_company_projects(
                 required_skills=proj.required_skills or [],
                 target_roles=proj.target_roles or [],
                 deliverables=proj.deliverables or [],
-                resources=[_serialize_resource(r) for r in (proj.resources or [])],
-                visibility=getattr(proj, "visibility", getattr(proj, "visibality", "all_students")) or "all_students",
+                resources=[_serialize_resource(r)
+                           for r in (proj.resources or [])],
+                visibility=getattr(proj, "visibility", getattr(
+                    proj, "visibality", "all_students")) or "all_students",
                 is_active=bool(proj.is_active),
                 created_at=_format_dt(getattr(proj, "created_at", None)),
                 submission_count=submission_count,
@@ -202,7 +208,8 @@ async def get_company_project(
     user_id = current_company.get("user_id") or ""
     current_user = current_company.get("user")
     user_comp_name = getattr(current_user, "company_name", None)
-    match_ids = list(set(filter(None, [company_id, current_company.get("company_id"), user_id, getattr(company, "name", None), user_comp_name])))
+    match_ids = list(set(filter(None, [company_id, current_company.get(
+        "company_id"), user_id, getattr(company, "name", None), user_comp_name])))
 
     proj = await CompanyProject.get(PydanticObjectId(project_id))
     if not proj or proj.company_id not in match_ids:
@@ -229,7 +236,8 @@ async def get_company_project(
         target_roles=proj.target_roles or [],
         deliverables=proj.deliverables or [],
         resources=[_serialize_resource(r) for r in (proj.resources or [])],
-        visibility=getattr(proj, "visibility", getattr(proj, "visibality", "all_students")) or "all_students",
+        visibility=getattr(proj, "visibility", getattr(
+            proj, "visibality", "all_students")) or "all_students",
         is_active=bool(proj.is_active),
         created_at=_format_dt(getattr(proj, "created_at", None)),
         submission_count=submission_count,
@@ -250,7 +258,8 @@ async def get_project_submissions(
     user_id = current_company.get("user_id") or ""
     current_user = current_company.get("user")
     user_comp_name = getattr(current_user, "company_name", None)
-    match_ids = list(set(filter(None, [company_id, current_company.get("company_id"), user_id, getattr(company, "name", None), user_comp_name])))
+    match_ids = list(set(filter(None, [company_id, current_company.get(
+        "company_id"), user_id, getattr(company, "name", None), user_comp_name])))
 
     project = await CompanyProject.get(PydanticObjectId(project_id))
     if not project or project.company_id not in match_ids:
@@ -280,7 +289,8 @@ async def get_project_submissions(
                 verified_skills=sub.verified_skills or [],
                 is_group=bool(sub.group_id),
                 group_name=sub.group_name,
-                group_members=[{"student_id": (m.student_id if hasattr(m, "student_id") else m.get("student_id", "")), "name": (m.name if hasattr(m, "name") else m.get("name", ""))} for m in (sub.group_members or [])],
+                group_members=[{"student_id": (m.student_id if hasattr(m, "student_id") else m.get("student_id", "")), "name": (
+                    m.name if hasattr(m, "name") else m.get("name", ""))} for m in (sub.group_members or [])],
             )
         )
     return out
@@ -380,14 +390,16 @@ async def get_my_projects(
                 title=proj.title,
                 description=proj.description,
                 project_idea=getattr(proj, "project_idea", None),
-                architecture_overview=getattr(proj, "architecture_overview", None),
+                architecture_overview=getattr(
+                    proj, "architecture_overview", None),
                 spec_document_url=getattr(proj, "spec_document_url", None),
                 spec_document_name=getattr(proj, "spec_document_name", None),
                 difficulty=proj.difficulty,
                 deadline_days=proj.deadline_days,
                 required_skills=proj.required_skills,
                 deliverables=proj.deliverables,
-                resources=[_serialize_resource(r) for r in (proj.resources or [])],
+                resources=[_serialize_resource(r)
+                           for r in (proj.resources or [])],
                 status=s_status,
                 is_accepted=(proj_id in accepted_set) or (sub is not None),
                 acceptance_count=total_accepted,
@@ -416,7 +428,8 @@ async def submit_project(
         StudentProjectSubmission.student_id == student_id,
     )
     if existing:
-        raise HTTPException(status_code=400, detail="You have already submitted this project.")
+        raise HTTPException(
+            status_code=400, detail="You have already submitted this project.")
 
     # Resolve group details if submitted as a team
     group_id = body.group_id
@@ -425,7 +438,8 @@ async def submit_project(
     if group_id:
         group = await ProjectGroup.find_one(ProjectGroup.invite_code == group_id)
         if not group or str(group.project_id) != project_id:
-            raise HTTPException(status_code=404, detail="Invalid group for this project.")
+            raise HTTPException(
+                status_code=404, detail="Invalid group for this project.")
         group_name = group.name
         group_members = group.members
 
@@ -452,7 +466,7 @@ async def submit_project(
         await send_notification(
             student_id=project.company_id,
             title=f"📬 New Project Submission — {project.title}",
-            body=f"{student_name} submitted \"{ project.title}\". Review their work now.",
+            body=f"{student_name} submitted \"{project.title}\". Review their work now.",
             action_url=f"/company/projects",
             notification_type="project_submission",
         )
@@ -477,7 +491,7 @@ async def submit_project(
         "submission_id": str(submission.id),
     }
 
-    
+
 # Student Endpoint (Community Feed & Peer Reviews)
 @student_router.get("/community", response_model=List[CommunitySubmissionOut])
 async def get_community_feed(
@@ -573,7 +587,8 @@ async def add_comment(
         await send_notification(
             student_id=sub.student_id,
             title="New suggestion on your project",
-            body=f"{author_name} left a suggestion: \"{body.body[:60]}...\"" if len(body.body) > 60 else f"{author_name} left a suggestion: \"{body.body}\"",
+            body=f"{author_name} left a suggestion: \"{body.body[:60]}...\"" if len(
+                body.body) > 60 else f"{author_name} left a suggestion: \"{body.body}\"",
             action_url="/student/projects",
             notification_type="general",
         )
@@ -624,11 +639,13 @@ async def join_group(
     if not group.is_open:
         raise HTTPException(status_code=400, detail="Group is closed or full.")
     if any(m.student_id == student_id for m in group.members):
-        raise HTTPException(status_code=400, detail="You are already in this group.")
+        raise HTTPException(
+            status_code=400, detail="You are already in this group.")
     if len(group.members) >= 5:
         group.is_open = False
         await group.save()
-        raise HTTPException(status_code=400, detail="Group is full (maximum 5 members allowed).")
+        raise HTTPException(
+            status_code=400, detail="Group is full (maximum 5 members allowed).")
 
     profile = await StudentProfile.find_one(StudentProfile.student_id == student_id)
     name = profile.name if profile else "Student"
@@ -768,7 +785,8 @@ async def get_my_student_projects(
     created = await StudentProject.find(StudentProject.created_by == student_id).to_list()
     # Joined (member but not creator)
     all_projects = await StudentProject.find().to_list()
-    joined = [p for p in all_projects if any(m.student_id == student_id for m in p.members) and p.created_by != student_id]
+    joined = [p for p in all_projects if any(
+        m.student_id == student_id for m in p.members) and p.created_by != student_id]
 
     def serialize(p: StudentProject, is_mine: bool):
         return {
@@ -806,15 +824,18 @@ async def join_student_project(
     if not project:
         raise HTTPException(status_code=404, detail="Invalid invite code.")
     if not project.is_open:
-        raise HTTPException(status_code=400, detail="Project is full or closed.")
+        raise HTTPException(
+            status_code=400, detail="Project is full or closed.")
     if any(m.student_id == student_id for m in project.members):
-        raise HTTPException(status_code=400, detail="You are already a member.")
+        raise HTTPException(
+            status_code=400, detail="You are already a member.")
 
     profile = await StudentProfile.find_one(StudentProfile.student_id == student_id)
     name = profile.name if profile else "Student"
 
     # Collect existing members before appending the new joiner (to notify them)
-    existing_member_ids = [m.student_id for m in project.members if m.student_id != student_id]
+    existing_member_ids = [
+        m.student_id for m in project.members if m.student_id != student_id]
 
     project.members.append(GroupMember(student_id=student_id, name=name))
     if len(project.members) >= project.max_members:
@@ -844,7 +865,8 @@ async def update_student_project(
     student_id = str(current_user.id)
     project = await StudentProject.get(PydanticObjectId(project_id))
     if not project or project.created_by != student_id:
-        raise HTTPException(status_code=403, detail="Not authorized to edit this project.")
+        raise HTTPException(
+            status_code=403, detail="Not authorized to edit this project.")
 
     for field in ("github_url", "demo_url", "is_open", "description", "title"):
         if field in body:

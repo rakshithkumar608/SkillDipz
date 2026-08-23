@@ -6,7 +6,7 @@ import { registerUser, loginWithGoogle, getRedirectPath } from "@/lib/auth";
 import { toast } from "sonner";
 import { useGoogleLogin } from "@react-oauth/google";
 import Image from "next/image";
-import { Building2, Eye, EyeOff, GraduationCap, Loader2 } from "lucide-react";
+import { ArrowLeft, Building2, Eye, EyeOff, GraduationCap, Loader2 } from "lucide-react";
 import { FcGoogle } from "react-icons/fc";
 import Link from "next/link";
 
@@ -97,15 +97,24 @@ export default function RegisterScreen() {
   });
 
   return (
-    <main className="min-h-screen bg-black text-white flex items-center justify-center px-4 py-12 relative overflow-hidden">
+    <main className="min-h-screen bg-black text-white flex items-center justify-center px-4 py-8 relative overflow-hidden">
       <div className="absolute inset-0 bg-[linear-gradient(to_right,#4f4f4f2e_1px,transparent_1px),linear-gradient(to_bottom,#8080800a_1px,transparent_1px)] bg-size-[14px_24px]" />
       <div className="absolute left-0 right-0 top-[-10%] h-[600px] w-full bg-[radial-gradient(circle_400px_at_50%_200px,#7c3aed22,#000)]" />
 
+      {/* Top Left Back Arrow (Icon only) */}
+      <Link
+        href="/onboarding"
+        aria-label="Back to Onboarding"
+        className="absolute top-5 left-5 sm:top-8 sm:left-8 z-30 p-2.5 rounded-xl bg-white/5 border border-white/10 hover:bg-white/10 hover:border-white/20 text-neutral-400 hover:text-white transition-all backdrop-blur-md shadow-lg group"
+      >
+        <ArrowLeft className="w-5 h-5 group-hover:-translate-x-0.5 transition-transform" />
+      </Link>
+
       <div className="relative z-10 w-full max-w-md">
-        <div className="flex justify-center mb-8">
+        <div className="flex justify-center mb-6">
           <Image
             src="/images/skilldepz.png"
-            alt="SkillDepz"
+            alt="SkillDipz"
             width={140}
             height={42}
             style={{ height: "auto", width: "auto" }}

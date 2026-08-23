@@ -1,56 +1,168 @@
 "use client";
 
-import { DotPattern } from "@/components/ui/dot-pattern";
+import React, { useEffect, useState, useRef } from "react";
 import { useRouter } from "next/navigation";
-import { InteractiveHoverButton } from "@/components/ui/interactive-hover-button";
+import { motion, AnimatePresence } from "framer-motion";
 import { useAuthStore } from "@/store/authStore";
 import { getRedirectPath } from "@/lib/auth";
+import Image from "next/image";
 
-export default function Home() {
+const PROGRESS_DURATION_MS = 3800;
+const TOTAL_DONE_MS = PROGRESS_DURATION_MS;
+
+const STATUS_MESSAGES = [
+  { threshold: 0, text: "Preparing your workspace..." },
+  { threshold: 28, text: "Loading your learning path..." },
+  { threshold: 55, text: "Setting up your experience..." },
+  { threshold: 82, text: "Almost there..." },
+  { threshold: 100, text: "Ready to build your skills!" },
+];
+
+export default function SkillDipzIntro() {
   const router = useRouter();
   const { user, accessToken } = useAuthStore();
 
-  const isAuthenticated = !!accessToken && !!user;
+  const [progress, setProgress] = useState(0);
+  const [isCompleted, setIsCompleted] = useState(false);
+  const [isExiting, setIsExiting] = useState(false);
 
-  const handleStart = () => {
-    // Wait 300ms for the button animation to complete before routing
-    setTimeout(() => {
-      if (isAuthenticated) {
-        // Already logged in — go straight to their dashboard
-        router.push(getRedirectPath(user.role));
-      } else {
-        router.push("/onboarding");
+  const startRef = useRef<number | null>(null);
+  const rafRef = useRef<number>(0);
+  const redirectedRef = useRef(false);
+
+  useEffect(() => {
+    const tick = (ts: number) => {
+      if (!startRef.current) startRef.current = ts;
+      const elapsed = ts - startRef.current;
+
+      const raw = Math.min((elapsed / PROGRESS_DURATION_MS) * 100, 100);
+      setProgress(Math.round(raw));
+
+      if (elapsed >= TOTAL_DONE_MS) {
+        setProgress(100);
+        setIsCompleted(true);
+        if (!redirectedRef.current) {
+          redirectedRef.current = true;
+          setTimeout(() => {
+            setIsExiting(true);
+            setTimeout(() => {
+              if (accessToken && user) {
+                router.push(getRedirectPath(user.role));
+              } else {
+                router.push("/onboarding");
+              }
+            }, 500);
+          }, 600);
+        }
+        return;
       }
-    }, 300);
-  };
+
+      rafRef.current = requestAnimationFrame(tick);
+    };
+
+    rafRef.current = requestAnimationFrame(tick);
+    return () => cancelAnimationFrame(rafRef.current);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  const currentStatus =
+    [...STATUS_MESSAGES].reverse().find((s) => progress >= s.threshold) ??
+    STATUS_MESSAGES[0];
 
   return (
-    <div className="relative flex min-h-screen w-full flex-col items-center justify-center overflow-hidden bg-slate-950">
-      <div className="z-10 flex flex-col items-center gap-8 text-center px-4">
-        
-        <div className="space-y-4">
-          <h1 className="z-10 whitespace-pre-wrap text-center text-6xl font-bold tracking-tighter text-transparent bg-clip-text bg-linear-to-r from-blue-400 to-purple-400 sm:text-8xl">
+    <motion.div
+      initial={{ opacity: 1 }}
+      animate={isExiting ? { opacity: 0 } : { opacity: 1 }}
+      transition={{ duration: 0.4, ease: "easeInOut" }}
+      style={{ backgroundColor: "#ffffff" }}
+      className="fixed inset-0 z-[9999] overflow-hidden flex flex-col"
+    >
+      {/* Counter top-right */}
+      <div className="absolute top-5 right-6 z-20">
+        <span className="text-[10px] font-bold tracking-[0.2em] text-slate-300 uppercase font-mono">
+          {String(progress).padStart(3, "0")}%
+        </span>
+      </div>
+
+      {/* SVG fills most of the screen */}
+      <div className="flex-1 flex items-center justify-center px-0 pt-4">
+        <motion.div
+          initial={{ opacity: 0, scale: 0.95, y: 12 }}
+          animate={{ opacity: 1, scale: 1, y: 0 }}
+          transition={{ duration: 0.7, ease: [0.16, 1, 0.3, 1] }}
+          className="w-full h-full flex items-center justify-center"
+          style={{ maxHeight: "calc(100vh - 160px)" }}
+        >
+          <Image
+            src="/lootie/Study discussion.svg"
+            alt="Study illustration"
+            width={900}
+            height={900}
+            priority
+            className="w-full h-full object-contain"
+            style={{ maxWidth: "min(90vw, 700px)", maxHeight: "calc(100vh - 160px)" }}
+          />
+        </motion.div>
+      </div>
+
+      {/* Bottom strip: name + progress */}
+      <motion.div
+        initial={{ opacity: 0, y: 16 }}
+        animate={{ opacity: 1, y: 0 }}
+        transition={{ delay: 0.3, duration: 0.55, ease: [0.16, 1, 0.3, 1] }}
+        className="flex flex-col items-center gap-4 px-8 pb-10 pt-2"
+      >
+        {/* Brand name */}
+        <div className="flex flex-col items-center gap-0.5">
+          <h1
+            className="font-black tracking-tight text-slate-900 leading-none select-none"
+            style={{
+              fontFamily: "'Inter', 'SF Pro Display', sans-serif",
+              fontSize: "clamp(28px, 7vw, 48px)",
+              letterSpacing: "-0.03em",
+            }}
+          >
             SkillDipz
           </h1>
-          <p className="z-10 max-w-xl text-center text-lg text-slate-300 sm:text-xl leading-relaxed">
-            AI-powered skill gap analysis, personalized learning roadmaps, and direct matching with top-tier companies.
+          <p className="text-[10px] font-semibold tracking-[0.24em] text-slate-400 uppercase">
+            AI Career Accelerator
           </p>
         </div>
 
-        <div className="mt-4" onClick={handleStart}>
-          <InteractiveHoverButton>Get Started</InteractiveHoverButton> 
-        </div>
-      </div>
+        {/* Progress bar + status */}
+        <div className="w-full max-w-xs flex flex-col gap-2">
+          <div className="w-full h-[3px] bg-slate-100 rounded-full overflow-hidden">
+            <motion.div
+              className="h-full bg-blue-600 rounded-full relative overflow-hidden"
+              style={{ width: `${progress}%` }}
+              transition={{ ease: "linear", duration: 0.05 }}
+            >
+              {!isCompleted && (
+                <motion.div
+                  className="absolute inset-0 bg-gradient-to-r from-transparent via-white/40 to-transparent"
+                  animate={{ x: ["-100%", "200%"] }}
+                  transition={{ repeat: Infinity, duration: 1.1, ease: "linear" }}
+                />
+              )}
+            </motion.div>
+          </div>
 
-      <DotPattern
-        width={24}
-        height={24}
-        cx={1}
-        cy={1}
-        cr={1}
-        glow={true}
-        className="fill-white/10"
-      />
-    </div>
+          <div className="h-4 overflow-hidden flex justify-center">
+            <AnimatePresence mode="wait">
+              <motion.p
+                key={currentStatus.text}
+                initial={{ opacity: 0, y: 8 }}
+                animate={{ opacity: 1, y: 0 }}
+                exit={{ opacity: 0, y: -8 }}
+                transition={{ duration: 0.25, ease: [0.16, 1, 0.3, 1] }}
+                className="text-[11px] font-medium text-slate-400 tracking-wide text-center"
+              >
+                {currentStatus.text}
+              </motion.p>
+            </AnimatePresence>
+          </div>
+        </div>
+      </motion.div>
+    </motion.div>
   );
 }
