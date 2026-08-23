@@ -21,6 +21,11 @@ class CompanyProject(Document):
     
     title: str
     description: str
+    project_idea: Optional[str] = None             # Full project scope & concept
+    architecture_overview: Optional[str] = None    # Architecture & tech guidelines
+    spec_document_url: Optional[str] = None        # Uploaded project spec document file URL
+    spec_document_name: Optional[str] = None       # Original filename of spec document
+    
     target_roles: List[str] = []
     required_skills: List[str] = []
     difficulty: Literal["Beginner", "Intermediate", "Advanced"] = "Intermediate"
@@ -28,7 +33,7 @@ class CompanyProject(Document):
     deadline_days: int = 14
     resources: List[ProjectResource] = []
     
-    visibality: Literal["all_students", "shortlisted_only"] = "all_students"
+    visibility: Literal["all_students", "shortlisted_only"] = "all_students"
     is_active: bool = True
     created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
     
@@ -50,6 +55,17 @@ class ProjectGroup(Document):
         name = "project_groups"
         
 
+# Tracks when a student "accepts" / opens a project (for company stats)
+class ProjectAcceptance(Document):
+    project_id: str
+    student_id: str
+    student_name: str
+    accepted_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+    
+    class Settings:
+        name = "project_acceptances"
+
+
 #  Student Submission Document
 class StudentProjectSubmission(Document):
     project_id: str
@@ -62,7 +78,9 @@ class StudentProjectSubmission(Document):
     
     github_url: str
     demo_url: Optional[str] = None
-    notes: Optional[str] = None
+    deployment_url: Optional[str] = None     # explicit deployment URL
+    what_i_learned: Optional[str] = None     # student's learning summary
+    notes: Optional[str] = None              # implementation notes / brief
     
     # Asynchronous NLP Evaluation Results
     nlp_score: Optional[float] = None
@@ -112,4 +130,4 @@ class StudentProject(Document):
     created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
 
     class Settings:
-        name = "student_projects"
+        name = "student_projects"

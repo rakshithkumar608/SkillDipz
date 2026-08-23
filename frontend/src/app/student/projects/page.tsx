@@ -15,20 +15,38 @@ import {
   StudentProject,
 } from "@/lib/projectsApi";
 import { AnimatePresence } from "framer-motion";
-import { FolderOpen, Loader2, Plus, RefreshCw } from "lucide-react";
+import {
+  Briefcase,
+  CheckCircle2,
+  Clock,
+  FolderOpen,
+  Globe,
+  Loader2,
+  Plus,
+  RefreshCw,
+  Rocket,
+  Sparkles,
+  Users,
+} from "lucide-react";
 import { useCallback, useEffect, useState } from "react";
 import { toast } from "sonner";
 
 type Tab = "company-briefs" | "my-projects" | "community";
+type BriefFilter = "all" | "accepted" | "completed";
 
 export default function ProjectsPage() {
   const [activeTab, setActiveTab] = useState<Tab>("company-briefs");
+  const [briefFilter, setBriefFilter] = useState<BriefFilter>("all");
+
   const [companyProjects, setCompanyProjects] = useState<ProjectCardType[]>([]);
   const [studentProjects, setStudentProjects] = useState<StudentProject[]>([]);
   const [community, setCommunity] = useState<CommunitySubmission[]>([]);
   const [loading, setLoading] = useState(false);
-  const [detailProject, setDetailProject] = useState<ProjectCardType | null>(null);
-  const [submitProjectTarget, setSubmitProjectTarget] = useState<ProjectCardType | null>(null);
+  const [detailProject, setDetailProject] = useState<ProjectCardType | null>(
+    null
+  );
+  const [submitProjectTarget, setSubmitProjectTarget] =
+    useState<ProjectCardType | null>(null);
   const [showCreateModal, setShowCreateModal] = useState(false);
 
   const loadCompanyProjects = useCallback(async () => {
@@ -75,12 +93,43 @@ export default function ProjectsPage() {
 
   useEffect(() => {
     refresh();
-  }, [activeTab]);
+  }, [activeTab, refresh]);
 
-  const tabs: { key: Tab; label: string }[] = [
-    { key: "company-briefs", label: "Company Briefs" },
-    { key: "my-projects", label: "Student Projects" },
-    { key: "community", label: "Community Feed" },
+  // Compute metrics for company briefs
+  const acceptedProjects = companyProjects.filter(
+    (p) => p.is_accepted || p.status !== "available"
+  );
+  const completedProjects = companyProjects.filter(
+    (p) => p.status === "submitted" || p.status === "evaluated"
+  );
+
+  const filteredCompanyProjects = companyProjects.filter((p) => {
+    if (briefFilter === "accepted")
+      return p.is_accepted && p.status === "available";
+    if (briefFilter === "completed")
+      return p.status === "submitted" || p.status === "evaluated";
+    return true;
+  });
+
+  const tabs: { key: Tab; label: string; icon: any; count?: number }[] = [
+    {
+      key: "company-briefs",
+      label: "Company Briefs",
+      icon: Briefcase,
+      count: companyProjects.length,
+    },
+    {
+      key: "my-projects",
+      label: "Peer Projects",
+      icon: Users,
+      count: studentProjects.length,
+    },
+    {
+      key: "community",
+      label: "Community Feed",
+      icon: Globe,
+      count: community.length,
+    },
   ];
 
   return (
@@ -88,13 +137,16 @@ export default function ProjectsPage() {
       {/* Header */}
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
         <div className="flex items-center gap-3">
-          <div className="p-2.5 rounded-xl bg-linear-to-br from-indigo-500/20 border border-indigo-500/10">
+          <div className="p-3 rounded-2xl bg-gradient-to-br from-indigo-500/20 via-sky-500/10 to-teal-500/20 border border-indigo-500/20 shadow-lg shadow-indigo-950/40">
             <FolderOpen className="w-6 h-6 text-indigo-400" />
           </div>
           <div>
-            <h1 className="text-2xl font-bold text-white">Projects</h1>
-            <p className="text-slate-500 text-xs mt-0.5">
-              Company briefs, team collaboration & community showcase
+            <h1 className="text-2xl font-bold text-white tracking-tight">
+              Project Hub
+            </h1>
+            <p className="text-slate-400 text-xs mt-0.5">
+              Work on real company briefs, build portfolio projects &amp; get
+              evaluated
             </p>
           </div>
         </div>
@@ -104,7 +156,7 @@ export default function ProjectsPage() {
           {activeTab === "my-projects" && (
             <button
               onClick={() => setShowCreateModal(true)}
-              className="flex items-center gap-2 px-4 py-2 rounded-xl bg-indigo-500/20 border border-indigo-500/30 text-indigo-400 text-xs font-semibold hover:bg-indigo-500/30 transition-all"
+              className="flex items-center gap-2 px-4 py-2 rounded-xl bg-gradient-to-r from-indigo-500/20 to-sky-500/20 border border-indigo-500/30 text-indigo-400 text-xs font-semibold hover:from-indigo-500/30 hover:to-sky-500/30 transition-all shadow-lg shadow-indigo-950/30"
             >
               <Plus className="w-3.5 h-3.5" /> Create Project
             </button>
@@ -112,53 +164,164 @@ export default function ProjectsPage() {
           <button
             onClick={refresh}
             disabled={loading}
-            className="flex items-center gap-2 px-3 py-2 rounded-xl bg-slate-800/60 border border-white/6 text-xs text-slate-300 hover:bg-slate-700/60"
+            className="flex items-center gap-2 px-3 py-2 rounded-xl bg-slate-800/60 border border-white/6 text-xs text-slate-300 hover:bg-slate-700/60 transition-all"
           >
-            <RefreshCw className={`w-3.5 h-3.5 ${loading ? "animate-spin" : ""}`} /> Refresh
+            <RefreshCw
+              className={`w-3.5 h-3.5 ${loading ? "animate-spin" : ""}`}
+            />
           </button>
         </div>
       </div>
 
-      {/* Tabs */}
-      <div className="flex gap-1.5 p-1 bg-white/3 rounded-xl border border-white/6 w-fit">
-        {tabs.map((tab) => (
-          <button
-            key={tab.key}
-            onClick={() => setActiveTab(tab.key)}
-            className={`px-4 py-1.5 rounded-lg text-xs font-semibold transition-all ${
-              activeTab === tab.key
-                ? tab.key === "company-briefs"
-                  ? "bg-sky-500/20 text-sky-400 border border-sky-500/30"
-                  : tab.key === "my-projects"
-                  ? "bg-indigo-500/20 text-indigo-400 border border-indigo-500/30"
-                  : "bg-violet-500/20 text-violet-400 border border-violet-500/30"
-                : "text-slate-400 hover:text-slate-200"
-            }`}
-          >
-            {tab.label}
-          </button>
-        ))}
+      {/* Overview Stat Cards (Shown for Company Briefs) */}
+      {activeTab === "company-briefs" && !loading && (
+        <div className="grid grid-cols-3 gap-3">
+          <div className="p-4 rounded-2xl bg-slate-900/60 border border-white/6 flex items-center gap-3.5 shadow-lg">
+            <div className="p-2.5 rounded-xl bg-sky-500/10 text-sky-400 border border-sky-500/20">
+              <Briefcase className="w-5 h-5" />
+            </div>
+            <div>
+              <p className="text-xl font-bold text-white">
+                {companyProjects.length}
+              </p>
+              <p className="text-[11px] text-slate-400 font-medium">
+                Total Briefs
+              </p>
+            </div>
+          </div>
+
+          <div className="p-4 rounded-2xl bg-emerald-500/5 border border-emerald-500/20 flex items-center gap-3.5 shadow-lg shadow-emerald-950/20">
+            <div className="p-2.5 rounded-xl bg-emerald-500/15 text-emerald-400 border border-emerald-500/30">
+              <Rocket className="w-5 h-5" />
+            </div>
+            <div>
+              <p className="text-xl font-bold text-emerald-400">
+                {acceptedProjects.length}
+              </p>
+              <p className="text-[11px] text-emerald-400/80 font-medium">
+                Accepted / In Progress
+              </p>
+            </div>
+          </div>
+
+          <div className="p-4 rounded-2xl bg-violet-500/5 border border-violet-500/20 flex items-center gap-3.5 shadow-lg shadow-violet-950/20">
+            <div className="p-2.5 rounded-xl bg-violet-500/15 text-violet-400 border border-violet-500/30">
+              <CheckCircle2 className="w-5 h-5" />
+            </div>
+            <div>
+              <p className="text-xl font-bold text-violet-400">
+                {completedProjects.length}
+              </p>
+              <p className="text-[11px] text-violet-400/80 font-medium">
+                Submitted &amp; Scored
+              </p>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Main Tabs Navigation */}
+      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 border-b border-white/6 pb-3">
+        <div className="flex gap-2 p-1 bg-white/3 rounded-2xl border border-white/6 w-fit">
+          {tabs.map((tab) => {
+            const Icon = tab.icon;
+            const isActive = activeTab === tab.key;
+            return (
+              <button
+                key={tab.key}
+                onClick={() => setActiveTab(tab.key)}
+                className={`flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-bold transition-all ${
+                  isActive
+                    ? "bg-gradient-to-r from-sky-500 to-indigo-600 text-white shadow-lg shadow-sky-950/50"
+                    : "text-slate-400 hover:text-slate-200 hover:bg-white/4"
+                }`}
+              >
+                <Icon className="w-3.5 h-3.5" />
+                <span>{tab.label}</span>
+                {tab.count !== undefined && tab.count > 0 && (
+                  <span
+                    className={`text-[10px] px-1.5 py-0.2 rounded-full font-semibold ${
+                      isActive
+                        ? "bg-white/20 text-white"
+                        : "bg-white/6 text-slate-400"
+                    }`}
+                  >
+                    {tab.count}
+                  </span>
+                )}
+              </button>
+            );
+          })}
+        </div>
+
+        {/* Sub-filters for Company Briefs */}
+        {activeTab === "company-briefs" && (
+          <div className="flex items-center gap-1.5 p-1 bg-slate-900 border border-white/6 rounded-xl text-xs font-semibold">
+            {[
+              { key: "all", label: "All Briefs", count: companyProjects.length },
+              {
+                key: "accepted",
+                label: "In Progress",
+                count: acceptedProjects.filter((p) => p.status === "available")
+                  .length,
+              },
+              {
+                key: "completed",
+                label: "Completed",
+                count: completedProjects.length,
+              },
+            ].map((f) => (
+              <button
+                key={f.key}
+                onClick={() => setBriefFilter(f.key as BriefFilter)}
+                className={`px-3 py-1.5 rounded-lg transition-all ${
+                  briefFilter === f.key
+                    ? "bg-white/10 text-white shadow-sm"
+                    : "text-slate-400 hover:text-slate-300"
+                }`}
+              >
+                {f.label}{" "}
+                <span className="text-[10px] opacity-70">({f.count})</span>
+              </button>
+            ))}
+          </div>
+        )}
       </div>
 
       {/* Main Content */}
       {loading ? (
-        <div className="flex items-center justify-center min-h-[40vh]">
+        <div className="flex items-center justify-center min-h-[40vh] gap-3">
           <Loader2 className="w-7 h-7 animate-spin text-sky-500" />
-          <span className="ml-3 text-sm text-slate-400">Loading...</span>
+          <span className="text-sm text-slate-400">Loading projects...</span>
         </div>
       ) : activeTab === "company-briefs" ? (
-        companyProjects.length === 0 ? (
-          <div className="text-center py-20 text-slate-500 text-sm">
-            No company project briefs matched to your role right now.
+        filteredCompanyProjects.length === 0 ? (
+          <div className="flex flex-col items-center justify-center min-h-[40vh] gap-3 text-center">
+            <div className="p-5 rounded-2xl bg-white/3 border border-white/5">
+              <Briefcase className="w-8 h-8 text-slate-600" />
+            </div>
+            <p className="text-slate-300 font-semibold text-sm">
+              {briefFilter === "accepted"
+                ? "No active accepted projects yet"
+                : briefFilter === "completed"
+                ? "No completed submissions yet"
+                : "No company briefs found"}
+            </p>
+            <p className="text-slate-500 text-xs max-w-sm">
+              {briefFilter === "accepted"
+                ? "Browse available briefs and click 'Accept Project' to start working."
+                : "When companies post real projects for your role, they will appear here."}
+            </p>
           </div>
         ) : (
           <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
-            {companyProjects.map((proj) => (
+            {filteredCompanyProjects.map((proj) => (
               <ProjectCard
                 key={proj.project_id}
                 project={proj}
                 onViewDetails={() => setDetailProject(proj)}
                 onSubmit={() => setSubmitProjectTarget(proj)}
+                onAccepted={loadCompanyProjects}
               />
             ))}
           </div>
@@ -170,8 +333,12 @@ export default function ProjectsPage() {
               <FolderOpen className="w-10 h-10 text-indigo-400/50" />
             </div>
             <div className="text-center">
-              <p className="text-slate-300 font-medium">No student projects yet</p>
-              <p className="text-slate-500 text-sm mt-1">Be the first to create a project and recruit teammates!</p>
+              <p className="text-slate-300 font-medium">
+                No student projects yet
+              </p>
+              <p className="text-slate-500 text-sm mt-1">
+                Be the first to create a project and recruit teammates!
+              </p>
             </div>
             <button
               onClick={() => setShowCreateModal(true)}
@@ -181,17 +348,15 @@ export default function ProjectsPage() {
             </button>
           </div>
         ) : (
-          <>
-            <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
-              {studentProjects.map((proj) => (
-                <StudentProjectCard
-                  key={proj.project_id}
-                  project={proj}
-                  onRefresh={loadStudentProjects}
-                />
-              ))}
-            </div>
-          </>
+          <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
+            {studentProjects.map((proj) => (
+              <StudentProjectCard
+                key={proj.project_id}
+                project={proj}
+                onRefresh={loadStudentProjects}
+              />
+            ))}
+          </div>
         )
       ) : community.length === 0 ? (
         <div className="text-center py-20 text-slate-500 text-sm">
@@ -212,6 +377,7 @@ export default function ProjectsPage() {
             project={detailProject}
             onClose={() => setDetailProject(null)}
             onSubmit={() => setSubmitProjectTarget(detailProject)}
+            onAccepted={loadCompanyProjects}
           />
         )}
       </AnimatePresence>

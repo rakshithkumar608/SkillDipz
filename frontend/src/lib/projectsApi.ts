@@ -19,12 +19,18 @@ export interface ProjectCard {
   company_logo_emoji: string | null;
   title: string;
   description: string;
+  project_idea?: string | null;
+  architecture_overview?: string | null;
+  spec_document_url?: string | null;
+  spec_document_name?: string | null;
   difficulty: "Beginner" | "Intermediate" | "Advanced";
   deadline_days: number;
   required_skills: string[];
   deliverables: string[];
   resources: ProjectResource[];
   status: "available" | "submitted" | "evaluated";
+  is_accepted?: boolean;
+  acceptance_count?: number;
   my_submission: MySubmission | null;
 }
 
@@ -58,7 +64,9 @@ export interface Comment {
 export interface SubmitProjectPayload {
   github_url: string;
   demo_url?: string;
-  notes?: string;
+  deployment_url?: string;   // explicit deployment link
+  what_i_learned?: string;   // learning summary
+  notes?: string;            // implementation brief / notes
   is_public?: boolean;
   group_id?: string;
 }
@@ -183,4 +191,12 @@ export const updateStudentProject = async (
 ): Promise<{ message: string }> => {
   const { data } = await api.patch(`/projects/student/my-projects/${projectId}`, payload);
   return data;
-};
+};
+
+export const acceptProject = async (
+  projectId: string
+): Promise<{ message: string }> => {
+  const { data } = await api.post(`/projects/student/${projectId}/accept`, {});
+  return data;
+};
+

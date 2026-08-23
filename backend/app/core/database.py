@@ -22,6 +22,7 @@ from app.models.interview import InterviewSession
 from app.models.project import (
     CompanyProject,
     ProjectGroup,
+    ProjectAcceptance,
     StudentProjectSubmission,
     ProjectComment,
     StudentProject,
@@ -64,6 +65,7 @@ async def connect_db():
             JobApplication,
             CompanyProject,
             ProjectGroup,
+            ProjectAcceptance,
             StudentProjectSubmission,
             ProjectComment,
             StudentProject,
@@ -119,6 +121,7 @@ async def connect_db():
     await StudentProject.get_motor_collection().create_index([("created_by", 1), ("created_at", -1)])
     await StudentProject.get_motor_collection().create_index("invite_code", unique=True)
     await StudentProject.get_motor_collection().create_index([("is_public", 1), ("created_at", -1)])
+    await ProjectAcceptance.get_motor_collection().create_index([("project_id", 1), ("student_id", 1)], unique=True)
     
     # Sill Test Section
     await AssessmentTopic.get_motor_collection().create_index("topic_id", unique=True)

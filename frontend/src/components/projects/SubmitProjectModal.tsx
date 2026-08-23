@@ -1,7 +1,15 @@
 "use client";
 
 import { ProjectCard, submitProject } from "@/lib/projectsApi";
-import { Globe, Loader2, Send, Users, X } from "lucide-react";
+import { useAuthStore } from "@/store/authStore";
+import {
+  BookOpen,
+  Globe,
+  Loader2,
+  Send,
+  Users,
+  X,
+} from "lucide-react";
 import { motion } from "motion/react";
 import { useState } from "react";
 import { FaGithub } from "react-icons/fa";
@@ -18,8 +26,10 @@ export default function SubmitProjectModal({
   onClose,
   onSubmitted,
 }: SubmitModalProps) {
+  const { user } = useAuthStore();
   const [githubUrl, setGithubUrl] = useState("");
-  const [demoUrl, setDemoUrl] = useState("");
+  const [deploymentUrl, setDeploymentUrl] = useState("");
+  const [whatILearned, setWhatILearned] = useState("");
   const [notes, setNotes] = useState("");
   const [isPublic, setIsPublic] = useState(true);
   const [groupId, setGroupId] = useState("");
@@ -30,121 +40,185 @@ export default function SubmitProjectModal({
       toast.error("Please enter a valid GitHub repository URL.");
       return;
     }
+    if (!whatILearned.trim()) {
+      toast.error("Please share what you learned from this project.");
+      return;
+    }
     setLoading(true);
     try {
       await submitProject(project.project_id, {
         github_url: githubUrl,
-        demo_url: demoUrl || undefined,
+        deployment_url: deploymentUrl || undefined,
+        what_i_learned: whatILearned,
         notes: notes || undefined,
         is_public: isPublic,
         group_id: groupId || undefined,
       });
-      toast.success("Project submitted! NLP evaluation started.");
+      toast.success("Project submitted! NLP evaluation started. 🎉");
       onSubmitted();
       onClose();
-    } catch (err: any) {
-      toast.error(err?.response?.data?.detail || "Submission failed.");
+    } catch (err: unknown) {
+      const e = err as { response?: { data?: { detail?: string } } };
+      toast.error(e?.response?.data?.detail || "Submission failed.");
     } finally {
       setLoading(false);
     }
   };
 
+  const difficultyColor: Record<string, string> = {
+    Beginner: "text-emerald-400 bg-emerald-500/10 border-emerald-500/30",
+    Intermediate: "text-amber-400 bg-amber-500/10 border-amber-500/30",
+    Advanced: "text-rose-400 bg-rose-500/10 border-rose-500/30",
+  };
+
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 backdrop-blur-sm p-4">
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/75 backdrop-blur-sm p-4">
       <motion.div
-        initial={{ opacity: 0, scale: 0.95 }}
-        animate={{ opacity: 1, scale: 1 }}
+        initial={{ opacity: 0, scale: 0.95, y: 12 }}
+        animate={{ opacity: 1, scale: 1, y: 0 }}
         exit={{ opacity: 0, scale: 0.95 }}
-        className="bg-slate-900 border border-white/10 rounded-2xl p-6 w-full max-w-lg shadow-2xl space-y-4"
+        className="bg-slate-900 border border-white/10 rounded-2xl w-full max-w-xl shadow-2xl overflow-hidden"
       >
-        <div className="flex items-center justify-between">
+        {/* Header */}
+        <div className="px-6 py-4 border-b border-white/6 bg-linear-to-r from-sky-500/10 to-indigo-500/10 flex items-start justify-between gap-3">
           <div>
-            <h2 className="text-lg font-bold text-white">Submit Project</h2>
-            <p className="text-xs text-slate-400">{project.title}</p>
+            <h2 className="text-base font-bold text-white">Submit Project</h2>
+            <p className="text-xs text-slate-400 mt-0.5 line-clamp-1">{project.title}</p>
+            <div className="flex items-center gap-2 mt-1.5">
+              <span className={`text-[10px] font-semibold px-2 py-0.5 rounded-full border ${difficultyColor[project.difficulty] ?? "text-slate-400"}`}>
+                {project.difficulty}
+              </span>
+              <span className="text-[10px] text-slate-500">·</span>
+              <span className="text-[10px] text-slate-400">{project.company_name}</span>
+            </div>
           </div>
           <button
             onClick={onClose}
-            className="p-1.5 rounded-lg text-slate-500 hover:text-white hover:bg-white/10"
+            className="p-1.5 rounded-lg text-slate-500 hover:text-white hover:bg-white/10 shrink-0"
           >
             <X className="w-4 h-4" />
           </button>
         </div>
 
-        <div className="space-y-3">
+        <div className="p-6 space-y-4 max-h-[70vh] overflow-y-auto">
+          {/* Student Info (read-only) */}
+          <div className="p-3 rounded-xl bg-white/3 border border-white/6">
+            <p className="text-[10px] text-slate-500 uppercase tracking-wide mb-1 font-semibold">Submitting as</p>
+            <p className="text-sm font-semibold text-white">{user?.full_name || "You"}</p>
+            <p className="text-xs text-slate-400">{user?.email}</p>
+          </div>
+
+          {/* GitHub URL */}
           <div>
             <label className="block text-xs text-slate-400 mb-1 font-medium">
-              GitHub Repository URL *
+              GitHub Repository URL <span className="text-rose-400">*</span>
             </label>
             <div className="relative">
               <FaGithub className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-500" />
-              <input 
-              value={githubUrl}
-              onChange={(e) => setGithubUrl(e.target.value)}
-              placeholder="https://github.com/user/repository"
-                className="w-full pl-9 pr-4 py-2 bg-white/5 border border-white/8 rounded-xl text-sm text-white placeholder-slate-600 focus:outline-none focus:border-sky-500/50"
-              />
-            </div>
-          </div>
-
-          <div>
-            <label className="block text-xs text-slate-400 mb-1 font-medium">Deployed Demo URL (Optional)</label>
-            <div className="relative">
-              <Globe className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-500"/>
               <input
-                value={demoUrl}
-                onChange={(e) => setDemoUrl(e.target.value)}
-                placeholder="https://your-app.railway.app"
-                className="w-full pl-9 pr-4 py-2 bg-white/5 border border-white/8 rounded-xl text-sm text-white placeholder-slate-600 focus:outline-none focus:border-sky-500/50"
+                value={githubUrl}
+                onChange={(e) => setGithubUrl(e.target.value)}
+                placeholder="https://github.com/username/repo"
+                className="w-full pl-9 pr-4 py-2.5 bg-white/5 border border-white/8 rounded-xl text-sm text-white placeholder-slate-600 focus:outline-none focus:border-sky-500/50 focus:bg-white/8 transition-all"
               />
             </div>
           </div>
 
+          {/* Deployment URL */}
           <div>
-            <label className="block text-xs text-slate-400 mb-1 font-medium">Implementation Notes (Optional)</label>
+            <label className="block text-xs text-slate-400 mb-1 font-medium">
+              Deployment / Live Demo URL <span className="text-slate-600">(Optional)</span>
+            </label>
+            <div className="relative">
+              <Globe className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-500" />
+              <input
+                value={deploymentUrl}
+                onChange={(e) => setDeploymentUrl(e.target.value)}
+                placeholder="https://your-app.vercel.app or https://your-app.railway.app"
+                className="w-full pl-9 pr-4 py-2.5 bg-white/5 border border-white/8 rounded-xl text-sm text-white placeholder-slate-600 focus:outline-none focus:border-emerald-500/50 focus:bg-white/8 transition-all"
+              />
+            </div>
+          </div>
+
+          {/* What I Learned */}
+          <div>
+            <label className="text-xs text-slate-400 mb-1 font-medium flex items-center gap-1.5">
+              <BookOpen className="w-3 h-3" />
+              What did you learn / understand from this project? <span className="text-rose-400">*</span>
+            </label>
+            <textarea
+              value={whatILearned}
+              onChange={(e) => setWhatILearned(e.target.value)}
+              placeholder="Describe the key concepts you learned, challenges you overcame, and how this project helped you grow..."
+              rows={3}
+              className="w-full px-3 py-2.5 bg-white/5 border border-white/8 rounded-xl text-sm text-white placeholder-slate-600 focus:outline-none focus:border-indigo-500/50 focus:bg-white/8 transition-all resize-none"
+            />
+            <p className="text-[10px] text-slate-600 mt-1">This is shared with the company. Be specific and honest.</p>
+          </div>
+
+          {/* Implementation Notes / Brief */}
+          <div>
+            <label className="block text-xs text-slate-400 mb-1 font-medium">
+              Implementation Notes / Brief <span className="text-slate-600">(Optional)</span>
+            </label>
             <textarea
               value={notes}
               onChange={(e) => setNotes(e.target.value)}
-              placeholder="Key design patterns, JWT auth, validation, database schema..."
+              placeholder="Tech stack choices, architecture decisions, key features you implemented..."
               rows={2}
-              className="w-full px-3 py-2 bg-white/5 border border-white/8 rounded-xl text-sm text-white placeholder-slate-600 focus:outline-none focus:border-sky-500/50 resize-none"
+              className="w-full px-3 py-2.5 bg-white/5 border border-white/8 rounded-xl text-sm text-white placeholder-slate-600 focus:outline-none focus:border-sky-500/50 focus:bg-white/8 transition-all resize-none"
             />
           </div>
 
+          {/* Group Code */}
           <div>
-            <label className="block text-xs text-slate-400 mb-1 font-medium">Group Code (If working as a team)</label>
+            <label className="block text-xs text-slate-400 mb-1 font-medium">
+              Team Group Code <span className="text-slate-600">(Optional — if working as a team)</span>
+            </label>
             <div className="relative">
               <Users className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-500" />
               <input
                 value={groupId}
                 onChange={(e) => setGroupId(e.target.value.toUpperCase())}
                 placeholder="8-digit group code"
-                className="w-full pl-9 pr-4 py-2 bg-white/5 border border-white/8 rounded-xl text-sm text-white font-mono tracking-widest placeholder-slate-600 focus:outline-none focus:border-sky-500/50"
+                className="w-full pl-9 pr-4 py-2.5 bg-white/5 border border-white/8 rounded-xl text-sm text-white font-mono tracking-widest placeholder-slate-600 focus:outline-none focus:border-violet-500/50 transition-all"
               />
             </div>
           </div>
 
-          <label className="flex items-center gap-2 cursor-pointer pt-1">
+          {/* Community toggle */}
+          <label className="flex items-center gap-2 cursor-pointer pt-1 select-none">
             <input
               type="checkbox"
               checked={isPublic}
               onChange={(e) => setIsPublic(e.target.checked)}
               className="w-4 h-4 accent-sky-500"
             />
-            <span className="text-xs text-slate-400">Share with peer community feed for review & suggestions</span>
+            <span className="text-xs text-slate-400">
+              Share with peer community feed for review &amp; suggestions
+            </span>
           </label>
         </div>
 
-        <div className="flex gap-3 pt-2">
-          <button onClick={onClose} className="flex-1 py-2 rounded-xl border border-white/8 text-slate-400 text-sm hover:text-white">
+        {/* Footer */}
+        <div className="px-6 py-4 border-t border-white/6 flex gap-3">
+          <button
+            onClick={onClose}
+            className="flex-1 py-2.5 rounded-xl border border-white/8 text-slate-400 text-sm hover:text-white hover:border-white/20 transition-all"
+          >
             Cancel
           </button>
           <button
             onClick={handleSubmit}
-            disabled={loading || !githubUrl}
-            className="flex-1 flex items-center justify-center gap-2 py-2 rounded-xl bg-sky-500/20 border border-sky-500/30 text-sky-400 text-sm font-semibold hover:bg-sky-500/30 disabled:opacity-50"
+            disabled={loading || !githubUrl || !whatILearned.trim()}
+            className="flex-1 flex items-center justify-center gap-2 py-2.5 rounded-xl bg-linear-to-r from-sky-500/20 to-indigo-500/20 border border-sky-500/30 text-sky-400 text-sm font-semibold hover:from-sky-500/30 hover:to-indigo-500/30 disabled:opacity-40 disabled:cursor-not-allowed transition-all"
           >
-            {loading ? <Loader2 className="w-4 h-4 animate-spin" /> : <Send className="w-4 h-4" />}
-            Submit
+            {loading ? (
+              <Loader2 className="w-4 h-4 animate-spin" />
+            ) : (
+              <Send className="w-4 h-4" />
+            )}
+            {loading ? "Submitting..." : "Submit Project"}
           </button>
         </div>
       </motion.div>

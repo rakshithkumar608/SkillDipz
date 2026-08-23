@@ -5,6 +5,7 @@ import { useAuthStore } from "@/store/authStore";
 import {
   Briefcase,
   Database,
+  FolderOpen,
   LayoutDashboard,
   LogOut,
   Menu,
@@ -29,7 +30,9 @@ const navItems = [
   { label: "Scheduled Interviews", href: "/company/interviews", icon: Video },
   { label: "Global Leaderboard", href: "/company/leaderboard", icon: Trophy },
   { label: "Jobs & Applicants Center", href: "/company/jobs", icon: Briefcase },
+  { label: "Project Hub", href: "/company/projects", icon: FolderOpen },
 ];
+
 
 export default function CompanyLayout({
   children,

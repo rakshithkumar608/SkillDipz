@@ -1,7 +1,9 @@
 import uuid
 import logging
-from typing import List
-from fastapi import APIRouter, Depends, HTTPException, Query, status
+from pathlib import Path
+from datetime import datetime, timezone
+from typing import List, Optional
+from fastapi import APIRouter, Depends, File, HTTPException, Query, UploadFile, status
 
 from app.api.dependencies import get_current_company
 from app.api.routes.auth import get_current_user
@@ -9,6 +11,7 @@ from app.models.user import User
 from app.models.project import (
     CompanyProject,
     ProjectGroup,
+    ProjectAcceptance,
     StudentProjectSubmission,
     ProjectComment,
     GroupMember,
@@ -19,6 +22,7 @@ from app.models.student_profile import StudentProfile
 from app.schemas.project_schema import (
     CreateProjectRequest,
     ProjectCardOut,
+    CompanyProjectOut,
     SubmitProjectRequest,
     CreateGroupRequest,
     JoinGroupRequest,
@@ -36,21 +40,70 @@ student_router = APIRouter(tags=["Projects — Student"])
 company_router = APIRouter(tags=["Projects — Company"])
 
 
+def _format_dt(dt):
+    if dt is None:
+        return datetime.now(timezone.utc).isoformat()
+    if isinstance(dt, str):
+        return dt
+    if hasattr(dt, "isoformat"):
+        return dt.isoformat()
+    return str(dt)
+
+
+def _serialize_resource(r):
+    if hasattr(r, "name") and hasattr(r, "url"):
+        return {"name": str(r.name), "url": str(r.url)}
+    elif isinstance(r, dict):
+        return {"name": str(r.get("name", "")), "url": str(r.get("url", ""))}
+    return {"name": str(r), "url": ""}
+
+
+# ─── Company Project Spec Document Upload ─────────────────────────────────────
+
+@company_router.post("/upload-spec")
+async def upload_spec_document(
+    file: UploadFile = File(...),
+    current_company: dict = Depends(get_current_company),
+):
+    """Upload a project specification document (PDF, DOCX, TXT, MD, ZIP - max 20MB)."""
+    contents = await file.read()
+    if len(contents) > 20 * 1024 * 1024:
+        raise HTTPException(status_code=400, detail="Spec file must be under 20 MB.")
+
+    orig_name = file.filename or "project_spec.pdf"
+    ext = Path(orig_name).suffix.lower() or ".pdf"
+    safe_name = f"spec_{uuid.uuid4().hex[:8]}_{Path(orig_name).stem[:25]}{ext}"
+
+    spec_dir = Path("uploads/project_specs")
+    spec_dir.mkdir(parents=True, exist_ok=True)
+    dest = spec_dir / safe_name
+    dest.write_bytes(contents)
+
+    file_url = f"/v1/uploads/project_specs/{safe_name}"
+    return {
+        "url": file_url,
+        "filename": orig_name,
+        "size_bytes": len(contents),
+    }
+
+
+# ─── Company Create & Manage Projects ─────────────────────────────────────────
+
 @company_router.post("")
 async def create_project(
     body: CreateProjectRequest,
     current_company: dict = Depends(get_current_company),
 ):
-    from app.models.target_company import CompanyProfile
-    company_id = current_company["company_id"]
-    company = await CompanyProfile.find_one(CompanyProfile.company_id == company_id)
-    if not company or not company.is_verified:
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="Company is not verified to create projects.",
-        )
+    from app.api.routes.company_admin import _get_or_create_company_profile
+    company = await _get_or_create_company_profile(current_company)
+    company_id = company.company_id
         
-    resources = [ProjectResource(name=r["name"], url=r["url"]) for r in body.resources]
+    resources = []
+    for r in (body.resources or []):
+        if isinstance(r, dict):
+            resources.append(ProjectResource(name=str(r.get("name", "")), url=str(r.get("url", ""))))
+        elif hasattr(r, "name"):
+            resources.append(ProjectResource(name=str(r.name), url=str(r.url)))
     
     project = CompanyProject(
         company_id=company_id,
@@ -58,12 +111,16 @@ async def create_project(
         company_logo_emoji=getattr(company, "logo_emoji", "🏢"),
         title=body.title,
         description=body.description,
-        target_roles=body.target_roles,
-        required_skills=body.required_skills,
-        difficulty=body.difficulty,
-        deliverables=body.deliverables,
-        deadline_days=body.deadline_days,
-        visibility=body.visibility,
+        project_idea=body.project_idea,
+        architecture_overview=body.architecture_overview,
+        spec_document_url=body.spec_document_url,
+        spec_document_name=body.spec_document_name,
+        target_roles=body.target_roles or [],
+        required_skills=body.required_skills or [],
+        difficulty=body.difficulty or "Intermediate",
+        deliverables=body.deliverables or [],
+        deadline_days=body.deadline_days or 14,
+        visibility=body.visibility or "all_students",
         resources=resources,
     )
     await project.insert()
@@ -74,10 +131,110 @@ async def create_project(
         "company_id": company_id,
         "company_name": company.name,
         "title": body.title,
-        "target_roles": body.target_roles,
+        "target_roles": body.target_roles or [],
     })
 
     return {"message": "Project brief posted successfully.", "project_id": str(project.id)}
+
+
+@company_router.get("", response_model=List[CompanyProjectOut])
+async def list_company_projects(
+    current_company: dict = Depends(get_current_company),
+):
+    """List all projects posted by this company with acceptance and submission stats."""
+    from app.api.routes.company_admin import _get_or_create_company_profile
+    company = await _get_or_create_company_profile(current_company)
+    company_id = company.company_id
+    user_id = current_company.get("user_id") or ""
+    current_user = current_company.get("user")
+    user_comp_name = getattr(current_user, "company_name", None)
+
+    match_ids = list(set(filter(None, [company_id, current_company.get("company_id"), user_id, getattr(company, "name", None), user_comp_name])))
+
+    projects = await CompanyProject.find(
+        {"company_id": {"$in": match_ids}}
+    ).sort(-CompanyProject.created_at).to_list()
+
+    out = []
+    for proj in projects:
+        proj_id = str(proj.id)
+        submission_count = await StudentProjectSubmission.find(
+            StudentProjectSubmission.project_id == proj_id
+        ).count()
+        acceptance_count = await ProjectAcceptance.find(
+            ProjectAcceptance.project_id == proj_id
+        ).count()
+        out.append(
+            CompanyProjectOut(
+                project_id=proj_id,
+                title=proj.title or "",
+                description=proj.description or "",
+                project_idea=getattr(proj, "project_idea", None),
+                architecture_overview=getattr(proj, "architecture_overview", None),
+                spec_document_url=getattr(proj, "spec_document_url", None),
+                spec_document_name=getattr(proj, "spec_document_name", None),
+                difficulty=proj.difficulty or "Intermediate",
+                deadline_days=proj.deadline_days or 14,
+                required_skills=proj.required_skills or [],
+                target_roles=proj.target_roles or [],
+                deliverables=proj.deliverables or [],
+                resources=[_serialize_resource(r) for r in (proj.resources or [])],
+                visibility=getattr(proj, "visibility", getattr(proj, "visibality", "all_students")) or "all_students",
+                is_active=bool(proj.is_active),
+                created_at=_format_dt(getattr(proj, "created_at", None)),
+                submission_count=submission_count,
+                acceptance_count=acceptance_count,
+            )
+        )
+    return out
+
+
+@company_router.get("/{project_id}", response_model=CompanyProjectOut)
+async def get_company_project(
+    project_id: str,
+    current_company: dict = Depends(get_current_company),
+):
+    """Get a single project's detail with stats."""
+    from beanie import PydanticObjectId
+    from app.api.routes.company_admin import _get_or_create_company_profile
+    company = await _get_or_create_company_profile(current_company)
+    company_id = company.company_id
+    user_id = current_company.get("user_id") or ""
+    current_user = current_company.get("user")
+    user_comp_name = getattr(current_user, "company_name", None)
+    match_ids = list(set(filter(None, [company_id, current_company.get("company_id"), user_id, getattr(company, "name", None), user_comp_name])))
+
+    proj = await CompanyProject.get(PydanticObjectId(project_id))
+    if not proj or proj.company_id not in match_ids:
+        raise HTTPException(status_code=404, detail="Project not found.")
+
+    proj_id = str(proj.id)
+    submission_count = await StudentProjectSubmission.find(
+        StudentProjectSubmission.project_id == proj_id
+    ).count()
+    acceptance_count = await ProjectAcceptance.find(
+        ProjectAcceptance.project_id == proj_id
+    ).count()
+    return CompanyProjectOut(
+        project_id=proj_id,
+        title=proj.title or "",
+        description=proj.description or "",
+        project_idea=getattr(proj, "project_idea", None),
+        architecture_overview=getattr(proj, "architecture_overview", None),
+        spec_document_url=getattr(proj, "spec_document_url", None),
+        spec_document_name=getattr(proj, "spec_document_name", None),
+        difficulty=proj.difficulty or "Intermediate",
+        deadline_days=proj.deadline_days or 14,
+        required_skills=proj.required_skills or [],
+        target_roles=proj.target_roles or [],
+        deliverables=proj.deliverables or [],
+        resources=[_serialize_resource(r) for r in (proj.resources or [])],
+        visibility=getattr(proj, "visibility", getattr(proj, "visibality", "all_students")) or "all_students",
+        is_active=bool(proj.is_active),
+        created_at=_format_dt(getattr(proj, "created_at", None)),
+        submission_count=submission_count,
+        acceptance_count=acceptance_count,
+    )
 
 
 @company_router.get("/{project_id}/submissions", response_model=List[CompanySubmissionOut])
@@ -87,8 +244,16 @@ async def get_project_submissions(
 ):
     """Company retrieves all submissions (solo & group) for a project."""
     from beanie import PydanticObjectId
+    from app.api.routes.company_admin import _get_or_create_company_profile
+    company = await _get_or_create_company_profile(current_company)
+    company_id = company.company_id
+    user_id = current_company.get("user_id") or ""
+    current_user = current_company.get("user")
+    user_comp_name = getattr(current_user, "company_name", None)
+    match_ids = list(set(filter(None, [company_id, current_company.get("company_id"), user_id, getattr(company, "name", None), user_comp_name])))
+
     project = await CompanyProject.get(PydanticObjectId(project_id))
-    if not project or project.company_id != current_company["company_id"]:
+    if not project or project.company_id not in match_ids:
         raise HTTPException(status_code=404, detail="Project not found.")
 
     submissions = await StudentProjectSubmission.find(
@@ -104,18 +269,50 @@ async def get_project_submissions(
                 submission_id=str(sub.id),
                 student_id=sub.student_id,
                 student_name=student_name,
-                github_url=sub.github_url,
+                github_url=sub.github_url or "",
                 demo_url=sub.demo_url,
-                submitted_at=sub.submitted_at.isoformat(),
-                evaluation_status=sub.evaluation_status,
+                deployment_url=getattr(sub, "deployment_url", None),
+                what_i_learned=getattr(sub, "what_i_learned", None),
+                notes=sub.notes,
+                submitted_at=_format_dt(getattr(sub, "submitted_at", None)),
+                evaluation_status=sub.evaluation_status or "pending",
                 nlp_score=sub.nlp_score,
-                verified_skills=sub.verified_skills,
+                verified_skills=sub.verified_skills or [],
                 is_group=bool(sub.group_id),
                 group_name=sub.group_name,
-                group_members=[{"student_id": m.student_id, "name": m.name} for m in sub.group_members],
+                group_members=[{"student_id": (m.student_id if hasattr(m, "student_id") else m.get("student_id", "")), "name": (m.name if hasattr(m, "name") else m.get("name", ""))} for m in (sub.group_members or [])],
             )
         )
     return out
+
+
+# Student accept/open a project — tracks engagement for company stats
+@student_router.post("/{project_id}/accept")
+async def accept_project(
+    project_id: str,
+    current_user: User = Depends(get_current_user),
+):
+    """Track when a student accepts / opens a company project brief."""
+    from beanie import PydanticObjectId
+    student_id = str(current_user.id)
+    profile = await StudentProfile.find_one(StudentProfile.student_id == student_id)
+    student_name = profile.name if profile else "Student"
+
+    # Idempotent — don't double-count
+    existing = await ProjectAcceptance.find_one(
+        ProjectAcceptance.project_id == project_id,
+        ProjectAcceptance.student_id == student_id,
+    )
+    if existing:
+        return {"message": "Already accepted.", "is_accepted": True, "project_id": project_id}
+
+    acceptance = ProjectAcceptance(
+        project_id=project_id,
+        student_id=student_id,
+        student_name=student_name,
+    )
+    await acceptance.insert()
+    return {"message": "Project accepted successfully!", "is_accepted": True, "project_id": project_id}
 
 
 # Student Endpoint - Project Brief & Submissions
@@ -123,12 +320,12 @@ async def get_project_submissions(
 async def get_my_projects(
     current_user: User = Depends(get_current_user),
 ):
-    """Student fetches role-matched projects with submission status."""
+    """Student fetches role-matched projects with acceptance & submission status."""
     student_id = str(current_user.id)
     profile = await StudentProfile.find_one(StudentProfile.student_id == student_id)
     student_role = (profile.target_roles or "").lower() if profile else ""
 
-    all_projects = await CompanyProject.find(CompanyProject.is_active == True).to_list()  # noqa: E712
+    all_projects = await CompanyProject.find(CompanyProject.is_active == True).sort(-CompanyProject.created_at).to_list()  # noqa: E712
 
     # Filter projects by target role matching
     relevant = []
@@ -146,6 +343,12 @@ async def get_my_projects(
     ).to_list()
     sub_map = {s.project_id: s for s in my_subs}
 
+    # Map student acceptances
+    my_acceptances = await ProjectAcceptance.find(
+        ProjectAcceptance.student_id == student_id
+    ).to_list()
+    accepted_set = {a.project_id for a in my_acceptances}
+
     cards = []
     for proj in relevant:
         proj_id = str(proj.id)
@@ -155,13 +358,19 @@ async def get_my_projects(
             my_sub = {
                 "github_url": sub.github_url,
                 "demo_url": sub.demo_url,
-                "submitted_at": sub.submitted_at.isoformat(),
+                "deployment_url": getattr(sub, "deployment_url", None),
+                "what_i_learned": getattr(sub, "what_i_learned", None),
+                "submitted_at": _format_dt(sub.submitted_at),
                 "nlp_score": sub.nlp_score,
                 "evaluation_status": sub.evaluation_status,
             }
         else:
             s_status = "available"
             my_sub = None
+
+        total_accepted = await ProjectAcceptance.find(
+            ProjectAcceptance.project_id == proj_id
+        ).count()
 
         cards.append(
             ProjectCardOut(
@@ -170,12 +379,18 @@ async def get_my_projects(
                 company_logo_emoji=proj.company_logo_emoji,
                 title=proj.title,
                 description=proj.description,
+                project_idea=getattr(proj, "project_idea", None),
+                architecture_overview=getattr(proj, "architecture_overview", None),
+                spec_document_url=getattr(proj, "spec_document_url", None),
+                spec_document_name=getattr(proj, "spec_document_name", None),
                 difficulty=proj.difficulty,
                 deadline_days=proj.deadline_days,
                 required_skills=proj.required_skills,
                 deliverables=proj.deliverables,
-                resources=[{"name": r.name, "url": r.url} for r in proj.resources],
+                resources=[_serialize_resource(r) for r in (proj.resources or [])],
                 status=s_status,
+                is_accepted=(proj_id in accepted_set) or (sub is not None),
+                acceptance_count=total_accepted,
                 my_submission=my_sub,
             )
         )
@@ -222,6 +437,8 @@ async def submit_project(
         group_members=group_members,
         github_url=body.github_url,
         demo_url=body.demo_url,
+        deployment_url=body.deployment_url,
+        what_i_learned=body.what_i_learned,
         notes=body.notes,
         is_public=body.is_public,
     )
@@ -229,6 +446,18 @@ async def submit_project(
 
     profile = await StudentProfile.find_one(StudentProfile.student_id == student_id)
     student_name = profile.name if profile else "A student"
+
+    # Immediately notify the company that their project was submitted
+    try:
+        await send_notification(
+            student_id=project.company_id,
+            title=f"📬 New Project Submission — {project.title}",
+            body=f"{student_name} submitted \"{ project.title}\". Review their work now.",
+            action_url=f"/company/projects",
+            notification_type="project_submission",
+        )
+    except Exception as e:
+        logger.warning(f"Company notification failed: {e}")
 
     # Dispatch event for async NLP evaluation
     await event_bus.publish("project.submitted", {
@@ -247,6 +476,7 @@ async def submit_project(
         "message": "Project submitted successfully. NLP evaluation in progress.",
         "submission_id": str(submission.id),
     }
+
     
 # Student Endpoint (Community Feed & Peer Reviews)
 @student_router.get("/community", response_model=List[CommunitySubmissionOut])
