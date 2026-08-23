@@ -175,44 +175,44 @@ export default function ProjectsPage() {
 
       {/* Overview Stat Cards (Shown for Company Briefs) */}
       {activeTab === "company-briefs" && !loading && (
-        <div className="grid grid-cols-3 gap-3">
-          <div className="p-4 rounded-2xl bg-slate-900/60 border border-white/6 flex items-center gap-3.5 shadow-lg">
-            <div className="p-2.5 rounded-xl bg-sky-500/10 text-sky-400 border border-sky-500/20">
-              <Briefcase className="w-5 h-5" />
+        <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+          <div className="p-3.5 sm:p-4 rounded-2xl bg-slate-900/60 border border-white/6 flex items-center gap-3.5 shadow-lg">
+            <div className="p-2 sm:p-2.5 rounded-xl bg-sky-500/10 text-sky-400 border border-sky-500/20 shrink-0">
+              <Briefcase className="w-4 h-4 sm:w-5 sm:h-5" />
             </div>
             <div>
-              <p className="text-xl font-bold text-white">
+              <p className="text-lg sm:text-xl font-bold text-white">
                 {companyProjects.length}
               </p>
-              <p className="text-[11px] text-slate-400 font-medium">
+              <p className="text-[10px] sm:text-[11px] text-slate-400 font-medium">
                 Total Briefs
               </p>
             </div>
           </div>
 
-          <div className="p-4 rounded-2xl bg-emerald-500/5 border border-emerald-500/20 flex items-center gap-3.5 shadow-lg shadow-emerald-950/20">
-            <div className="p-2.5 rounded-xl bg-emerald-500/15 text-emerald-400 border border-emerald-500/30">
-              <Rocket className="w-5 h-5" />
+          <div className="p-3.5 sm:p-4 rounded-2xl bg-emerald-500/5 border border-emerald-500/20 flex items-center gap-3.5 shadow-lg shadow-emerald-950/20">
+            <div className="p-2 sm:p-2.5 rounded-xl bg-emerald-500/15 text-emerald-400 border border-emerald-500/30 shrink-0">
+              <Rocket className="w-4 h-4 sm:w-5 sm:h-5" />
             </div>
             <div>
-              <p className="text-xl font-bold text-emerald-400">
+              <p className="text-lg sm:text-xl font-bold text-emerald-400">
                 {acceptedProjects.length}
               </p>
-              <p className="text-[11px] text-emerald-400/80 font-medium">
+              <p className="text-[10px] sm:text-[11px] text-emerald-400/80 font-medium">
                 Accepted / In Progress
               </p>
             </div>
           </div>
 
-          <div className="p-4 rounded-2xl bg-violet-500/5 border border-violet-500/20 flex items-center gap-3.5 shadow-lg shadow-violet-950/20">
-            <div className="p-2.5 rounded-xl bg-violet-500/15 text-violet-400 border border-violet-500/30">
-              <CheckCircle2 className="w-5 h-5" />
+          <div className="p-3.5 sm:p-4 rounded-2xl bg-violet-500/5 border border-violet-500/20 flex items-center gap-3.5 shadow-lg shadow-violet-950/20">
+            <div className="p-2 sm:p-2.5 rounded-xl bg-violet-500/15 text-violet-400 border border-violet-500/30 shrink-0">
+              <CheckCircle2 className="w-4 h-4 sm:w-5 sm:h-5" />
             </div>
             <div>
-              <p className="text-xl font-bold text-violet-400">
+              <p className="text-lg sm:text-xl font-bold text-violet-400">
                 {completedProjects.length}
               </p>
-              <p className="text-[11px] text-violet-400/80 font-medium">
+              <p className="text-[10px] sm:text-[11px] text-violet-400/80 font-medium">
                 Submitted &amp; Scored
               </p>
             </div>
@@ -222,7 +222,7 @@ export default function ProjectsPage() {
 
       {/* Main Tabs Navigation */}
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 border-b border-white/6 pb-3">
-        <div className="flex gap-2 p-1 bg-white/3 rounded-2xl border border-white/6 w-fit">
+        <div className="flex gap-1.5 p-1 bg-white/3 rounded-2xl border border-white/6 w-full sm:w-fit overflow-x-auto scrollbar-none">
           {tabs.map((tab) => {
             const Icon = tab.icon;
             const isActive = activeTab === tab.key;
@@ -230,7 +230,7 @@ export default function ProjectsPage() {
               <button
                 key={tab.key}
                 onClick={() => setActiveTab(tab.key)}
-                className={`flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-bold transition-all ${
+                className={`flex items-center gap-1.5 sm:gap-2 px-3 sm:px-4 py-2 rounded-xl text-xs font-bold transition-all shrink-0 ${
                   isActive
                     ? "bg-gradient-to-r from-sky-500 to-indigo-600 text-white shadow-lg shadow-sky-950/50"
                     : "text-slate-400 hover:text-slate-200 hover:bg-white/4"
@@ -256,7 +256,7 @@ export default function ProjectsPage() {
 
         {/* Sub-filters for Company Briefs */}
         {activeTab === "company-briefs" && (
-          <div className="flex items-center gap-1.5 p-1 bg-slate-900 border border-white/6 rounded-xl text-xs font-semibold">
+          <div className="flex items-center gap-1.5 p-1 bg-slate-900 border border-white/6 rounded-xl text-xs font-semibold overflow-x-auto scrollbar-none w-full sm:w-fit">
             {[
               { key: "all", label: "All Briefs", count: companyProjects.length },
               {
@@ -274,7 +274,7 @@ export default function ProjectsPage() {
               <button
                 key={f.key}
                 onClick={() => setBriefFilter(f.key as BriefFilter)}
-                className={`px-3 py-1.5 rounded-lg transition-all ${
+                className={`px-3 py-1.5 rounded-lg transition-all shrink-0 ${
                   briefFilter === f.key
                     ? "bg-white/10 text-white shadow-sm"
                     : "text-slate-400 hover:text-slate-300"

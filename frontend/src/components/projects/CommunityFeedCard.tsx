@@ -51,7 +51,7 @@ export default function CommunityFeedCard({ submission }: CommunityCardProps) {
 
       {submission.notes && <p className="text-xs text-slate-400 line-clamp-2">{submission.notes}</p>}
 
-       <div className="flex items-center gap-3 pt-1 text-xs">
+       <div className="flex items-center gap-3 pt-1 text-xs flex-wrap">
         <a href={submission.github_url} target="_blank" rel="noopener noreferrer" className="flex items-center gap-1 text-slate-300 hover:text-white">
           <FaGithub className="w-3.5 h-3.5" /> Repository
         </a>
@@ -60,8 +60,8 @@ export default function CommunityFeedCard({ submission }: CommunityCardProps) {
             <Globe className="w-3.5 h-3.5" /> Live Demo
           </a>
         )}
-        <span className="flex-1" />
-        <button onClick={() => setShowComments((p) => !p)} className="flex items-center gap-1 text-slate-400 hover:text-sky-400">
+        <span className="hidden sm:flex-1" />
+        <button onClick={() => setShowComments((p) => !p)} className="flex items-center gap-1 text-slate-400 hover:text-sky-400 ml-auto sm:ml-0">
           <MessageCircle className="w-3.5 h-3.5" /> {submission.comment_count > 0 && submission.comment_count} Suggestions
         </button>
       </div>

@@ -42,15 +42,10 @@ import { toast } from "sonner";
 
 // ─── Helpers: Smart Tag Sanitizer ──────────────────────────────────────────
 
-/**
- * Intelligently breaks down raw blocks of text or comma/colon-separated skills
- * into crisp, beautiful individual tags (e.g. "React.js", "Node.js", "MongoDB").
- */
 function sanitizeTags(rawList: string[]): string[] {
   const result: string[] = [];
   for (const item of rawList || []) {
     if (!item) continue;
-    // Split by commas, newlines, semicolons, or prefix labels like "Frontend:", "Backend:"
     const tokens = item
       .replace(/Frontend:|Backend:|Database:|Authentication:|API:|Deployment:/gi, ",")
       .replace(/[•\t\r]+/g, " ")
@@ -127,32 +122,32 @@ function CompanyProjectDetailModal({
   const roles = sanitizeTags(project.target_roles);
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-md p-4">
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-md p-2 sm:p-4">
       <motion.div
         initial={{ opacity: 0, scale: 0.95, y: 15 }}
         animate={{ opacity: 1, scale: 1, y: 0 }}
         exit={{ opacity: 0, scale: 0.95 }}
-        className="bg-slate-900 border border-white/10 rounded-2xl w-full max-w-3xl max-h-[88vh] flex flex-col shadow-2xl overflow-hidden"
+        className="bg-slate-900 border border-white/10 rounded-2xl w-full max-w-3xl max-h-[92vh] flex flex-col shadow-2xl overflow-hidden"
       >
         {/* Header */}
-        <div className="px-6 py-5 border-b border-white/8 bg-gradient-to-r from-slate-900 via-slate-900 to-emerald-950/30 flex items-start justify-between gap-4">
-          <div className="flex items-start gap-3">
-            <div className="p-2.5 rounded-xl bg-emerald-500/15 border border-emerald-500/30 text-emerald-400 shrink-0">
-              <Layers className="w-6 h-6" />
+        <div className="px-4 sm:px-6 py-4 sm:py-5 border-b border-white/8 bg-gradient-to-r from-slate-900 via-slate-900 to-emerald-950/30 flex items-start justify-between gap-3">
+          <div className="flex items-start gap-2.5 sm:gap-3 min-w-0">
+            <div className="p-2 sm:p-2.5 rounded-xl bg-emerald-500/15 border border-emerald-500/30 text-emerald-400 shrink-0">
+              <Layers className="w-5 h-5 sm:w-6 sm:h-6" />
             </div>
-            <div>
-              <div className="flex items-center gap-2 mb-1.5">
+            <div className="min-w-0">
+              <div className="flex items-center gap-1.5 sm:gap-2 mb-1 flex-wrap">
                 <DifficultyBadge diff={project.difficulty} />
                 <span className="text-[10px] px-2 py-0.5 rounded-full bg-slate-800 text-slate-300 border border-white/6 font-medium">
-                  {project.deadline_days} Days Window
+                  {project.deadline_days}d Window
                 </span>
                 <span className="text-[10px] px-2 py-0.5 rounded-full bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 font-medium">
                   {project.visibility === "all_students"
                     ? "All Students"
-                    : "Shortlisted Only"}
+                    : "Shortlisted"}
                 </span>
               </div>
-              <h2 className="text-xl font-bold text-white leading-snug">
+              <h2 className="text-base sm:text-xl font-bold text-white leading-snug break-words">
                 {project.title}
               </h2>
             </div>
@@ -166,25 +161,25 @@ function CompanyProjectDetailModal({
         </div>
 
         {/* Live engagement stats bar */}
-        <div className="px-6 py-3 border-b border-white/6 bg-white/2 flex items-center justify-between gap-4 flex-wrap">
-          <div className="flex items-center gap-6">
-            <div className="flex items-center gap-2">
+        <div className="px-4 sm:px-6 py-3 border-b border-white/6 bg-white/2 flex items-center justify-between gap-3 flex-wrap">
+          <div className="flex items-center gap-3 sm:gap-6 text-xs text-slate-300">
+            <div className="flex items-center gap-1.5">
               <Users className="w-4 h-4 text-sky-400" />
-              <span className="text-xs text-slate-300">
+              <span>
                 <strong className="text-sky-400 font-bold">
                   {project.acceptance_count}
                 </strong>{" "}
-                Students Accepted
+                Accepted
               </span>
             </div>
-            <div className="w-px h-4 bg-white/10" />
-            <div className="flex items-center gap-2">
+            <div className="w-px h-3.5 bg-white/10" />
+            <div className="flex items-center gap-1.5">
               <CheckCircle2 className="w-4 h-4 text-emerald-400" />
-              <span className="text-xs text-slate-300">
+              <span>
                 <strong className="text-emerald-400 font-bold">
                   {project.submission_count}
                 </strong>{" "}
-                Submissions Received
+                Submitted
               </span>
             </div>
           </div>
@@ -194,7 +189,7 @@ function CompanyProjectDetailModal({
               onClose();
               onOpenSubmissions();
             }}
-            className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-emerald-500/15 border border-emerald-500/30 text-emerald-400 text-xs font-semibold hover:bg-emerald-500/25 transition-all"
+            className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-emerald-500/15 border border-emerald-500/30 text-emerald-400 text-xs font-semibold hover:bg-emerald-500/25 transition-all ml-auto"
           >
             <Zap className="w-3.5 h-3.5" />
             Review Submissions ({project.submission_count})
@@ -202,15 +197,15 @@ function CompanyProjectDetailModal({
         </div>
 
         {/* Body content */}
-        <div className="flex-1 overflow-y-auto p-6 space-y-6 scrollbar-thin">
+        <div className="flex-1 overflow-y-auto p-4 sm:p-6 space-y-5 sm:space-y-6 scrollbar-thin">
           {/* Project Concept & Idea */}
           {project.project_idea && (
-            <div className="p-4 rounded-xl bg-gradient-to-br from-indigo-500/10 to-sky-500/5 border border-indigo-500/20 space-y-1.5">
+            <div className="p-3.5 sm:p-4 rounded-xl bg-gradient-to-br from-indigo-500/10 to-sky-500/5 border border-indigo-500/20 space-y-1.5">
               <div className="flex items-center gap-1.5 text-xs font-bold text-indigo-400 uppercase tracking-wider">
                 <BookOpen className="w-3.5 h-3.5" />
                 <span>Complete Project Concept &amp; Business Scope</span>
               </div>
-              <p className="text-sm text-slate-200 leading-relaxed whitespace-pre-line">
+              <p className="text-xs sm:text-sm text-slate-200 leading-relaxed whitespace-pre-line">
                 {project.project_idea}
               </p>
             </div>
@@ -221,7 +216,7 @@ function CompanyProjectDetailModal({
             <h4 className="text-xs font-bold text-slate-400 uppercase tracking-wider mb-2">
               Project Summary
             </h4>
-            <div className="p-4 rounded-xl bg-white/3 border border-white/6 text-sm text-slate-300 leading-relaxed">
+            <div className="p-3.5 sm:p-4 rounded-xl bg-white/3 border border-white/6 text-xs sm:text-sm text-slate-300 leading-relaxed">
               {project.description}
             </div>
           </div>
@@ -233,16 +228,16 @@ function CompanyProjectDetailModal({
                 <FileText className="w-4 h-4" />
                 Uploaded Project Specification Document
               </h4>
-              <div className="flex items-center justify-between p-4 rounded-xl bg-emerald-500/10 border border-emerald-500/25">
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between p-3.5 sm:p-4 rounded-xl bg-emerald-500/10 border border-emerald-500/25 gap-3 hover:bg-emerald-500/15 transition-all">
                 <div className="flex items-center gap-3 min-w-0">
                   <div className="p-2.5 rounded-xl bg-emerald-500/20 text-emerald-300 shrink-0">
-                    <FileDown className="w-6 h-6" />
+                    <FileDown className="w-5 h-5 sm:w-6 sm:h-6" />
                   </div>
                   <div className="min-w-0">
-                    <p className="text-sm font-bold text-white truncate">
+                    <p className="text-xs sm:text-sm font-bold text-white truncate">
                       {project.spec_document_name || "Project_Specification.pdf"}
                     </p>
-                    <p className="text-xs text-emerald-400/80 mt-0.5">
+                    <p className="text-[11px] sm:text-xs text-emerald-400/80 mt-0.5">
                       Attached guideline document available for student download
                     </p>
                   </div>
@@ -252,7 +247,7 @@ function CompanyProjectDetailModal({
                   target="_blank"
                   rel="noopener noreferrer"
                   download
-                  className="flex items-center gap-1.5 px-4 py-2 rounded-xl bg-emerald-500 text-slate-950 font-bold text-xs hover:bg-emerald-400 transition-all shadow-lg shadow-emerald-950/40 shrink-0 ml-3"
+                  className="flex items-center justify-center gap-1.5 w-full sm:w-auto px-4 py-2 rounded-xl bg-emerald-500 text-slate-950 font-bold text-xs hover:bg-emerald-400 transition-all shadow-lg shadow-emerald-950/40 shrink-0"
                 >
                   <Download className="w-3.5 h-3.5" /> Download File
                 </a>
@@ -267,7 +262,7 @@ function CompanyProjectDetailModal({
                 <Cpu className="w-3.5 h-3.5 text-sky-400" />
                 Architecture &amp; Technical Requirements
               </h4>
-              <div className="p-4 rounded-xl bg-white/3 border border-white/6 text-sm text-slate-300 leading-relaxed whitespace-pre-line">
+              <div className="p-3.5 sm:p-4 rounded-xl bg-white/3 border border-white/6 text-xs sm:text-sm text-slate-300 leading-relaxed whitespace-pre-line">
                 {project.architecture_overview}
               </div>
             </div>
@@ -283,7 +278,7 @@ function CompanyProjectDetailModal({
                 {project.deliverables.map((item, idx) => (
                   <div
                     key={idx}
-                    className="flex items-start gap-2.5 p-2.5 rounded-xl bg-white/2 border border-white/5 text-xs text-slate-300"
+                    className="flex items-start gap-2 p-2.5 rounded-xl bg-white/2 border border-white/5 text-xs text-slate-300"
                   >
                     <CheckCircle2 className="w-4 h-4 text-emerald-400 shrink-0 mt-0.5" />
                     <span>{item}</span>
@@ -359,10 +354,10 @@ function CompanyProjectDetailModal({
         </div>
 
         {/* Modal Footer */}
-        <div className="px-6 py-4 border-t border-white/8 bg-slate-900/90 flex items-center justify-between gap-3">
+        <div className="px-4 sm:px-6 py-3.5 sm:py-4 border-t border-white/8 bg-slate-900/90 flex flex-col sm:flex-row items-center justify-between gap-2.5 sm:gap-3">
           <button
             onClick={onClose}
-            className="px-5 py-2.5 rounded-xl border border-white/10 text-slate-400 text-sm font-semibold hover:text-white hover:border-white/20 transition-all"
+            className="w-full sm:w-auto px-5 py-2.5 rounded-xl border border-white/10 text-slate-400 text-sm font-semibold hover:text-white hover:border-white/20 transition-all order-2 sm:order-1"
           >
             Close
           </button>
@@ -371,7 +366,7 @@ function CompanyProjectDetailModal({
               onClose();
               onOpenSubmissions();
             }}
-            className="flex items-center gap-2 px-5 py-2.5 rounded-xl bg-gradient-to-r from-emerald-500/20 to-teal-500/20 border border-emerald-500/30 text-emerald-400 text-sm font-bold hover:from-emerald-500/30 hover:to-teal-500/30 transition-all shadow-lg shadow-emerald-950/40"
+            className="w-full sm:w-auto flex items-center justify-center gap-2 px-5 py-2.5 rounded-xl bg-gradient-to-r from-emerald-500/20 to-teal-500/20 border border-emerald-500/30 text-emerald-400 text-sm font-bold hover:from-emerald-500/30 hover:to-teal-500/30 transition-all shadow-lg shadow-emerald-950/40 order-1 sm:order-2"
           >
             <Zap className="w-4 h-4" />
             View Submissions ({project.submission_count})
@@ -413,12 +408,12 @@ function SubmissionsDrawer({
         animate={{ x: 0 }}
         exit={{ x: "100%" }}
         transition={{ type: "spring", damping: 28, stiffness: 280 }}
-        className="h-full w-full max-w-2xl bg-slate-900 border-l border-white/10 flex flex-col shadow-2xl overflow-hidden"
+        className="h-full w-full sm:max-w-2xl bg-slate-900 border-l border-white/10 flex flex-col shadow-2xl overflow-hidden"
       >
         {/* Header */}
-        <div className="px-6 py-4 border-b border-white/6 bg-gradient-to-r from-emerald-500/10 to-teal-500/10 flex items-start justify-between gap-4">
-          <div>
-            <h2 className="text-base font-bold text-white line-clamp-1">
+        <div className="px-4 sm:px-6 py-4 border-b border-white/6 bg-gradient-to-r from-emerald-500/10 to-teal-500/10 flex items-start justify-between gap-3">
+          <div className="min-w-0">
+            <h2 className="text-sm sm:text-base font-bold text-white truncate">
               {project.title}
             </h2>
             <p className="text-xs text-slate-400 mt-0.5">
@@ -437,30 +432,33 @@ function SubmissionsDrawer({
         </div>
 
         {/* Stat row */}
-        <div className="px-6 py-3 border-b border-white/4 flex items-center gap-6">
+        <div className="px-4 sm:px-6 py-3 border-b border-white/4 flex items-center gap-4 sm:gap-6 text-xs text-slate-300">
           <div className="flex items-center gap-1.5">
             <Users className="w-3.5 h-3.5 text-sky-400" />
-            <span className="text-xs text-slate-300">
-              <span className="font-semibold text-sky-400">
+            <span>
+              <strong className="text-sky-400 font-bold">
                 {project.acceptance_count}
-              </span>{" "}
+              </strong>{" "}
               accepted
             </span>
           </div>
+          <div className="w-px h-3.5 bg-white/10" />
           <div className="flex items-center gap-1.5">
             <CheckCircle2 className="w-3.5 h-3.5 text-emerald-400" />
-            <span className="text-xs text-slate-300">
-              <span className="font-semibold text-emerald-400">
+            <span>
+              <strong className="text-emerald-400 font-bold">
                 {project.submission_count}
-              </span>{" "}
+              </strong>{" "}
               submitted
             </span>
           </div>
-          <DifficultyBadge diff={project.difficulty} />
+          <div className="ml-auto">
+            <DifficultyBadge diff={project.difficulty} />
+          </div>
         </div>
 
         {/* Submissions list */}
-        <div className="flex-1 overflow-y-auto p-6 space-y-3">
+        <div className="flex-1 overflow-y-auto p-4 sm:p-6 space-y-3 scrollbar-thin">
           {loading ? (
             <div className="flex items-center justify-center py-16 gap-3 text-slate-500">
               <Loader2 className="w-5 h-5 animate-spin" />
@@ -492,7 +490,7 @@ function SubmissionsDrawer({
                       expanded === sub.submission_id ? null : sub.submission_id
                     )
                   }
-                  className="w-full flex items-center justify-between px-4 py-3 text-left hover:bg-white/3 transition-all"
+                  className="w-full flex items-center justify-between px-4 py-3 text-left hover:bg-white/3 transition-all gap-2"
                 >
                   <div className="flex items-center gap-3 min-w-0">
                     <div className="w-8 h-8 rounded-full bg-gradient-to-br from-indigo-400 to-sky-500 flex items-center justify-center shrink-0 text-xs font-bold text-white">
@@ -502,7 +500,7 @@ function SubmissionsDrawer({
                       <p className="text-sm font-semibold text-white truncate">
                         {sub.student_name}
                       </p>
-                      <div className="flex items-center gap-1.5 mt-0.5">
+                      <div className="flex items-center gap-1.5 mt-0.5 flex-wrap">
                         <EvalBadge status={sub.evaluation_status} />
                         {sub.nlp_score !== null && (
                           <span className="text-[10px] text-slate-400 font-medium">
@@ -657,7 +655,7 @@ function SubmissionsDrawer({
 
 const STEP_LABELS = [
   "Project Concept",
-  "Specs & File (Mandatory)",
+  "Specs & File",
   "Skills & Roles",
   "Resources",
 ];
@@ -765,7 +763,6 @@ function CreateProjectModal({
         projectIdea.trim().length >= 10
       );
     if (step === 1) {
-      // Spec document file upload is mandatory!
       return Boolean(specDocumentUrl && specDocumentName);
     }
     if (step === 2) return skills.length > 0;
@@ -807,17 +804,17 @@ function CreateProjectModal({
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-md p-4">
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-md p-2 sm:p-4">
       <motion.div
         initial={{ opacity: 0, scale: 0.95, y: 10 }}
         animate={{ opacity: 1, scale: 1, y: 0 }}
         exit={{ opacity: 0, scale: 0.95 }}
-        className="bg-slate-900 border border-white/10 rounded-2xl w-full max-w-2xl shadow-2xl overflow-hidden flex flex-col max-h-[90vh]"
+        className="bg-slate-900 border border-white/10 rounded-2xl w-full max-w-2xl shadow-2xl overflow-hidden flex flex-col max-h-[92vh]"
       >
         {/* Header */}
-        <div className="px-6 py-4 border-b border-white/6 bg-gradient-to-r from-emerald-500/10 to-teal-500/10 flex items-center justify-between">
+        <div className="px-4 sm:px-6 py-3.5 sm:py-4 border-b border-white/6 bg-gradient-to-r from-emerald-500/10 to-teal-500/10 flex items-center justify-between">
           <div>
-            <h2 className="text-base font-bold text-white">
+            <h2 className="text-sm sm:text-base font-bold text-white">
               Post Real Company Project Brief
             </h2>
             <p className="text-xs text-slate-400 mt-0.5">
@@ -833,11 +830,11 @@ function CreateProjectModal({
         </div>
 
         {/* Step indicator */}
-        <div className="px-6 pt-4 flex items-center gap-2">
+        <div className="px-4 sm:px-6 pt-3 sm:pt-4 flex items-center gap-1.5 sm:gap-2">
           {STEP_LABELS.map((label, i) => (
-            <div key={i} className="flex items-center gap-2 flex-1">
+            <div key={i} className="flex items-center gap-1.5 sm:gap-2 flex-1">
               <div
-                className={`w-6 h-6 rounded-full flex items-center justify-center text-xs font-bold transition-all ${
+                className={`w-5 h-5 sm:w-6 sm:h-6 rounded-full flex items-center justify-center text-[10px] sm:text-xs font-bold transition-all shrink-0 ${
                   i < step
                     ? "bg-emerald-500 text-white"
                     : i === step
@@ -848,7 +845,7 @@ function CreateProjectModal({
                 {i < step ? "✓" : i + 1}
               </div>
               <span
-                className={`text-xs font-medium hidden sm:block truncate ${
+                className={`text-[11px] sm:text-xs font-medium hidden sm:block truncate ${
                   i === step
                     ? "text-emerald-400"
                     : i < step
@@ -870,7 +867,7 @@ function CreateProjectModal({
         </div>
 
         {/* Body */}
-        <div className="p-6 space-y-4 flex-1 overflow-y-auto scrollbar-thin">
+        <div className="p-4 sm:p-6 space-y-4 flex-1 overflow-y-auto scrollbar-thin">
           {/* Step 0 — Basics & Complete Project Idea */}
           {step === 0 && (
             <>
@@ -914,7 +911,7 @@ function CreateProjectModal({
                 />
               </div>
 
-              <div className="grid grid-cols-2 gap-3">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                 <div>
                   <label className="block text-xs text-slate-400 mb-1 font-medium">
                     Difficulty Level
@@ -980,7 +977,7 @@ function CreateProjectModal({
             <div className="space-y-4">
               {/* Mandatory File Upload Box */}
               <div>
-                <label className="block text-xs font-semibold text-emerald-400 mb-1 flex items-center justify-between">
+                <label className="block text-xs font-semibold text-emerald-400 mb-1 flex items-center justify-between flex-wrap gap-1">
                   <span>
                     Upload Project Specification Document{" "}
                     <span className="text-rose-400">* (Mandatory)</span>
@@ -999,32 +996,32 @@ function CreateProjectModal({
                 />
 
                 {specDocumentUrl ? (
-                  <div className="p-4 rounded-xl bg-emerald-500/10 border border-emerald-500/30 flex items-center justify-between">
+                  <div className="p-3.5 sm:p-4 rounded-xl bg-emerald-500/10 border border-emerald-500/30 flex items-center justify-between gap-3">
                     <div className="flex items-center gap-3 min-w-0">
-                      <div className="p-2 rounded-lg bg-emerald-500/20 text-emerald-400">
-                        <FileCheck2 className="w-6 h-6" />
+                      <div className="p-2 rounded-lg bg-emerald-500/20 text-emerald-400 shrink-0">
+                        <FileCheck2 className="w-5 h-5 sm:w-6 sm:h-6" />
                       </div>
                       <div className="min-w-0">
-                        <p className="text-sm font-bold text-white truncate">
+                        <p className="text-xs sm:text-sm font-bold text-white truncate">
                           {specDocumentName}
                         </p>
-                        <p className="text-xs text-emerald-400/80">
-                          Ready &amp; attached to project brief ✓
+                        <p className="text-[11px] sm:text-xs text-emerald-400/80">
+                          Ready &amp; attached to brief ✓
                         </p>
                       </div>
                     </div>
                     <button
                       type="button"
                       onClick={() => fileInputRef.current?.click()}
-                      className="px-3 py-1.5 rounded-lg bg-white/5 border border-white/10 text-xs text-slate-300 hover:text-white hover:bg-white/10 transition-all ml-2 shrink-0"
+                      className="px-3 py-1.5 rounded-lg bg-white/5 border border-white/10 text-xs text-slate-300 hover:text-white hover:bg-white/10 transition-all shrink-0"
                     >
-                      Replace File
+                      Replace
                     </button>
                   </div>
                 ) : (
                   <div
                     onClick={() => fileInputRef.current?.click()}
-                    className={`border-2 border-dashed rounded-2xl p-6 text-center cursor-pointer transition-all ${
+                    className={`border-2 border-dashed rounded-2xl p-5 sm:p-6 text-center cursor-pointer transition-all ${
                       uploadingFile
                         ? "border-emerald-500/50 bg-emerald-500/5"
                         : "border-white/10 hover:border-emerald-500/40 hover:bg-emerald-500/5"
@@ -1032,26 +1029,26 @@ function CreateProjectModal({
                   >
                     {uploadingFile ? (
                       <div className="flex flex-col items-center gap-2">
-                        <Loader2 className="w-8 h-8 animate-spin text-emerald-400" />
+                        <Loader2 className="w-7 h-7 sm:w-8 sm:h-8 animate-spin text-emerald-400" />
                         <p className="text-xs font-semibold text-emerald-400">
                           Uploading specification document...
                         </p>
                       </div>
                     ) : (
                       <div className="flex flex-col items-center gap-2">
-                        <div className="p-3 rounded-2xl bg-emerald-500/10 text-emerald-400">
-                          <UploadCloud className="w-8 h-8" />
+                        <div className="p-2.5 sm:p-3 rounded-2xl bg-emerald-500/10 text-emerald-400">
+                          <UploadCloud className="w-6 h-6 sm:w-8 sm:h-8" />
                         </div>
                         <div>
-                          <p className="text-sm font-bold text-white">
-                            Click to upload full project specification document
+                          <p className="text-xs sm:text-sm font-bold text-white">
+                            Click to upload project specification document
                           </p>
-                          <p className="text-xs text-slate-500 mt-1">
+                          <p className="text-[11px] sm:text-xs text-slate-500 mt-0.5">
                             Upload complete instructions, test cases, or API
-                            specs for students
+                            specs
                           </p>
                         </div>
-                        <span className="mt-1 px-3 py-1 rounded-full bg-white/5 border border-white/10 text-[11px] text-slate-400">
+                        <span className="mt-1 px-3 py-1 rounded-full bg-white/5 border border-white/10 text-[10px] sm:text-[11px] text-slate-400">
                           Browse files from your computer
                         </span>
                       </div>
@@ -1230,11 +1227,11 @@ function CreateProjectModal({
                 Add optional reference resources — starter repos, API docs,
                 tutorials, design mockups, etc.
               </p>
-              <div className="grid grid-cols-2 gap-2">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
                 <input
                   value={resName}
                   onChange={(e) => setResName(e.target.value)}
-                  placeholder="Resource name (e.g. Swagger API Reference)"
+                  placeholder="Resource name"
                   className="px-3 py-2.5 bg-white/5 border border-white/8 rounded-xl text-sm text-white placeholder-slate-600 focus:outline-none focus:border-sky-500/50 transition-all"
                 />
                 <input
@@ -1283,10 +1280,10 @@ function CreateProjectModal({
         </div>
 
         {/* Footer */}
-        <div className="px-6 py-4 border-t border-white/6 flex gap-3 bg-slate-900/90">
+        <div className="px-4 sm:px-6 py-3.5 sm:py-4 border-t border-white/6 flex flex-col sm:flex-row gap-2.5 sm:gap-3 bg-slate-900/90">
           <button
             onClick={() => (step === 0 ? onClose() : setStep(step - 1))}
-            className="flex-1 py-2.5 rounded-xl border border-white/8 text-slate-400 text-sm hover:text-white hover:border-white/20 transition-all font-semibold"
+            className="w-full sm:flex-1 py-2.5 rounded-xl border border-white/8 text-slate-400 text-sm hover:text-white hover:border-white/20 transition-all font-semibold order-2 sm:order-1"
           >
             {step === 0 ? "Cancel" : "Back"}
           </button>
@@ -1294,7 +1291,7 @@ function CreateProjectModal({
             <button
               onClick={() => setStep(step + 1)}
               disabled={!canNext()}
-              className="flex-1 py-2.5 rounded-xl bg-emerald-500/20 border border-emerald-500/30 text-emerald-400 text-sm font-semibold hover:bg-emerald-500/30 disabled:opacity-40 transition-all"
+              className="w-full sm:flex-1 py-2.5 rounded-xl bg-emerald-500/20 border border-emerald-500/30 text-emerald-400 text-sm font-semibold hover:bg-emerald-500/30 disabled:opacity-40 transition-all order-1 sm:order-2"
             >
               Next →
             </button>
@@ -1302,7 +1299,7 @@ function CreateProjectModal({
             <button
               onClick={handleSubmit}
               disabled={loading}
-              className="flex-1 flex items-center justify-center gap-2 py-2.5 rounded-xl bg-gradient-to-r from-emerald-500/20 to-teal-500/20 border border-emerald-500/30 text-emerald-400 text-sm font-semibold hover:from-emerald-500/30 hover:to-teal-500/30 disabled:opacity-40 transition-all"
+              className="w-full sm:flex-1 flex items-center justify-center gap-2 py-2.5 rounded-xl bg-gradient-to-r from-emerald-500/20 to-teal-500/20 border border-emerald-500/30 text-emerald-400 text-sm font-semibold hover:from-emerald-500/30 hover:to-teal-500/30 disabled:opacity-40 transition-all order-1 sm:order-2"
             >
               {loading ? (
                 <Loader2 className="w-4 h-4 animate-spin" />
@@ -1336,7 +1333,7 @@ function ProjectCard({
     <motion.div
       initial={{ opacity: 0, y: 8 }}
       animate={{ opacity: 1, y: 0 }}
-      className="group relative bg-gradient-to-b from-slate-900 via-slate-900 to-slate-950 border border-white/8 rounded-2xl p-5 hover:border-emerald-500/30 hover:shadow-2xl hover:shadow-emerald-950/20 transition-all duration-300 flex flex-col gap-4 shadow-xl"
+      className="group relative bg-gradient-to-b from-slate-900 via-slate-900 to-slate-950 border border-white/8 rounded-2xl p-4 sm:p-5 hover:border-emerald-500/30 hover:shadow-2xl hover:shadow-emerald-950/20 transition-all duration-300 flex flex-col gap-4 shadow-xl"
     >
       {/* Top Header */}
       <div className="flex items-start justify-between gap-3">
@@ -1354,7 +1351,7 @@ function ProjectCard({
               </span>
             )}
           </div>
-          <h3 className="text-base font-bold text-white line-clamp-1 leading-snug group-hover:text-emerald-300 transition-colors">
+          <h3 className="text-sm sm:text-base font-bold text-white line-clamp-1 leading-snug group-hover:text-emerald-300 transition-colors">
             {project.title}
           </h3>
         </div>
@@ -1366,35 +1363,30 @@ function ProjectCard({
       </p>
 
       {/* Stats row */}
-      <div className="flex items-center gap-4 py-2.5 px-3 rounded-xl bg-white/3 border border-white/5">
+      <div className="flex items-center gap-3 sm:gap-4 py-2 px-2.5 sm:px-3 rounded-xl bg-white/3 border border-white/5 text-xs text-slate-400 flex-wrap">
         <div className="flex items-center gap-1.5">
           <Users className="w-3.5 h-3.5 text-sky-400" />
-          <div>
-            <p className="text-sm font-bold text-sky-400">
+          <span>
+            <strong className="text-sky-400 font-semibold">
               {project.acceptance_count}
-            </p>
-            <p className="text-[10px] text-slate-500">Accepted</p>
-          </div>
+            </strong>{" "}
+            Accepted
+          </span>
         </div>
-        <div className="w-px h-8 bg-white/5" />
+        <div className="w-px h-3.5 bg-white/10" />
         <div className="flex items-center gap-1.5">
           <CheckCircle2 className="w-3.5 h-3.5 text-emerald-400" />
-          <div>
-            <p className="text-sm font-bold text-emerald-400">
+          <span>
+            <strong className="text-emerald-400 font-semibold">
               {project.submission_count}
-            </p>
-            <p className="text-[10px] text-slate-500">Submitted</p>
-          </div>
+            </strong>{" "}
+            Submitted
+          </span>
         </div>
-        <div className="w-px h-8 bg-white/5" />
+        <div className="w-px h-3.5 bg-white/10" />
         <div className="flex items-center gap-1.5">
           <Clock className="w-3.5 h-3.5 text-amber-400" />
-          <div>
-            <p className="text-sm font-bold text-amber-400">
-              {project.deadline_days}d
-            </p>
-            <p className="text-[10px] text-slate-500">Deadline</p>
-          </div>
+          <span>{project.deadline_days}d</span>
         </div>
       </div>
 
@@ -1414,7 +1406,7 @@ function ProjectCard({
             download
             className="flex items-center gap-1 text-[11px] text-emerald-400 hover:text-emerald-300 font-semibold shrink-0 ml-2"
           >
-            <FileDown className="w-3 h-3" /> View Spec
+            <FileDown className="w-3 h-3" /> View
           </a>
         </div>
       )}
@@ -1447,7 +1439,7 @@ function ProjectCard({
       )}
 
       {/* Two Action Buttons: View Details & View Submissions */}
-      <div className="flex gap-2 pt-2 mt-auto">
+      <div className="flex flex-col sm:flex-row gap-2 pt-2 mt-auto">
         <button
           onClick={onViewDetails}
           className="flex-1 flex items-center justify-center gap-1.5 py-2.5 rounded-xl border border-white/10 text-slate-300 text-xs font-semibold hover:bg-white/8 hover:text-white transition-all"
@@ -1509,11 +1501,11 @@ export default function CompanyProjectsPage() {
       {/* Header */}
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
         <div className="flex items-center gap-3">
-          <div className="p-3 rounded-2xl bg-gradient-to-br from-emerald-500/20 via-teal-500/10 to-sky-500/20 border border-emerald-500/20 shadow-lg shadow-emerald-950/30">
-            <FolderOpen className="w-6 h-6 text-emerald-400" />
+          <div className="p-2.5 sm:p-3 rounded-2xl bg-gradient-to-br from-emerald-500/20 via-teal-500/10 to-sky-500/20 border border-emerald-500/20 shadow-lg shadow-emerald-950/30">
+            <FolderOpen className="w-5 h-5 sm:w-6 sm:h-6 text-emerald-400" />
           </div>
           <div>
-            <h1 className="text-2xl font-bold text-white tracking-tight">
+            <h1 className="text-xl sm:text-2xl font-bold text-white tracking-tight">
               Project Hub
             </h1>
             <p className="text-slate-400 text-xs mt-0.5">
@@ -1544,7 +1536,7 @@ export default function CompanyProjectsPage() {
 
       {/* Summary stats */}
       {!loading && projects.length > 0 && (
-        <div className="grid grid-cols-3 gap-3">
+        <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
           {[
             {
               label: "Projects Posted",
@@ -1570,14 +1562,14 @@ export default function CompanyProjectsPage() {
           ].map((stat) => (
             <div
               key={stat.label}
-              className={`p-4 rounded-2xl border ${stat.bg} flex items-center gap-3.5 shadow-lg`}
+              className={`p-3.5 sm:p-4 rounded-2xl border ${stat.bg} flex items-center gap-3.5 shadow-lg`}
             >
               <stat.icon className={`w-5 h-5 ${stat.color}`} />
               <div>
-                <p className={`text-xl font-bold ${stat.color}`}>
+                <p className={`text-lg sm:text-xl font-bold ${stat.color}`}>
                   {stat.value}
                 </p>
-                <p className="text-[11px] text-slate-400 font-medium">
+                <p className="text-[10px] sm:text-[11px] text-slate-400 font-medium">
                   {stat.label}
                 </p>
               </div>
