@@ -23,10 +23,51 @@ interface Props {
 }
 
 function getMatchColor(pct: number) {
-  if (pct >= 80) return { ring: "text-emerald-400", bg: "bg-emerald-500/10", border: "border-emerald-500/20", text: "text-emerald-400" };
-  if (pct >= 60) return { ring: "text-sky-400", bg: "bg-sky-500/10", border: "border-sky-500/20", text: "text-sky-400" };
-  if (pct >= 40) return { ring: "text-amber-400", bg: "bg-amber-500/10", border: "border-amber-500/20", text: "text-amber-400" };
-  return { ring: "text-red-400", bg: "bg-red-500/10", border: "border-red-500/20", text: "text-red-400" };
+  if (pct >= 80)
+    return {
+      stroke: "#34d399",
+      ring: "text-emerald-400",
+      bg: "bg-emerald-500/10",
+      border: "border-emerald-500/20",
+      text: "text-emerald-400",
+    };
+  if (pct >= 60)
+    return {
+      stroke: "#38bdf8",
+      ring: "text-sky-400",
+      bg: "bg-sky-500/10",
+      border: "border-sky-500/20",
+      text: "text-sky-400",
+    };
+  if (pct >= 40)
+    return {
+      stroke: "#fbbf24",
+      ring: "text-amber-400",
+      bg: "bg-amber-500/10",
+      border: "border-amber-500/20",
+      text: "text-amber-400",
+    };
+  return {
+    stroke: "#f87171",
+    ring: "text-rose-400",
+    bg: "bg-rose-500/10",
+    border: "border-rose-500/20",
+    text: "text-rose-400",
+  };
+}
+
+function formatSalary(ctc?: string): string {
+  if (!ctc) return "";
+  const cleaned = ctc.replace(/^[💰💵\s]+/, "").trim();
+  if (
+    !cleaned.startsWith("₹") &&
+    !cleaned.startsWith("$") &&
+    !cleaned.toLowerCase().startsWith("rs") &&
+    !cleaned.toLowerCase().startsWith("inr")
+  ) {
+    return `₹ ${cleaned}`;
+  }
+  return cleaned;
 }
 
 function getWorkModeLabel(mode?: string) {
@@ -56,6 +97,9 @@ export default function JobCard({ job, onViewDetails, onApply, isApplying }: Pro
 
   // Score display
   const scoreDisplay = job.min_score > 0;
+  const radius = 20;
+  const circumference = 2 * Math.PI * radius;
+  const strokeDashoffset = circumference * (1 - Math.min(100, Math.max(0, job.profile_match_pct)) / 100);
 
   return (
     <motion.div
@@ -85,23 +129,42 @@ export default function JobCard({ job, onViewDetails, onApply, isApplying }: Pro
             </div>
           </div>
 
-          {/* Match % Ring */}
+          {/* Match % Ring — perfectly centered SVG gauge */}
           <div className="flex flex-col items-center flex-shrink-0">
-            <div className={`relative w-14 h-14 flex items-center justify-center rounded-full ${matchColor.bg} border ${matchColor.border}`}>
-              <svg className="absolute inset-0 w-14 h-14 -rotate-90" viewBox="0 0 56 56">
-                <circle cx="28" cy="28" r="24" fill="none" stroke="currentColor" strokeWidth="3" className="text-white/[0.06]" />
+            <div className="relative w-13 h-13 flex items-center justify-center">
+              <svg className="w-13 h-13 -rotate-90" viewBox="0 0 48 48">
+                {/* Background track circle */}
                 <circle
-                  cx="28" cy="28" r="24" fill="none" stroke="currentColor" strokeWidth="3"
-                  className={matchColor.ring}
-                  strokeDasharray={`${(job.profile_match_pct / 100) * 150.8} 150.8`}
-                  strokeLinecap="round"
+                  cx="24"
+                  cy="24"
+                  r={radius}
+                  fill="none"
+                  stroke="rgba(255, 255, 255, 0.08)"
+                  strokeWidth="3.5"
                 />
+                {/* Active progress arc */}
+                {job.profile_match_pct > 0 && (
+                  <circle
+                    cx="24"
+                    cy="24"
+                    r={radius}
+                    fill="none"
+                    stroke={matchColor.stroke}
+                    strokeWidth="3.5"
+                    strokeDasharray={circumference}
+                    strokeDashoffset={strokeDashoffset}
+                    strokeLinecap="round"
+                    style={{ transition: "stroke-dashoffset 0.6s ease" }}
+                  />
+                )}
               </svg>
-              <span className={`text-sm font-bold ${matchColor.text}`}>
-                {Math.round(job.profile_match_pct)}%
-              </span>
+              <div className="absolute inset-0 flex items-center justify-center">
+                <span className={`text-xs font-bold ${matchColor.text}`}>
+                  {Math.round(job.profile_match_pct)}%
+                </span>
+              </div>
             </div>
-            <span className="text-[10px] text-slate-500 mt-1">Match</span>
+            <span className="text-[10px] text-slate-500 font-medium mt-0.5">Match</span>
           </div>
         </div>
 
@@ -119,8 +182,8 @@ export default function JobCard({ job, onViewDetails, onApply, isApplying }: Pro
             </span>
           )}
           {job.ctc_range && (
-            <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg bg-emerald-500/10 text-emerald-400">
-              💰 {job.ctc_range}
+            <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg bg-emerald-500/10 text-emerald-400 font-medium">
+              {formatSalary(job.ctc_range)}
             </span>
           )}
           {job.experience && (

@@ -1,5 +1,6 @@
 import logging
 import uuid
+import re
 from datetime import datetime, timezone, date, timedelta
 from pathlib import Path
 from typing import List, Literal, Optional
@@ -663,6 +664,55 @@ async def get_skill_gap(current_user: User = Depends(get_current_user)):
     ).to_list()
 
     skill_map = {s.skill.lower(): s.current_level for s in student_skills}
+
+    # Synchronize any skills completed or progressed on the roadmap
+    if roadmap_doc and roadmap_doc.phases:
+        for phase in roadmap_doc.phases:
+            for item in phase.get("items", []):
+                if item.get("type") == "project":
+                    continue
+                s_name = item.get("skill")
+                if not s_name:
+                    continue
+                s_key = s_name.lower()
+                watched_list = roadmap_doc.watched_videos.get(s_key, [])
+                watched_count = len(watched_list)
+                is_completed = (
+                    item.get("status") == "completed"
+                    or item.get("progress_pct", 0) >= 100
+                    or watched_count >= 4
+                )
+                req_lvl = item.get("required_level", 4)
+                curr_lvl = item.get("current_level", 0)
+
+                if is_completed:
+                    effective_lvl = req_lvl
+                elif item.get("progress_pct", 0) > 0 or watched_count > 0:
+                    prog_pct = max(item.get("progress_pct", 0), watched_count * 25)
+                    effective_lvl = max(curr_lvl, int(req_lvl * (prog_pct / 100.0)))
+                else:
+                    effective_lvl = curr_lvl
+
+                if effective_lvl > skill_map.get(s_key, 0):
+                    skill_map[s_key] = effective_lvl
+                    # Persist to StudentSkillLevel in DB
+                    existing_skill_doc = await StudentSkillLevel.find_one(
+                        StudentSkillLevel.student_id == student_id,
+                        {"skill": {"$regex": f"^{re.escape(s_name)}$", "$options": "i"}},
+                    )
+                    if existing_skill_doc:
+                        if existing_skill_doc.current_level < effective_lvl:
+                            existing_skill_doc.current_level = effective_lvl
+                            existing_skill_doc.last_updated = datetime.now(timezone.utc)
+                            await existing_skill_doc.save()
+                    else:
+                        new_skill_doc = StudentSkillLevel(
+                            student_id=student_id,
+                            skill=s_name,
+                            current_level=effective_lvl,
+                            source="roadmap_completion",
+                        )
+                        await new_skill_doc.insert()
 
     # 3. Fetch benchmarks from DB or generate real-time with Groq API
     from app.core.groq_service import get_or_generate_benchmarks

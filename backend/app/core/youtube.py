@@ -15,7 +15,7 @@ YT_CACHE_TTL = 6 * 60 * 60   # 6 hours
 
 
 def _cache_key(skill: str, role: str) -> str:
-    return f"yt_results:{skill.lower().replace(' ', '_')}:{role.lower().replace(' ', '_')}"
+    return f"yt_v2:{skill.lower().replace(' ', '_')}:{role.lower().replace(' ', '_')}"
 
 
 def _parse_iso_duration(iso: str) -> str:
@@ -33,15 +33,120 @@ def _parse_iso_duration(iso: str) -> str:
     return " ".join(parts)
 
 
-async def fetch_youtube_videos(skill: str, role: str) -> list[dict]:
+def _parse_duration_minutes(iso: str) -> float:
+    """Convert ISO 8601 duration to total minutes."""
+    m = _re.match(r"PT(?:(\d+)H)?(?:(\d+)M)?(?:(\d+)S)?", iso or "")
+    if not m:
+        return 0.0
+    h = int(m.group(1) or 0)
+    mn = int(m.group(2) or 0)
+    s = int(m.group(3) or 0)
+    return h * 60 + mn + s / 60
+
+
+async def _search_and_enrich(
+    client: httpx.AsyncClient,
+    skill: str,
+    role: str,
+    video_duration: str,
+    max_results: int,
+    category: str,
+) -> list[dict]:
+    """Search YouTube for videos and enrich with duration. category: 'core' or 'reference'."""
+    if category == "core":
+        query = f"{skill} complete tutorial full course {role}"
+    else:
+        query = f"{skill} quick guide practical example {role}"
+
+    search_params = {
+        "part": "snippet",
+        "q": query,
+        "type": "video",
+        "videoDuration": video_duration,
+        "relevanceLanguage": "en",
+        "maxResults": max_results,
+        "order": "relevance",
+        "key": settings.YOUTUBE_API_KEY,
+    }
+
+    search_resp = await client.get(YOUTUBE_SEARCH_URL, params=search_params)
+    search_resp.raise_for_status()
+    search_data = search_resp.json()
+
+    videos = []
+    for item in search_data.get("items", []):
+        vid_id = item.get("id", {}).get("videoId", "")
+        if not vid_id:
+            continue
+        snippet = item.get("snippet", {})
+        videos.append({
+            "youtube_id": vid_id,
+            "title": snippet.get("title", ""),
+            "channel": snippet.get("channelTitle", ""),
+            "thumbnail": snippet.get("thumbnails", {}).get("medium", {}).get("url", ""),
+            "duration_label": "",
+            "category": category,
+        })
+
+    if not videos:
+        return []
+
+    # Enrich with duration
+    video_ids = ",".join(v["youtube_id"] for v in videos)
+    detail_resp = await client.get(
+        YOUTUBE_VIDEOS_URL,
+        params={"part": "contentDetails,statistics", "id": video_ids, "key": settings.YOUTUBE_API_KEY},
+    )
+    detail_resp.raise_for_status()
+    detail_data = detail_resp.json()
+
+    duration_map: dict[str, dict] = {}
+    for detail_item in detail_data.get("items", []):
+        vid_id = detail_item["id"]
+        iso = detail_item.get("contentDetails", {}).get("duration", "")
+        duration_map[vid_id] = {
+            "label": _parse_iso_duration(iso),
+            "minutes": _parse_duration_minutes(iso),
+        }
+
+    # Filter by duration range and attach labels
+    filtered = []
+    for v in videos:
+        info = duration_map.get(v["youtube_id"], {})
+        minutes = info.get("minutes", 0)
+        v["duration_label"] = info.get("label", "")
+
+        if category == "core":
+            # Core: 20min–3hr (reject extremely long > 3hr or very short < 15min)
+            if 15 <= minutes <= 180:
+                filtered.append(v)
+        else:
+            # Reference: 5–30min
+            if 4 <= minutes <= 35:
+                filtered.append(v)
+
+    # If filtering removed everything, fall back to returning what we had (still better than empty)
+    return filtered[:max_results] if filtered else videos[:max_results]
+
+
+async def fetch_skill_videos_structured(skill: str, role: str) -> dict:
+    """
+    Fetch 2 Core + 2 Reference videos for a skill gap.
+
+    Returns:
+        {
+            "core": [video1, video2],       # long-form learning resources (2 alternatives)
+            "reference": [video1, video2],  # shorter targeted reference videos
+        }
+    """
     if not settings.YOUTUBE_API_KEY:
         logger.warning("YOUTUBE_API_KEY not set — returning empty video list.")
-        return []
+        return {"core": [], "reference": []}
 
     cache_key = _cache_key(skill, role)
     redis = get_redis()
 
-    # --- Try Redis cache first ---
+    # Try Redis cache first
     if redis:
         try:
             cached = await redis.get(cache_key)
@@ -50,81 +155,53 @@ async def fetch_youtube_videos(skill: str, role: str) -> list[dict]:
         except (RedisError, Exception) as e:
             logger.warning(f"Redis read error in youtube cache: {e}")
 
-    # --- Call 1: search.list (find video IDs + snippets) ---
-    search_params = {
-        "part": "snippet",
-        "q": f"{skill} full course complete tutorial {role}",
-        "type": "video",
-        "videoDuration": "long",          # >20 min — catches 1h, 2h, 4h full courses
-        "relevanceLanguage": "en",
-        "maxResults": 4,
-        "order": "relevance",
-        "key": settings.YOUTUBE_API_KEY,
-    }
+    result = {"core": [], "reference": []}
 
     try:
-        async with httpx.AsyncClient(timeout=10) as client:
-            search_resp = await client.get(YOUTUBE_SEARCH_URL, params=search_params)
-            search_resp.raise_for_status()
-            search_data = search_resp.json()
-
-            # Build initial video list from search results
-            videos = []
-            for item in search_data.get("items", []):
-                vid_id = item.get("id", {}).get("videoId", "")
-                if not vid_id:
-                    continue
-                snippet = item.get("snippet", {})
-                videos.append({
-                    "youtube_id": vid_id,
-                    "title": snippet.get("title", ""),
-                    "channel": snippet.get("channelTitle", ""),
-                    "thumbnail": snippet.get("thumbnails", {}).get("medium", {}).get("url", ""),
-                    "duration_label": "",  # filled next
-                })
-
-            if not videos:
-                return []
-
-            # --- Call 2: videos.list (fetch contentDetails for duration) ---
-            video_ids = ",".join(v["youtube_id"] for v in videos)
-            detail_resp = await client.get(
-                YOUTUBE_VIDEOS_URL,
-                params={
-                    "part": "contentDetails",
-                    "id": video_ids,
-                    "key": settings.YOUTUBE_API_KEY,
-                },
+        async with httpx.AsyncClient(timeout=12) as client:
+            # Fetch core videos (long-form, up to 3 to have buffer for filtering)
+            core_videos = await _search_and_enrich(
+                client, skill, role,
+                video_duration="long",   # YouTube API: >20min
+                max_results=3,
+                category="core",
             )
-            detail_resp.raise_for_status()
-            detail_data = detail_resp.json()
+            result["core"] = core_videos[:2]
 
-            # Map videoId → formatted duration
-            duration_map: dict[str, str] = {}
-            for detail_item in detail_data.get("items", []):
-                vid_id = detail_item["id"]
-                iso = detail_item.get("contentDetails", {}).get("duration", "")
-                duration_map[vid_id] = _parse_iso_duration(iso)
-
-            # Attach duration to each video
-            for v in videos:
-                v["duration_label"] = duration_map.get(v["youtube_id"], "")
+            # Fetch reference videos (medium, up to 4 buffer)
+            ref_videos = await _search_and_enrich(
+                client, skill, role,
+                video_duration="medium",  # YouTube API: 4-20min
+                max_results=4,
+                category="reference",
+            )
+            result["reference"] = ref_videos[:2]
 
     except httpx.HTTPStatusError as e:
         if e.response.status_code == 403:
             logger.warning("YouTube API quota exhausted.")
         else:
             logger.error(f"YouTube API HTTP error: {e}")
-        return []
+        return result
     except Exception as e:
         logger.error(f"YouTube API call failed: {e}")
-        return []
+        return result
 
-    # --- Store in Redis cache ---
-    if redis and videos:
+    # Cache the combined result
+    if redis:
         try:
-            await redis.setex(cache_key, YT_CACHE_TTL, json.dumps(videos))
+            await redis.setex(cache_key, YT_CACHE_TTL, json.dumps(result))
         except (RedisError, Exception) as e:
             logger.warning(f"Redis write error in youtube cache: {e}")
 
-    return videos
+    return result
+
+
+async def fetch_youtube_videos(skill: str, role: str) -> list[dict]:
+    """
+    Legacy compatibility wrapper — returns a flat list of up to 4 videos (core first, then reference).
+    Used by the first-skill prefetch in _build_phases().
+    """
+    structured = await fetch_skill_videos_structured(skill, role)
+    all_videos = structured.get("core", []) + structured.get("reference", [])
+    return all_videos[:4]

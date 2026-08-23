@@ -3,8 +3,8 @@
 import { fetchSkillGap, SkillGapData } from "@/lib/skillGap";
 import { useAuthStore } from "@/store/authStore";
 import { useDashboardStore } from "@/store/dashboardStore";
-import { CheckCircle2, Search, Target, AlertTriangle, Layers } from "lucide-react";
-import { useEffect, useState } from "react";
+import { CheckCircle2, Search, Target, AlertTriangle, Layers, RefreshCw } from "lucide-react";
+import { useEffect, useState, useCallback } from "react";
 import { toast } from "sonner";
 
 function getPriorityLabel(priority: number, gap: number): { text: string; color: string } {
@@ -52,26 +52,30 @@ export default function SkillGapPage() {
 
   const [data, setData] = useState<SkillGapData | null>(null);
   const [isLoading, setIsLoading] = useState(true);
+  const [isRefreshing, setIsRefreshing] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  useEffect(() => {
-    const load = async () => {
-      setIsLoading(true);
-      setError(null);
-      try {
-        const result = await fetchSkillGap();
-        setData(result);
-      } catch (e: unknown) {
-        const message =
-          e instanceof Error ? e.message : "Failed to load skill gap data";
-        setError(message);
-        toast.error(message);
-      } finally {
-        setIsLoading(false);
-      }
-    };
-    load();
+  const load = useCallback(async (showRefreshing = false) => {
+    if (showRefreshing) setIsRefreshing(true);
+    else setIsLoading(true);
+    setError(null);
+    try {
+      const result = await fetchSkillGap();
+      setData(result);
+    } catch (e: unknown) {
+      const message =
+        e instanceof Error ? e.message : "Failed to load skill gap data";
+      setError(message);
+      toast.error(message);
+    } finally {
+      setIsLoading(false);
+      setIsRefreshing(false);
+    }
   }, []);
+
+  useEffect(() => {
+    load();
+  }, [load]);
 
   const targetRoleName = data?.role && data.role !== "No target role set" 
     ? data.role 
@@ -94,12 +98,24 @@ export default function SkillGapPage() {
           </div>
         </div>
 
-        {targetRoleName && (
-          <div className="inline-flex items-center gap-2 px-3 py-1.5 rounded-xl bg-slate-900 border border-slate-800 text-xs font-semibold text-slate-300">
-            <Target className="w-4 h-4 text-sky-400" />
-            <span>Target: <strong className="text-white">{targetRoleName}</strong></span>
-          </div>
-        )}
+        <div className="flex items-center gap-2.5">
+          {targetRoleName && (
+            <div className="inline-flex items-center gap-2 px-3 py-1.5 rounded-xl bg-slate-900 border border-slate-800 text-xs font-semibold text-slate-300">
+              <Target className="w-4 h-4 text-sky-400" />
+              <span>Target: <strong className="text-white">{targetRoleName}</strong></span>
+            </div>
+          )}
+          <button
+            id="refresh-skill-gap-btn"
+            onClick={() => load(true)}
+            disabled={isLoading || isRefreshing}
+            className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-medium text-slate-300 bg-white/5 hover:bg-white/10 border border-white/10 transition-all disabled:opacity-50"
+            title="Refresh skill gap analysis"
+          >
+            <RefreshCw className={`w-3.5 h-3.5 ${isRefreshing ? "animate-spin text-sky-400" : ""}`} />
+            <span>{isRefreshing ? "Refreshing…" : "Refresh"}</span>
+          </button>
+        </div>
       </div>
 
       {error && (
@@ -197,8 +213,11 @@ export default function SkillGapPage() {
                     {/* Progress bar */}
                     <div className="w-full bg-slate-900 rounded-full h-1.5 overflow-hidden">
                       <div
-                        className="bg-amber-400 h-1.5 rounded-full transition-all duration-500"
-                        style={{ width: `${progressPct}%` }}
+                        className="h-1.5 rounded-full transition-all duration-500"
+                        style={{
+                          width: `${progressPct}%`,
+                          background: "linear-gradient(to right, #0ea5e9, #6366f1)",
+                        }}
                       />
                     </div>
                   </div>

@@ -30,6 +30,20 @@ interface Props {
   onApplied: () => void;
 }
 
+function formatSalary(ctc?: string): string {
+  if (!ctc) return "";
+  const cleaned = ctc.replace(/^[💰💵\s]+/, "").trim();
+  if (
+    !cleaned.startsWith("₹") &&
+    !cleaned.startsWith("$") &&
+    !cleaned.toLowerCase().startsWith("rs") &&
+    !cleaned.toLowerCase().startsWith("inr")
+  ) {
+    return `₹ ${cleaned}`;
+  }
+  return cleaned;
+}
+
 function getMatchColor(pct: number) {
   if (pct >= 80) return "text-emerald-400";
   if (pct >= 60) return "text-sky-400";
@@ -154,8 +168,8 @@ export default function JobDetailModal({
                     </span>
                   )}
                   {job.ctc_range && (
-                    <span className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-emerald-500/10 text-sm text-emerald-400">
-                      💰 {job.ctc_range}
+                    <span className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-emerald-500/10 text-sm text-emerald-400 font-medium">
+                      {formatSalary(job.ctc_range)}
                     </span>
                   )}
                   {job.experience && (

@@ -19,6 +19,14 @@ class StudentRoadmap(Document):
     # Maps skill name (lowercase) → list of watched youtube_ids
     watched_videos: dict = Field(default_factory=dict)
 
+    # Phase project tracking: maps str(phase_number) → project state dict
+    # Example: {"1": {"status": "not_started", "github_url": null, "submitted_at": null}}
+    phase_projects: dict = Field(default_factory=dict)
+
+    # Computed phase states: maps str(phase_number) → phase state string
+    # Values: LOCKED | UNLOCKED | IN_PROGRESS | PROJECT_REQUIRED | COMPLETED
+    phase_states: dict = Field(default_factory=dict)
+
     class Settings:
         name = "student_roadmaps"
 
