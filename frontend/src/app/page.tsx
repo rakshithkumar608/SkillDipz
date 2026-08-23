@@ -24,11 +24,21 @@ export default function SkillDipzIntro() {
 
   const [progress, setProgress] = useState(0);
   const [isCompleted, setIsCompleted] = useState(false);
-  const [isExiting, setIsExiting] = useState(false);
 
   const startRef = useRef<number | null>(null);
   const rafRef = useRef<number>(0);
   const redirectedRef = useRef(false);
+
+  // Force body background white so no dark bleed-through ever
+  useEffect(() => {
+    const prev = document.body.style.backgroundColor;
+    document.body.style.backgroundColor = "#ffffff";
+    document.documentElement.style.backgroundColor = "#ffffff";
+    return () => {
+      document.body.style.backgroundColor = prev;
+      document.documentElement.style.backgroundColor = "";
+    };
+  }, []);
 
   useEffect(() => {
     const tick = (ts: number) => {
@@ -44,14 +54,11 @@ export default function SkillDipzIntro() {
         if (!redirectedRef.current) {
           redirectedRef.current = true;
           setTimeout(() => {
-            setIsExiting(true);
-            setTimeout(() => {
-              if (accessToken && user) {
-                router.push(getRedirectPath(user.role));
-              } else {
-                router.push("/onboarding");
-              }
-            }, 500);
+            if (accessToken && user) {
+              router.push(getRedirectPath(user.role));
+            } else {
+              router.push("/onboarding");
+            }
           }, 600);
         }
         return;
@@ -70,12 +77,9 @@ export default function SkillDipzIntro() {
     STATUS_MESSAGES[0];
 
   return (
-    <motion.div
-      initial={{ opacity: 1 }}
-      animate={isExiting ? { opacity: 0 } : { opacity: 1 }}
-      transition={{ duration: 0.4, ease: "easeInOut" }}
-      style={{ backgroundColor: "#ffffff" }}
+    <div
       className="fixed inset-0 z-[9999] overflow-hidden flex flex-col"
+      style={{ backgroundColor: "#ffffff" }}
     >
       {/* Counter top-right */}
       <div className="absolute top-5 right-6 z-20">
@@ -84,14 +88,13 @@ export default function SkillDipzIntro() {
         </span>
       </div>
 
-      {/* SVG fills most of the screen */}
-      <div className="flex-1 flex items-center justify-center px-0 pt-4">
+      {/* SVG fills the screen */}
+      <div className="flex-1 flex items-center justify-center">
         <motion.div
           initial={{ opacity: 0, scale: 0.95, y: 12 }}
           animate={{ opacity: 1, scale: 1, y: 0 }}
           transition={{ duration: 0.7, ease: [0.16, 1, 0.3, 1] }}
           className="w-full h-full flex items-center justify-center"
-          style={{ maxHeight: "calc(100vh - 160px)" }}
         >
           <Image
             src="/lootie/Study discussion.svg"
@@ -99,8 +102,11 @@ export default function SkillDipzIntro() {
             width={900}
             height={900}
             priority
-            className="w-full h-full object-contain"
-            style={{ maxWidth: "min(90vw, 700px)", maxHeight: "calc(100vh - 160px)" }}
+            className="object-contain"
+            style={{
+              width: "min(90vw, 700px)",
+              height: "calc(100vh - 160px)",
+            }}
           />
         </motion.div>
       </div>
@@ -111,6 +117,7 @@ export default function SkillDipzIntro() {
         animate={{ opacity: 1, y: 0 }}
         transition={{ delay: 0.3, duration: 0.55, ease: [0.16, 1, 0.3, 1] }}
         className="flex flex-col items-center gap-4 px-8 pb-10 pt-2"
+        style={{ backgroundColor: "#ffffff" }}
       >
         {/* Brand name */}
         <div className="flex flex-col items-center gap-0.5">
@@ -129,7 +136,7 @@ export default function SkillDipzIntro() {
           </p>
         </div>
 
-        {/* Progress bar + status */}
+        {/* Progress bar */}
         <div className="w-full max-w-xs flex flex-col gap-2">
           <div className="w-full h-[3px] bg-slate-100 rounded-full overflow-hidden">
             <motion.div
@@ -163,6 +170,6 @@ export default function SkillDipzIntro() {
           </div>
         </div>
       </motion.div>
-    </motion.div>
+    </div>
   );
 }

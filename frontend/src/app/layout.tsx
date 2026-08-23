@@ -30,9 +30,9 @@ export default function RootLayout({
     <html
       lang="en"
       suppressHydrationWarning
-      className={`${inter.variable} ${outfit.variable} font-sans bg-slate-950 text-slate-100 antialiased`}
+      className={`${inter.variable} ${outfit.variable} font-sans bg-white antialiased`}
     >
-      <body suppressHydrationWarning className="font-sans antialiased text-slate-100 bg-slate-950 selection:bg-emerald-500/30 selection:text-white">
+      <body suppressHydrationWarning className="font-sans antialiased bg-white selection:bg-emerald-500/30 selection:text-white">
         <Providers>
           {children}
           <Toaster richColors position="top-right" />
