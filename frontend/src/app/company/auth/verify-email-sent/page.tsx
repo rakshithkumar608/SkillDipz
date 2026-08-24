@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { Suspense, useState } from "react";
 import { useSearchParams } from "next/navigation";
 import Link from "next/link";
 import Image from "next/image";
@@ -9,7 +9,7 @@ import { toast } from "sonner";
 import { Mail, ArrowLeft, RefreshCw, CheckCircle2, ShieldCheck, Loader2 } from "lucide-react";
 import { resendCompanyVerification } from "@/lib/companyAuth";
 
-export default function VerifyEmailSentPage() {
+function VerifyEmailSentContent() {
   const searchParams = useSearchParams();
   const email = searchParams.get("email") || "";
   const [resending, setResending] = useState(false);
@@ -110,5 +110,19 @@ export default function VerifyEmailSentPage() {
         </motion.div>
       </div>
     </div>
+  );
+}
+
+export default function VerifyEmailSentPage() {
+  return (
+    <Suspense
+      fallback={
+        <div className="min-h-screen bg-[#07090e] flex items-center justify-center">
+          <Loader2 className="w-8 h-8 animate-spin text-emerald-400" />
+        </div>
+      }
+    >
+      <VerifyEmailSentContent />
+    </Suspense>
   );
 }

@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState, useRef } from "react";
+import { Suspense, useEffect, useState, useRef } from "react";
 import { useSearchParams, useRouter } from "next/navigation";
 import Link from "next/link";
 import Image from "next/image";
@@ -8,7 +8,7 @@ import { motion } from "framer-motion";
 import { CheckCircle2, AlertCircle, Loader2, ArrowRight, Building2 } from "lucide-react";
 import { verifyCompanyEmail } from "@/lib/companyAuth";
 
-export default function VerifyCompanyEmailPage() {
+function VerifyCompanyEmailContent() {
   const searchParams = useSearchParams();
   const router = useRouter();
   const token = searchParams.get("token") || "";
@@ -129,5 +129,19 @@ export default function VerifyCompanyEmailPage() {
         </motion.div>
       </div>
     </div>
+  );
+}
+
+export default function VerifyCompanyEmailPage() {
+  return (
+    <Suspense
+      fallback={
+        <div className="min-h-screen bg-[#07090e] flex items-center justify-center">
+          <Loader2 className="w-8 h-8 animate-spin text-emerald-400" />
+        </div>
+      }
+    >
+      <VerifyCompanyEmailContent />
+    </Suspense>
   );
 }
