@@ -3,6 +3,7 @@
 import React, { useCallback, useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { useAuthStore } from "@/store/authStore";
+import { useCompanyAuthStore } from "@/store/companyAuthStore";
 import {
   useCompanyStore,
   type BrowseFilters,
@@ -27,7 +28,8 @@ import { AlertCircle, Loader2 } from "lucide-react";
 
 export default function BrowseCandidatesPage() {
   const router = useRouter();
-  const { user, _hasHydrated } = useAuthStore();
+  const { user, _hasHydrated: userHydrated } = useAuthStore();
+  const { company, _hasHydrated: companyHydrated } = useCompanyAuthStore();
   const {
     browseCandidates = [],
     browseTotal = 0,
@@ -57,12 +59,7 @@ export default function BrowseCandidatesPage() {
   const candidateList = Array.isArray(browseCandidates) ? browseCandidates : [];
   const safeHints = browseHints ?? { names: [], colleges: [], skills: [] };
 
-  //  Auth Route Guard 
-  useEffect(() => {
-    if (_hasHydrated && (!user || user.role !== "COMPANY")) {
-      router.push("/login");
-    }
-  }, [_hasHydrated, user, router]);
+
 
   //  Fetch Candidates Function 
   const loadCandidates = useCallback(
@@ -92,13 +89,15 @@ export default function BrowseCandidatesPage() {
     [browseFilters, setBrowseLoading, setBrowseError, setBrowseResults]
   );
 
-  //Initial Fetch 
+  // Initial Fetch 
   useEffect(() => {
-    if (_hasHydrated && user?.role === "COMPANY") {
+    const isHydrated = companyHydrated || userHydrated;
+    const isAuthed = !!(company || user);
+    if (isHydrated && isAuthed) {
       loadCandidates();
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [_hasHydrated, user]);
+  }, [companyHydrated, userHydrated, company, user]);
 
   // Filter Changes (Dropdowns / Sort) 
   const handleFilterChange = useCallback(
@@ -288,7 +287,8 @@ export default function BrowseCandidatesPage() {
   );
 
   //  Hydration Skeleton 
-  if (!_hasHydrated) {
+  const isHydrated = companyHydrated || userHydrated;
+  if (!isHydrated) {
     return (
       <div className="min-h-screen px-4 py-6 sm:px-6 sm:py-8 max-w-6xl mx-auto space-y-6">
         <div className="h-10 w-64 bg-white/5 rounded-xl animate-pulse" />

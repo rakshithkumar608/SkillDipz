@@ -3,6 +3,7 @@
 import React, { useEffect, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { useAuthStore } from "@/store/authStore";
+import { useCompanyAuthStore } from "@/store/companyAuthStore";
 import {
   CompanyJob,
   JobApplicant,
@@ -20,6 +21,7 @@ import { fetchBrowseCandidateDetail } from "@/lib/CompanyApi";
 import { CandidateModal } from "@/components/company/CandidateModal";
 import type { CandidateDetail } from "@/store/companyStore";
 import { toast } from "sonner";
+import { formatTimeAgo, formatExactDateTime } from "@/lib/dateUtils";
 import {
   Briefcase,
   Plus,
@@ -49,7 +51,8 @@ type ActiveTab = "listings" | "post" | "applicants";
 
 export default function CompanyJobsPage() {
   const router = useRouter();
-  const { user, _hasHydrated } = useAuthStore();
+  const { user, _hasHydrated: userHydrated } = useAuthStore();
+  const { company, _hasHydrated: companyHydrated } = useCompanyAuthStore();
 
   // State
   const [activeTab, setActiveTab] = useState<ActiveTab>("listings");
@@ -82,12 +85,7 @@ export default function CompanyJobsPage() {
     openings_count: 1,
   });
 
-  // Auth Guard
-  useEffect(() => {
-    if (_hasHydrated && (!user || user.role !== "COMPANY")) {
-      router.push("/login");
-    }
-  }, [_hasHydrated, user, router]);
+
 
   // Load initial jobs and engineering tracks
   const loadJobs = async () => {
@@ -119,10 +117,12 @@ export default function CompanyJobsPage() {
   };
 
   useEffect(() => {
-    if (_hasHydrated && user?.role === "COMPANY") {
+    const isHydrated = companyHydrated || userHydrated;
+    const isAuthed = !!(company || user);
+    if (isHydrated && isAuthed) {
       loadJobs();
     }
-  }, [_hasHydrated, user]);
+  }, [companyHydrated, userHydrated, company, user]);
 
   // Open Applicants View for a specific job
   const handleReviewApplicants = async (job: CompanyJob) => {
@@ -424,6 +424,15 @@ export default function CompanyJobsPage() {
                           <strong className="text-emerald-400 font-semibold">{job.ctc_range || "Negotiable"}</strong>
                         </span>
                       </div>
+                      <div className="flex items-center gap-2 text-slate-300">
+                        <Clock className="w-3.5 h-3.5 text-sky-400 shrink-0" />
+                        <span title={job.created_at ? formatExactDateTime(job.created_at) : undefined}>
+                          Posted:{" "}
+                          <strong className="text-slate-200 font-medium">
+                            {job.created_at ? formatTimeAgo(job.created_at) : "Recently"}
+                          </strong>
+                        </span>
+                      </div>
                     </div>
                   </div>
 
@@ -573,14 +582,13 @@ export default function CompanyJobsPage() {
 
                         {/* Date Applied */}
                         <td className="py-4 px-5 text-slate-400 whitespace-nowrap">
-                          <div className="flex items-center gap-1.5 text-xs text-slate-300">
+                          <div
+                            className="flex items-center gap-1.5 text-xs text-slate-300 cursor-help"
+                            title={formatExactDateTime(app.applied_at)}
+                          >
                             <Clock className="w-3.5 h-3.5 text-slate-500" />
                             <span>
-                              {new Date(app.applied_at).toLocaleDateString("en-US", {
-                                day: "numeric",
-                                month: "short",
-                                year: "numeric",
-                              })}
+                              {formatTimeAgo(app.applied_at)}
                             </span>
                           </div>
                         </td>

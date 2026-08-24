@@ -92,3 +92,107 @@ def send_otp_email(to_email: str, otp: str, full_name: str) -> bool:
     except Exception as e:
         logger.error(f"❌ Failed to send OTP email to {to_email}: {e}")
         return False
+
+
+def send_company_verification_email(to_email: str, contact_name: str, verify_url: str) -> bool:
+    """Send a company email-verification link. Raw token is embedded in the URL."""
+    subject = "Verify your SkillDipz Company account"
+
+    html_body = f"""
+    <!DOCTYPE html>
+    <html>
+    <body style="margin:0;padding:0;background:#0a0a0a;font-family:'Segoe UI',Arial,sans-serif;">
+      <table width="100%" cellpadding="0" cellspacing="0" style="background:#0a0a0a;padding:40px 0;">
+        <tr>
+          <td align="center">
+            <table width="480" cellpadding="0" cellspacing="0"
+              style="background:#111111;border:1px solid #222;border-radius:16px;overflow:hidden;">
+
+              <!-- Header -->
+              <tr>
+                <td style="background:linear-gradient(135deg,#059669,#0d9488);padding:32px 40px;text-align:center;">
+                  <h1 style="margin:0;color:#fff;font-size:24px;font-weight:700;letter-spacing:-0.5px;">
+                    SkillDipz for Companies
+                  </h1>
+                  <p style="margin:6px 0 0;color:rgba(255,255,255,0.7);font-size:13px;">
+                    Verify your company email address
+                  </p>
+                </td>
+              </tr>
+
+              <!-- Body -->
+              <tr>
+                <td style="padding:36px 40px;">
+                  <p style="color:#d1d5db;font-size:15px;margin:0 0 8px;">
+                    Hi <strong style="color:#fff;">{contact_name}</strong>,
+                  </p>
+                  <p style="color:#9ca3af;font-size:14px;margin:0 0 28px;line-height:1.6;">
+                    Click the button below to verify your company email. This link expires in
+                    <strong style="color:#fff;">24 hours</strong>.
+                  </p>
+
+                  <!-- CTA Button -->
+                  <div style="text-align:center;margin-bottom:28px;">
+                    <a href="{verify_url}"
+                      style="display:inline-block;padding:14px 32px;background:linear-gradient(135deg,#059669,#0d9488);
+                             color:#fff;text-decoration:none;border-radius:10px;font-weight:700;font-size:15px;
+                             letter-spacing:0.3px;">
+                      Verify Company Email →
+                    </a>
+                  </div>
+
+                  <p style="color:#6b7280;font-size:12px;margin:0 0 8px;line-height:1.6;">
+                    Or copy this link into your browser:
+                  </p>
+                  <p style="color:#4b9b87;font-size:11px;word-break:break-all;margin:0 0 24px;">
+                    {verify_url}
+                  </p>
+
+                  <div style="background:#1a2a20;border:1px solid #1a4731;border-radius:10px;padding:16px;margin-bottom:8px;">
+                    <p style="color:#6ee7b7;font-size:13px;margin:0;line-height:1.5;">
+                      ⚠️ After verification, your account will be reviewed by our team.
+                      You'll receive another email once approved.
+                    </p>
+                  </div>
+
+                  <p style="color:#6b7280;font-size:12px;margin:12px 0 0;line-height:1.6;">
+                    If you didn't create a SkillDipz Company account, you can safely ignore this email.
+                  </p>
+                </td>
+              </tr>
+
+              <!-- Footer -->
+              <tr>
+                <td style="background:#0d0d0d;padding:16px 40px;border-top:1px solid #222;">
+                  <p style="color:#4b5563;font-size:11px;margin:0;text-align:center;">
+                    © 2025 SkillDipz. All rights reserved.
+                  </p>
+                </td>
+              </tr>
+
+            </table>
+          </td>
+        </tr>
+      </table>
+    </body>
+    </html>
+    """
+
+    try:
+        msg = MIMEMultipart("alternative")
+        msg["Subject"] = subject
+        msg["From"] = f"SkillDipz Companies <{settings.SMTP_EMAIL}>"
+        msg["To"] = to_email
+        msg.attach(MIMEText(html_body, "html"))
+
+        with smtplib.SMTP_SSL("smtp.gmail.com", 465) as server:
+            server.login(settings.SMTP_EMAIL, settings.SMTP_PASSWORD)
+            server.sendmail(settings.SMTP_EMAIL, to_email, msg.as_string())
+
+        logger.info(f"✅ Company verification email sent to {to_email}")
+        return True
+
+    except Exception as e:
+        logger.error(f"❌ Failed to send company verification email to {to_email}: {e}")
+        return False
+

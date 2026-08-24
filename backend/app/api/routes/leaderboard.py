@@ -4,10 +4,9 @@ import re
 from datetime import datetime, timedelta, timezone
 from typing import List, Literal, Optional
 
-from fastapi import APIRouter, Depends, Query
+from fastapi import APIRouter, Depends, Query, Request
 from pydantic import BaseModel
 
-from app.api.routes.auth import get_current_user
 from app.models.assessment import AssessmentResult
 from app.models.daily_assignment import DailyAssignment
 from app.models.employability_score import EmployabilityScore
@@ -18,6 +17,33 @@ from app.models.user import User
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/leaderboard", tags=["Leaderboard"])
+
+
+async def get_optional_caller_id(request: Request) -> Optional[str]:
+    """Resolves caller id from student bearer token, student session, or company session cookie."""
+    auth_header = request.headers.get("Authorization", "")
+    if auth_header.startswith("Bearer "):
+        token = auth_header[7:]
+        from app.core.security import decode_token
+        payload = decode_token(token)
+        if payload and payload.get("type") == "access":
+            return payload.get("sub")
+
+    cookie_sid = request.cookies.get("session_id")
+    if cookie_sid:
+        from app.core.redis_client import get_session
+        user_id = await get_session(cookie_sid)
+        if user_id:
+            return user_id
+
+    company_sid = request.cookies.get("sdz.company.sid")
+    if company_sid:
+        from app.core.redis_client import get_company_session
+        comp_id = await get_company_session(company_sid)
+        if comp_id:
+            return comp_id
+
+    return None
 
 
 class LeaderboardEntry(BaseModel):
@@ -154,6 +180,7 @@ async def get_leaderboard_roles():
 
 @router.get("", response_model=LeaderboardResponse)
 async def get_leaderboard(
+    request: Request,
     role: Optional[str] = Query(None, description="Filter by target role"),
     search: Optional[str] = Query(None, description="Search candidate name, college, or role"),
     sort_by: str = Query("score", description="score | tests | projects | streak"),
@@ -161,20 +188,32 @@ async def get_leaderboard(
     page: int = Query(1, ge=1),
     per_page: int = Query(20, ge=5, le=100),
     around_me: bool = Query(False),
-    current_user: User = Depends(get_current_user),
 ) -> LeaderboardResponse:
-    me_id = str(current_user.id)
+    caller_id = await get_optional_caller_id(request)
+    me_id = str(caller_id) if caller_id else ""
 
-    # 1. Fetch all Student Profiles & Employability Scores from MongoDB
+    # 1. Fetch all Student Profiles, Employability Scores & Registered Students from MongoDB
     all_profiles = await StudentProfile.find().to_list()
     all_scores = await EmployabilityScore.find().to_list()
+    student_users = await User.find({"$or": [{"role": "STUDENT"}, {"role": "student"}]}).to_list()
+
     score_map = {s.student_id: s for s in all_scores}
-
-    # Map of all active student IDs
-    all_student_ids = list(set([p.student_id for p in all_profiles] + [s.student_id for s in all_scores]))
-
-    # Profile lookup
     profile_map = {p.student_id: p for p in all_profiles}
+
+    # Include all real students from User collection
+    for u in student_users:
+        sid = str(u.id)
+        if sid not in profile_map:
+            profile_map[sid] = StudentProfile(
+                student_id=sid,
+                name=u.full_name or "Student Candidate",
+                email=u.email,
+                college=u.college or "Engineering Institute",
+                target_roles="Software Engineer",
+                skills=["Problem Solving", "Core CS", "Python", "React"],
+            )
+
+    all_student_ids = list(set(list(profile_map.keys()) + list(score_map.keys())))
 
     # 2. Build candidate aggregated records
     candidates_data = []
@@ -346,15 +385,16 @@ async def get_leaderboard(
 
 @router.get("/me", response_model=MyRankOut)
 async def get_my_rank(
+    request: Request,
     role: Optional[str] = Query(None),
-    current_user: User = Depends(get_current_user),
 ) -> MyRankOut:
-    me_id = str(current_user.id)
+    caller_id = await get_optional_caller_id(request)
+    me_id = str(caller_id) if caller_id else ""
     all_scores = await EmployabilityScore.find().sort(-EmployabilityScore.overall_score).to_list()
-    total = len(all_scores)
-    my_score_doc = await EmployabilityScore.find_one(EmployabilityScore.student_id == me_id)
+    total = max(len(all_scores), 1)
+    my_score_doc = await EmployabilityScore.find_one(EmployabilityScore.student_id == me_id) if me_id else None
     my_overall = my_score_doc.overall_score if my_score_doc else 0.0
-    my_rank = next((i + 1 for i, s in enumerate(all_scores) if s.student_id == me_id), total + 1)
+    my_rank = next((i + 1 for i, s in enumerate(all_scores) if s.student_id == me_id), total) if me_id else 1
     percentile = round((1 - (my_rank - 1) / max(total, 1)) * 100, 2)
     return MyRankOut(
         rank=my_rank,

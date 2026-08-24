@@ -5,6 +5,7 @@ import {
   loginWithCredentials,
   loginWithGoogle,
 } from "@/lib/auth";
+import { loginCompany } from "@/lib/companyAuth";
 import { useRouter } from "next/navigation";
 import { useState } from "react";
 import { toast } from "sonner";
@@ -29,15 +30,28 @@ export default function LoginScreen() {
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setLoading(true);
+    setError(null);
     try {
-      const data = await loginWithCredentials({ email, password, role: tab });
-      toast.success("Login successful!");
-      router.push(getRedirectPath(data.user.role));
+      if (tab === "COMPANY") {
+        const data = await loginCompany({ email, password });
+        toast.success("Welcome back!");
+        if (data.company.approval_status === "approved") {
+          router.push("/company/dashboard");
+        } else {
+          router.push("/company/auth/pending");
+        }
+      } else {
+        const data = await loginWithCredentials({ email, password, role: tab });
+        toast.success("Login successful!");
+        router.push(getRedirectPath(data.user.role));
+      }
     } catch (err: unknown) {
       const msg =
         (err as { response?: { data?: { detail?: string } } })?.response?.data
-          ?.detail || "Invalid credentials. Please try again.";
+          ?.detail || "Invalid credentials or account not yet active.";
       toast.error(msg);
+    } finally {
+      setLoading(false);
     }
   };
 
@@ -208,7 +222,12 @@ export default function LoginScreen() {
 
           <p className="text-center text-sm text-neutral-500 mt-6">
             Don&apos;t have an account?{" "}
-            <Link href="/register" className="text-violet-400 hover:text-violet-300 font-medium transition-colors">Create one</Link>
+            <Link
+              href={tab === "COMPANY" ? "/company/auth/signup" : "/register"}
+              className="text-violet-400 hover:text-violet-300 font-medium transition-colors"
+            >
+              Create {tab === "COMPANY" ? "a company account" : "one"}
+            </Link>
           </p>
         </div>
       </div>

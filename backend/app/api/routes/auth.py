@@ -468,19 +468,24 @@ async def refresh_token(body: RefreshRequest):
 #  Logout 
 
 @router.post("/logout", response_model=MessageResponse)
-async def logout(body: LogoutRequest, request: Request, response: Response):
+async def logout(
+    request: Request,
+    response: Response,
+    body: Optional[LogoutRequest] = None,
+):
     # 1. Destroy Redis session
     session_id = request.cookies.get(settings.COOKIE_NAME)
     if session_id:
         await destroy_session(session_id)
 
-    # 2. Blacklist refresh token so it can't be reused
-    payload = decode_token(body.refresh_token)
-    if payload:
-        exp = payload.get("exp", 0)
-        remaining_ttl = int(exp - datetime.now(timezone.utc).timestamp())
-        if remaining_ttl > 0:
-            await blacklist_token(body.refresh_token, remaining_ttl)
+    # 2. Blacklist refresh token so it can't be reused (if present)
+    if body and body.refresh_token:
+        payload = decode_token(body.refresh_token)
+        if payload:
+            exp = payload.get("exp", 0)
+            remaining_ttl = int(exp - datetime.now(timezone.utc).timestamp())
+            if remaining_ttl > 0:
+                await blacklist_token(body.refresh_token, remaining_ttl)
 
     # 3. Clear cookie from browser
     clear_session_cookie(response)

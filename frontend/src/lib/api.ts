@@ -19,13 +19,17 @@ api.interceptors.response.use(
   (res) => res,
   async (error) => {
     const original = error.config;
-    // don't retry if it's already the refresh call itself
-    const isRefreshCall = original.url?.includes("/auth/refresh");
+    // don't retry if it's already the refresh call itself or a company session route
+    const isRefreshCall = original?.url?.includes("/auth/refresh");
+    const isCompanyRoute = original?.url?.includes("/company/auth") || original?.url?.includes("/admin/companies");
     
-    if (error.response?.status === 401 && !original._retry && !isRefreshCall) {
+    if (error.response?.status === 401 && !original._retry && !isRefreshCall && !isCompanyRoute) {
       original._retry = true;
       try {
         const refreshToken = useAuthStore.getState().refreshToken;
+        if (!refreshToken) {
+          return Promise.reject(error);
+        }
         const { data } = await axios.post(
           `${process.env.NEXT_PUBLIC_API_URL}/auth/refresh`,
           { refresh_token: refreshToken },

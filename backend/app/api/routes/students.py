@@ -436,6 +436,14 @@ async def get_notifications(
         .to_list()
     )
     unread = sum(1 for n in items if not n.is_read)
+
+    def _to_utc(dt: Optional[datetime]) -> datetime:
+        if dt is None:
+            return datetime.now(timezone.utc)
+        if dt.tzinfo is None:
+            return dt.replace(tzinfo=timezone.utc)
+        return dt.astimezone(timezone.utc)
+
     return NotificationsOut(
         unread_count=unread,
         items=[
@@ -446,7 +454,7 @@ async def get_notifications(
                 action_url=n.action_url,
                 is_read=n.is_read,
                 notification_type=getattr(n, "notification_type", "general"),
-                created_at=n.created_at,
+                created_at=_to_utc(n.created_at),
             )
             for n in items
         ],

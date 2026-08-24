@@ -131,32 +131,30 @@ export default function RegisterScreen() {
 
           {/* Tab Switcher */}
           <div className="flex bg-white/5 rounded-2xl p-1 mb-6 border border-white/10">
-            {(["STUDENT", "COMPANY"] as Tab[]).map((t) => (
-              <button
-                key={t}
-                onClick={() => {
-                  setTab(t);
-                  setError(null);
-                }}
-                className={`flex flex-1 items-center justify-center gap-2 rounded-xl py-3 text-sm font-semibold transition-all duration-300 ${
-                  tab === t
-                    ? "bg-violet-600 text-white shadow-lg shadow-violet-600/30"
-                    : "text-neutral-400 hover:text-white"
-                }`}
-              >
-                {t === "STUDENT" ? (
-                  <>
-                    <GraduationCap size={18} />
-                    <span>Student</span>
-                  </>
-                ) : (
-                  <>
-                    <Building2 size={18} />
-                    <span>Company</span>
-                  </>
-                )}
-              </button>
-            ))}
+            <button
+              onClick={() => {
+                setTab("STUDENT");
+                setError(null);
+              }}
+              className={`flex flex-1 items-center justify-center gap-2 rounded-xl py-3 text-sm font-semibold transition-all duration-300 ${
+                tab === "STUDENT"
+                  ? "bg-violet-600 text-white shadow-lg shadow-violet-600/30"
+                  : "text-neutral-400 hover:text-white"
+              }`}
+            >
+              <GraduationCap size={18} />
+              <span>Student</span>
+            </button>
+
+            <button
+              onClick={() => {
+                router.push("/company/auth/signup");
+              }}
+              className="flex flex-1 items-center justify-center gap-2 rounded-xl py-3 text-sm font-semibold text-neutral-400 hover:text-white transition-all duration-300 cursor-pointer"
+            >
+              <Building2 size={18} />
+              <span>Company</span>
+            </button>
           </div>
 
           {/* Google Login — Students only */}

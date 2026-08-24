@@ -17,11 +17,17 @@ class Settings(BaseSettings):
     QUIZ_API_KEY: str = "" 
 
 
-    # Cookie / Session
+    # Cookie / Session — Student (JWT-backed)
     COOKIE_NAME: str = "session_id"
     COOKIE_SECURE: bool = False
     COOKIE_SAMESITE: str = "lax"
     SESSION_EXPIRE_DAYS: int = 7
+
+    # Cookie / Session — Company (server-side session, stricter)
+    COMPANY_COOKIE_NAME: str = "sdz.company.sid"   # never the default name
+    COMPANY_COOKIE_SECURE: bool = False             # set True in production via .env
+    COMPANY_COOKIE_SAMESITE: str = "strict"         # blocks CSRF cross-site requests
+    COMPANY_SESSION_EXPIRE_HOURS: int = 24          # 24 h lifetime per spec
     
     model_config = SettingsConfigDict(
         env_file=".env",

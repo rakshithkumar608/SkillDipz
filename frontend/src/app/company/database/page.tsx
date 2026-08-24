@@ -3,6 +3,7 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { useAuthStore } from "@/store/authStore";
+import { useCompanyAuthStore } from "@/store/companyAuthStore";
 import {
   useCompanyStore,
   type BrowseFilters,
@@ -96,7 +97,8 @@ function CompanyBrandBadge({ company }: { company?: string | null }) {
 
 export default function StudentDatabasePage() {
   const router = useRouter();
-  const { user, _hasHydrated } = useAuthStore();
+  const { user, _hasHydrated: userHydrated } = useAuthStore();
+  const { company, _hasHydrated: companyHydrated } = useCompanyAuthStore();
   const {
     browseCandidates = [],
     browseTotal = 0,
@@ -121,12 +123,7 @@ export default function StudentDatabasePage() {
     [browseCandidates]
   );
 
-  //  Auth Route Guard 
-  useEffect(() => {
-    if (_hasHydrated && (!user || user.role !== "COMPANY")) {
-      router.push("/login");
-    }
-  }, [_hasHydrated, user, router]);
+
 
   //  Fetch Real-Time Candidates from MongoDB 
   const loadCandidates = useCallback(
@@ -158,11 +155,13 @@ export default function StudentDatabasePage() {
 
   //  Initial Fetch 
   useEffect(() => {
-    if (_hasHydrated && user?.role === "COMPANY") {
+    const isHydrated = companyHydrated || userHydrated;
+    const isAuthed = !!(company || user);
+    if (isHydrated && isAuthed) {
       loadCandidates();
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [_hasHydrated, user]);
+  }, [companyHydrated, userHydrated, company, user]);
 
   //  Real-Time Debounced Search Handler 
   const handleSearchChange = useCallback(
@@ -310,7 +309,8 @@ export default function StudentDatabasePage() {
   }, [candidateList]);
 
   //  Hydration Skeleton 
-  if (!_hasHydrated) {
+  const isHydrated = companyHydrated || userHydrated;
+  if (!isHydrated) {
     return (
       <div className="min-h-screen px-4 py-6 sm:px-8 sm:py-8 max-w-350 mx-auto space-y-6">
         <div className="h-10 w-72 bg-white/5 rounded-xl animate-pulse" />

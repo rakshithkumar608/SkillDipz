@@ -2,6 +2,7 @@ import logging
 from motor.motor_asyncio import AsyncIOMotorClient
 from beanie import init_beanie
 from app.models.user import User
+from app.models.company import Company
 from app.core.config import settings
 
 logger = logging.getLogger(__name__)
@@ -61,6 +62,7 @@ async def connect_db():
         database=client.skilldipz,
         document_models=[
             User,
+            Company,
             EmployabilityScore,
             StudentRoadmap,
             Notification,
@@ -104,6 +106,11 @@ async def connect_db():
     # Create indexes manually
     await User.get_motor_collection().create_index("email", unique=True)
     await User.get_motor_collection().create_index("google_id", sparse=True)
+    # Company indexes
+    await Company.get_motor_collection().create_index("email", unique=True)
+    await Company.get_motor_collection().create_index("email_domain")
+    await Company.get_motor_collection().create_index("approval_status")
+    await Company.get_motor_collection().create_index("email_verification_token", sparse=True)
     await EmployabilityScore.get_motor_collection().create_index("student_id", unique=True)
     await EmployabilityScore.get_motor_collection().create_index(
         [("overall_score", -1)], name="leaderboard_rank_sort"

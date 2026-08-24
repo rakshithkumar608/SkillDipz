@@ -1,14 +1,25 @@
 import { NextRequest, NextResponse } from "next/server";
 
-const PUBLIC_ROUTES = ["/", "/login", "/register", "/onboarding", "/verify-otp"];
+const PUBLIC_ROUTES = [
+  "/",
+  "/login",
+  "/register",
+  "/onboarding",
+  "/verify-otp",
+  "/company/auth",
+  "/admin",
+];
 
 export function proxy(req: NextRequest) {
   const { pathname } = req.nextUrl;
 
-  // Always allow public routes and static assets through
-  const isPublic = PUBLIC_ROUTES.some(
-    (r) => pathname === r || pathname.startsWith(r + "/")
-  );
+  // Always allow public routes, static assets, admin portal, and company auth pages through
+  const isPublic =
+    pathname.startsWith("/company/auth") ||
+    pathname.startsWith("/admin") ||
+    PUBLIC_ROUTES.some(
+      (r) => pathname === r || pathname.startsWith(r + "/")
+    );
   if (isPublic) return NextResponse.next();
 
   // Read the role cookie written on login

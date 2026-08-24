@@ -3,6 +3,7 @@
 import React, { useEffect, useState, useCallback } from "react";
 import { useRouter } from "next/navigation";
 import { useAuthStore } from "@/store/authStore";
+import { useCompanyAuthStore } from "@/store/companyAuthStore";
 import {
   getCompanyInterviews,
   type CompanyInterviewSession,
@@ -68,7 +69,8 @@ function statusBadge(status: string) {
 
 export default function CompanyInterviewsPage() {
   const router = useRouter();
-  const { user, _hasHydrated } = useAuthStore();
+  const { user, _hasHydrated: userHydrated } = useAuthStore();
+  const { company, _hasHydrated: companyHydrated } = useCompanyAuthStore();
   const [sessions, setSessions] = useState<CompanyInterviewSession[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -94,10 +96,12 @@ export default function CompanyInterviewsPage() {
   }, []);
 
   useEffect(() => {
-    if (_hasHydrated && user?.role === "COMPANY") {
+    const isHydrated = companyHydrated || userHydrated;
+    const isAuthed = !!(company || user);
+    if (isHydrated && isAuthed) {
       loadInterviews();
     }
-  }, [_hasHydrated, user, loadInterviews]);
+  }, [companyHydrated, userHydrated, company, user, loadInterviews]);
 
   const filteredSessions = sessions.filter((s) => {
     if (activeFilter === "scheduled" && s.status !== "scheduled" && s.status !== "waiting") {
@@ -121,7 +125,8 @@ export default function CompanyInterviewsPage() {
   });
 
   // Hydration Skeleton 
-  if (!_hasHydrated) {
+  const isHydrated = companyHydrated || userHydrated;
+  if (!isHydrated) {
     return (
       <div className="min-h-screen px-4 py-6 sm:px-8 sm:py-8 max-w-6xl mx-auto space-y-6">
         <div className="h-10 w-64 bg-white/5 rounded-xl animate-pulse" />

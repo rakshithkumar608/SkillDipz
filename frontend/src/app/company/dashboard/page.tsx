@@ -3,6 +3,7 @@
 import { useEffect, useCallback } from "react";
 import { useRouter } from "next/navigation";
 import { useAuthStore } from "@/store/authStore";
+import { useCompanyAuthStore } from "@/store/companyAuthStore";
 import { useCompanyStore, TalentCard } from "@/store/companyStore";
 import { fetchCompanyDashboard, fetchCandidateDetail } from "@/lib/CompanyApi";
 import { StatCard } from "@/components/company/StatCard";
@@ -38,7 +39,8 @@ function fmt(n: number): string {
 
 export default function EmployerDashboardPage() {
   const router = useRouter();
-  const { user, accessToken, _hasHydrated } = useAuthStore();
+  const { user, accessToken, _hasHydrated: userHydrated } = useAuthStore();
+  const { company, _hasHydrated: companyHydrated } = useCompanyAuthStore();
   const {
     dashboard, selectedCandidate, candidateLoading,
     isLoading, error,
@@ -61,17 +63,20 @@ export default function EmployerDashboardPage() {
     }
   }, [setDashboard, setError, setLoading]);
 
-  // ── Load dashboard once store is hydrated & user is authenticated ──
+  // ── Load dashboard once store is hydrated & company is authenticated ──
   useEffect(() => {
-    if (!_hasHydrated) return;
-    if (!user) {
+    const isHydrated = companyHydrated || userHydrated;
+    if (!isHydrated) return;
+
+    const isAuthed = !!(company || user);
+    if (!isAuthed) {
       router.push("/login");
       return;
     }
     if (!dashboard) {
       load();
     }
-  }, [_hasHydrated, user, dashboard, router, load]);
+  }, [companyHydrated, userHydrated, company, user, dashboard, router, load]);
 
   // ── Real-time WebSocket — listen for new candidates ───
   const handleWsEvent = useCallback((event: CompanyWsEvent) => {
@@ -90,7 +95,8 @@ export default function EmployerDashboardPage() {
   }, [load]);
 
   // Connect to WS using company user's ID + token
-  useCompanySocket(user?.id, accessToken, handleWsEvent);
+  const activeCompanyId = company?.id || user?.id;
+  useCompanySocket(activeCompanyId, accessToken, handleWsEvent);
 
   //  Open candidate modal 
   const openCandidate = useCallback(async (card: TalentCard) => {
@@ -123,7 +129,8 @@ export default function EmployerDashboardPage() {
   }, [setCandidateLoading, setSelectedCandidate]);
 
   // If waiting for hydration
-  if (!_hasHydrated) {
+  const isHydrated = companyHydrated || userHydrated;
+  if (!isHydrated) {
     return (
       <div className="min-h-screen px-4 py-6 sm:px-6 sm:py-8 max-w-5xl mx-auto space-y-6">
         <Skeleton className="h-14 w-64" />

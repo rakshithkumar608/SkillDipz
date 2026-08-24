@@ -31,7 +31,7 @@ import {
 } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
 import { toast } from "sonner";
-import { formatDistanceToNow } from "date-fns";
+import { formatTimeAgo, formatExactDateTime } from "@/lib/dateUtils";
 
 // Icon mapper by notification_type
 function NotifIcon({ type }: { type: string }) {
@@ -150,8 +150,11 @@ function NotifCard({
         <p className="text-xs text-slate-400 mt-0.5 leading-relaxed line-clamp-2">
           {notif.body}
         </p>
-        <p className="text-[10px] text-slate-500 mt-1.5 font-mono">
-          {formatDistanceToNow(new Date(notif.created_at), { addSuffix: true })}
+        <p
+          className="text-[10px] text-slate-500 mt-1.5 font-mono"
+          title={formatExactDateTime(notif.created_at)}
+        >
+          {formatTimeAgo(notif.created_at)}
         </p>
       </div>
 

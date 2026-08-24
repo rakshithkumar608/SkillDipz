@@ -1,7 +1,9 @@
 "use client";
 
 import { logout } from "@/lib/auth";
+import { logoutCompany } from "@/lib/companyAuth";
 import { useAuthStore } from "@/store/authStore";
+import { useCompanyAuthStore } from "@/store/companyAuthStore";
 import {
   Briefcase,
   Database,
@@ -15,7 +17,7 @@ import {
   X,
 } from "lucide-react";
 import { usePathname, useRouter } from "next/navigation";
-import { useEffect, useState} from "react";
+import { useEffect, useState } from "react";
 import Image from "next/image";
 import Link from "next/link";
 
@@ -33,7 +35,6 @@ const navItems = [
   { label: "Project Hub", href: "/company/projects", icon: FolderOpen },
 ];
 
-
 export default function CompanyLayout({
   children,
 }: {
@@ -41,23 +42,44 @@ export default function CompanyLayout({
 }) {
   const pathname = usePathname();
   const router = useRouter();
-  const { user, _hasHydrated } = useAuthStore();
+  const { user, _hasHydrated: userHydrated } = useAuthStore();
+  const { company, _hasHydrated: companyHydrated } = useCompanyAuthStore();
   const [sidebarOpen, setSidebarOpen] = useState(false);
 
+  const isAuthPage = pathname.startsWith("/company/auth");
+
   useEffect(() => {
-    if (_hasHydrated) {
-      if (!user || user.role !== "COMPANY") {
+    if (isAuthPage) return;
+
+    if (companyHydrated || userHydrated) {
+      // Check company auth store first, fallback to legacy authStore
+      const activeCompany = company;
+      const legacyCompany = user?.role === "COMPANY";
+
+      if (!activeCompany && !legacyCompany) {
         router.push("/login");
+        return;
+      }
+
+      if (activeCompany && activeCompany.approval_status !== "approved") {
+        router.push("/company/auth/pending");
+        return;
       }
     }
-  }, [_hasHydrated, user, router]);
+  }, [isAuthPage, companyHydrated, userHydrated, company, user, router]);
+
+  // Auth pages under /company/auth/* render cleanly without sidebar
+  if (isAuthPage) {
+    return <>{children}</>;
+  }
 
   const handleLogout = async () => {
+    await logoutCompany();
     await logout();
     router.push("/login");
   };
 
-  const companyName = user?.full_name ?? "Company";
+  const companyName = company?.company_name ?? user?.company_name ?? user?.full_name ?? "Company";
   const initials = companyName
     .split(" ")
     .map((n) => n[0])

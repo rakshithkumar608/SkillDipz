@@ -334,3 +334,120 @@ async def delete_otp(email: str) -> None:
         await redis.delete(f"{OTP_PREFIX}{email}")
     except (RedisConnectionError, RedisError, OSError) as e:
         logger.warning(f"Redis error in delete_otp: {e}")
+
+
+# Company Session & Lockout
+
+COMPANY_SESSION_PREFIX = "company_session:"
+COMPANY_SESSIONS_BY_ID = "company_sessions:"
+COMPANY_LOCKOUT_PREFIX = "company_lock:"
+COMPANY_SESSION_TTL = 24 * 3600  # 24 h per spec
+
+
+async def create_company_session(
+    company_id: str,
+    approval_status: str,
+    email: str,
+    ip_address: str = "",
+    user_agent: str = "",
+) -> str:
+    """Create a new server-side company session in Redis. Returns session_id or ''."""
+    if redis is None:
+        return ""
+    session_id = str(uuid.uuid4())
+    session_data = {
+        "session_id": session_id,
+        "company_id": company_id,
+        "role": "company",
+        "approval_status": approval_status,
+        "email": email,
+        "ip_address": ip_address,
+        "user_agent": user_agent,
+    }
+    try:
+        await redis.setex(f"{COMPANY_SESSION_PREFIX}{session_id}", COMPANY_SESSION_TTL, json.dumps(session_data))
+        await redis.sadd(f"{COMPANY_SESSIONS_BY_ID}{company_id}", session_id)
+        await redis.expire(f"{COMPANY_SESSIONS_BY_ID}{company_id}", COMPANY_SESSION_TTL)
+        return session_id
+    except Exception as e:
+        logger.error(f"Error creating company session: {e}")
+        return ""
+
+
+async def get_company_session(session_id: str) -> Optional[dict]:
+    """Retrieve company session data by session_id. Returns None if missing/expired."""
+    if redis is None or not session_id:
+        return None
+    try:
+        raw = await redis.get(f"{COMPANY_SESSION_PREFIX}{session_id}")
+        return json.loads(raw) if raw else None
+    except Exception as e:
+        logger.error(f"Error reading company session: {e}")
+        return None
+
+
+async def destroy_company_session(session_id: str) -> bool:
+    """Delete a company session from Redis."""
+    if redis is None or not session_id:
+        return False
+    try:
+        session_data = await get_company_session(session_id)
+        if session_data:
+            company_id = session_data.get("company_id", "")
+            await redis.srem(f"{COMPANY_SESSIONS_BY_ID}{company_id}", session_id)
+        await redis.delete(f"{COMPANY_SESSION_PREFIX}{session_id}")
+        return True
+    except Exception as e:
+        logger.error(f"Error destroying company session: {e}")
+        return False
+
+
+async def destroy_all_company_sessions(company_id: str) -> int:
+    """Destroy all active sessions for a company (e.g. on rejection mid-session)."""
+    if redis is None:
+        return 0
+    count = 0
+    try:
+        session_ids = await redis.smembers(f"{COMPANY_SESSIONS_BY_ID}{company_id}")
+        for sid in session_ids:
+            await redis.delete(f"{COMPANY_SESSION_PREFIX}{sid}")
+            count += 1
+        await redis.delete(f"{COMPANY_SESSIONS_BY_ID}{company_id}")
+    except Exception as e:
+        logger.error(f"Error destroying all company sessions for {company_id}: {e}")
+    return count
+
+
+async def get_company_login_failures(company_id: str) -> int:
+    """Return current failed login attempt count for a company."""
+    if redis is None:
+        return 0
+    try:
+        val = await redis.get(f"{COMPANY_LOCKOUT_PREFIX}{company_id}")
+        return int(val) if val else 0
+    except Exception:
+        return 0
+
+
+async def increment_company_login_failure(company_id: str) -> int:
+    """Increment failed login counter. Returns new count. Window: 15 min."""
+    if redis is None:
+        return 0
+    key = f"{COMPANY_LOCKOUT_PREFIX}{company_id}"
+    try:
+        count = await redis.incr(key)
+        await redis.expire(key, 15 * 60)
+        return count
+    except Exception as e:
+        logger.error(f"Error incrementing company login failures: {e}")
+        return 0
+
+
+async def reset_company_login_failures(company_id: str) -> None:
+    """Clear failed login counter on successful login."""
+    if redis is None:
+        return
+    try:
+        await redis.delete(f"{COMPANY_LOCKOUT_PREFIX}{company_id}")
+    except Exception:
+        pass

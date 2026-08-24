@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { useAuthStore } from "@/store/authStore";
+import { useCompanyAuthStore } from "@/store/companyAuthStore";
 import {
   fetchLeaderboard,
   type LeaderboardResponse,
@@ -23,7 +24,8 @@ import {
 
 export default function CompanyLeaderboardPage() {
   const router = useRouter();
-  const { user, _hasHydrated } = useAuthStore();
+  const { user, _hasHydrated: userHydrated } = useAuthStore();
+  const { company, _hasHydrated: companyHydrated } = useCompanyAuthStore();
 
   const [data, setData] = useState<LeaderboardResponse | null>(null);
   const [loading, setLoading] = useState(true);
@@ -37,13 +39,6 @@ export default function CompanyLeaderboardPage() {
   // Candidate Profile Modal
   const [selectedCandidate, setSelectedCandidate] = useState<CandidateDetail | null>(null);
   const [modalLoading, setModalLoading] = useState(false);
-
-  // Auth Guard
-  useEffect(() => {
-    if (_hasHydrated && (!user || user.role !== "COMPANY")) {
-      router.push("/login");
-    }
-  }, [_hasHydrated, user, router]);
 
   // Debounce search query (300ms)
   useEffect(() => {
@@ -81,10 +76,12 @@ export default function CompanyLeaderboardPage() {
   );
 
   useEffect(() => {
-    if (_hasHydrated && user?.role === "COMPANY") {
+    const isHydrated = companyHydrated || userHydrated;
+    const isAuthed = !!(company || user);
+    if (isHydrated && isAuthed) {
       load(page, role, debouncedSearch, sortBy);
     }
-  }, [load, page, role, debouncedSearch, sortBy, _hasHydrated, user]);
+  }, [load, page, role, debouncedSearch, sortBy, companyHydrated, userHydrated, company, user]);
 
   // Open full candidate profile modal
   const handleSelectCandidate = useCallback(async (studentId: string) => {
@@ -100,7 +97,8 @@ export default function CompanyLeaderboardPage() {
   }, []);
 
   // Hydration Skeleton
-  if (!_hasHydrated) {
+  const isHydrated = companyHydrated || userHydrated;
+  if (!isHydrated) {
     return (
       <div className="min-h-screen px-4 py-6 sm:px-8 sm:py-8 max-w-7xl mx-auto space-y-6 animate-pulse">
         <div className="h-16 bg-slate-900/60 rounded-3xl border border-slate-800" />
