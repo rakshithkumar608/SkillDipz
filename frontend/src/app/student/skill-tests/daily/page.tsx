@@ -1,60 +1,78 @@
 "use client";
 
+/**
+ * Daily Arena Page — Three-game sequential flow
+ * Phases: info → loading → countdown → game_spotbug → game_orderit → game_stackit → completing → done | error
+ * Completed state: lock screen with countdown to next reset, View Results + View Ranking CTAs
+ */
+
 import { useEffect, useState, useRef, useCallback } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { motion, AnimatePresence } from "framer-motion";
 import {
-  ArrowLeft,
   Play,
   CheckCircle2,
-  XCircle,
-  Target,
-  Zap,
-  Bug,
-  GitBranch,
+  Trophy,
+  Clock,
   Loader2,
   AlertCircle,
-  Clock,
-  Trophy,
-  ChevronRight,
+  ArrowLeft,
+  Bug,
+  ListOrdered,
+  Layers,
+  Flame,
+  Zap,
+  Star,
 } from "lucide-react";
+
 import {
   getDailyArena,
   startDailyArena,
-  submitAnswer,
   completeDailyArena,
+  submitSpotBugAnswer,
+  submitOrderItAnswer,
+  submitStackItAnswer,
   DailyArenaOut,
   StartSessionResponse,
-  SubmitAnswerResponse,
   ArenaQuestion,
+  SpotBugCall,
+  StackItPlacement,
+  CompleteSessionResponse,
+  formatCountdown,
 } from "@/lib/arenaApi";
 
+import { SpotBugGame } from "@/components/student/SpotBugGame";
+import { OrderItGame } from "@/components/student/OrderItGame";
+import { StackItGame } from "@/components/student/StackItGame";
+
+//  Types 
+
 type Phase =
+  | "checking"
+  | "completed_today"
   | "info"
   | "loading"
   | "countdown"
-  | "question"
-  | "feedback"
+  | "game_spotbug"
+  | "game_orderit"
+  | "game_stackit"
   | "completing"
   | "done"
   | "error";
 
-// ─── Countdown Component ──────────────────────────────────────────────────────
+//  Countdown 
 
 function Countdown({ onDone }: { onDone: () => void }) {
   const [count, setCount] = useState(3);
   useEffect(() => {
-    if (count === 0) {
-      setTimeout(onDone, 300);
-      return;
-    }
+    if (count === 0) { setTimeout(onDone, 300); return; }
     const t = setTimeout(() => setCount((c) => c - 1), 800);
     return () => clearTimeout(t);
   }, [count, onDone]);
 
   return (
-    <div className="flex flex-col items-center justify-center min-h-[50vh] gap-4">
+    <div className="flex flex-col items-center justify-center min-h-[60vh] gap-4">
       <AnimatePresence mode="wait">
         <motion.div
           key={count}
@@ -68,584 +86,609 @@ function Countdown({ onDone }: { onDone: () => void }) {
         </motion.div>
       </AnimatePresence>
       <p className="text-slate-400 font-medium tracking-widest uppercase text-sm">
-        Daily Sprint Started...
+        Daily Arena Starting…
       </p>
     </div>
   );
 }
 
-// ─── Master Single Timer Ring ─────────────────────────────────────────────────
+//  Completed-Today Lock Screen 
 
-function MasterDailyTimerRing({
-  total,
-  elapsed,
+function CompletedTodayScreen({
+  daily,
+  sessionId,
 }: {
-  total: number;
-  elapsed: number;
+  daily: DailyArenaOut;
+  sessionId?: string;
 }) {
-  const remaining = Math.max(0, Math.ceil(total - elapsed));
-  const pct = Math.max(0, Math.min(1, 1 - elapsed / total));
-  const urgent = remaining <= 30;
-  const r = 22;
-  const circ = 2 * Math.PI * r;
-  const dash = circ * pct;
+  const [countdown, setCountdown] = useState(
+    daily.next_reset_at ? formatCountdown(daily.next_reset_at) : "--"
+  );
 
-  const mins = Math.floor(remaining / 60);
-  const secs = remaining % 60;
-  const timeStr = mins > 0 ? `${mins}:${secs.toString().padStart(2, "0")}` : `${secs}s`;
+  useEffect(() => {
+    if (!daily.next_reset_at) return;
+    const id = setInterval(() => {
+      setCountdown(formatCountdown(daily.next_reset_at!));
+    }, 1000);
+    return () => clearInterval(id);
+  }, [daily.next_reset_at]);
 
   return (
-    <div className="relative flex items-center gap-2 px-3 py-1 bg-slate-900/80 border border-white/10 rounded-xl">
-      <div className="relative w-7 h-7 flex items-center justify-center">
-        <svg className="absolute inset-0 -rotate-90" viewBox="0 0 50 50">
-          <circle cx="25" cy="25" r={r} fill="none" stroke="#1e293b" strokeWidth="4" />
-          <circle
-            cx="25"
-            cy="25"
-            r={r}
-            fill="none"
-            stroke={urgent ? "#f43f5e" : "#38bdf8"}
-            strokeWidth="4"
-            strokeDasharray={`${dash} ${circ}`}
-            strokeLinecap="round"
-          />
-        </svg>
-        <Clock className={`w-3 h-3 ${urgent ? "text-rose-400" : "text-sky-400"}`} />
-      </div>
-      <span
-        className={`text-xs font-bold font-mono ${
-          urgent ? "text-rose-400 animate-pulse" : "text-sky-400"
-        }`}
+    <div className="flex flex-col items-center justify-center min-h-[80vh] gap-6 max-w-sm mx-auto px-4 text-center">
+      <motion.div
+        initial={{ scale: 0, opacity: 0 }}
+        animate={{ scale: 1, opacity: 1 }}
+        transition={{ type: "spring", stiffness: 300, damping: 24 }}
+        className="w-20 h-20 rounded-full bg-emerald-500/15 border-2 border-emerald-500/40 flex items-center justify-center"
       >
-        {timeStr}
-      </span>
+        <CheckCircle2 className="w-10 h-10 text-emerald-400" />
+      </motion.div>
+
+      <motion.div
+        initial={{ opacity: 0, y: 12 }}
+        animate={{ opacity: 1, y: 0 }}
+        transition={{ delay: 0.2 }}
+        className="space-y-2"
+      >
+        <div className="flex items-center justify-center gap-1.5 mb-2">
+          <Star className="w-4 h-4 text-amber-400" />
+          <span className="text-xs font-bold tracking-widest text-amber-400 uppercase">Arena Complete</span>
+        </div>
+        <h1 className="text-3xl font-black text-white">Today's Done! 🎉</h1>
+        <p className="text-slate-400 text-sm leading-relaxed">
+          You've already completed today's Daily Arena. See how you rank or review your results.
+        </p>
+      </motion.div>
+
+      {/* Countdown */}
+      <motion.div
+        initial={{ opacity: 0 }}
+        animate={{ opacity: 1 }}
+        transition={{ delay: 0.35 }}
+        className="flex items-center gap-2 px-4 py-3 bg-slate-900/60 border border-white/8 rounded-xl"
+      >
+        <Clock className="w-4 h-4 text-sky-400" />
+        <span className="text-sm text-slate-400">
+          Next Arena in{" "}
+          <span className="text-sky-400 font-bold font-mono tabular-nums">{countdown}</span>
+        </span>
+      </motion.div>
+
+      {/* Stats from today */}
+      {daily.time_taken_str && (
+        <motion.div
+          initial={{ opacity: 0 }}
+          animate={{ opacity: 1 }}
+          transition={{ delay: 0.4 }}
+          className="flex items-center gap-2 text-sm text-slate-500"
+        >
+          <Clock className="w-3 h-3" />
+          <span>Completed in <span className="text-sky-400 font-mono font-bold">{daily.time_taken_str}</span></span>
+        </motion.div>
+      )}
+
+      {/* CTAs */}
+      <motion.div
+        initial={{ opacity: 0, y: 8 }}
+        animate={{ opacity: 1, y: 0 }}
+        transition={{ delay: 0.45 }}
+        className="flex flex-col gap-3 w-full"
+      >
+        <Link href="/student/skill-tests/leaderboard">
+          <button className="w-full flex items-center justify-center gap-2 py-3.5 bg-sky-500 hover:bg-sky-400 text-white font-bold text-sm rounded-xl transition-colors shadow-lg shadow-sky-500/25 active:scale-95">
+            <Trophy className="w-4 h-4" />
+            View Ranking
+          </button>
+        </Link>
+        {sessionId && (
+          <Link href={`/student/skill-tests/results/${sessionId}`}>
+            <button className="w-full flex items-center justify-center gap-2 py-3 bg-slate-800 hover:bg-slate-700 text-slate-200 font-semibold text-sm rounded-xl border border-white/8 transition-colors active:scale-95">
+              View My Results
+            </button>
+          </Link>
+        )}
+        <Link href="/student/skill-tests">
+          <button className="w-full text-xs text-slate-500 hover:text-slate-400 transition-colors py-2">
+            ← Back to Arena
+          </button>
+        </Link>
+      </motion.div>
     </div>
   );
 }
 
-// ─── XP Float ─────────────────────────────────────────────────────────────────
+//  Game progress indicator 
 
-function XPFloat({ xp, onDone }: { xp: number; onDone: () => void }) {
-  useEffect(() => {
-    const t = setTimeout(onDone, 1200);
-    return () => clearTimeout(t);
-  }, [onDone]);
+const GAME_STEPS = [
+  { key: "spotbug", label: "Spot the Bug", icon: Bug, color: "text-rose-400", bg: "bg-rose-500/15 border-rose-500/30" },
+  { key: "orderit", label: "Order the Steps", icon: ListOrdered, color: "text-violet-400", bg: "bg-violet-500/15 border-violet-500/30" },
+  { key: "stackit", label: "Stack It", icon: Layers, color: "text-emerald-400", bg: "bg-emerald-500/15 border-emerald-500/30" },
+];
+
+function GameProgressBar({ currentPhase }: { currentPhase: Phase }) {
+  const stepIndex = currentPhase === "game_spotbug" ? 0
+    : currentPhase === "game_orderit" ? 1
+    : currentPhase === "game_stackit" ? 2
+    : -1;
+
+  if (stepIndex === -1) return null;
 
   return (
+    <div className="flex items-center gap-2 mb-6">
+      {GAME_STEPS.map((step, i) => {
+        const Icon = step.icon;
+        const isDone = i < stepIndex;
+        const isActive = i === stepIndex;
+        return (
+          <div key={step.key} className="flex items-center gap-2 flex-1">
+            <div className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg border text-xs font-semibold transition-all
+              ${isDone ? "bg-emerald-500/15 border-emerald-500/30 text-emerald-400" :
+                isActive ? `${step.bg} ${step.color}` :
+                "bg-slate-900/40 border-white/5 text-slate-600"}`}>
+              {isDone ? <CheckCircle2 className="w-3 h-3" /> : <Icon className="w-3 h-3" />}
+              <span className="hidden sm:inline">{step.label}</span>
+            </div>
+            {i < GAME_STEPS.length - 1 && (
+              <div className={`h-px flex-1 ${i < stepIndex ? "bg-emerald-500/40" : "bg-slate-800"}`} />
+            )}
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
+//  Results Summary 
+
+function DoneScreen({ result, onViewDetails }: { result: CompleteSessionResponse; onViewDetails: () => void }) {
+  const isPerfect = result.accuracy >= 99;
+  return (
     <motion.div
-      className="fixed top-20 right-6 z-50 pointer-events-none"
-      initial={{ opacity: 1, y: 0 }}
-      animate={{ opacity: 0, y: -60 }}
-      transition={{ duration: 1.1 }}
+      initial={{ opacity: 0, scale: 0.95 }}
+      animate={{ opacity: 1, scale: 1 }}
+      className="flex flex-col items-center gap-6 max-w-sm mx-auto text-center py-8"
     >
-      <span className="text-2xl font-black text-amber-400">+{xp} XP</span>
+      <motion.div
+        initial={{ scale: 0, rotate: -180 }}
+        animate={{ scale: 1, rotate: 0 }}
+        transition={{ type: "spring", stiffness: 200, damping: 20, delay: 0.1 }}
+        className={`w-24 h-24 rounded-full flex items-center justify-center text-4xl shadow-2xl
+          ${isPerfect ? "bg-amber-500/20 border-2 border-amber-500/50" : "bg-sky-500/20 border-2 border-sky-500/50"}`}
+      >
+        {isPerfect ? "🏆" : "🎯"}
+      </motion.div>
+
+      <div className="space-y-1">
+        <h2 className="text-3xl font-black text-white">
+          {isPerfect ? "Flawless!" : "Arena Complete!"}
+        </h2>
+        <p className="text-slate-400 text-sm">Daily Arena finished</p>
+      </div>
+
+      {/* XP earned */}
+      <motion.div
+        initial={{ opacity: 0, y: 8 }}
+        animate={{ opacity: 1, y: 0 }}
+        transition={{ delay: 0.3 }}
+        className="bg-linear-to-r from-amber-500/10 to-sky-500/10 border border-amber-500/20 rounded-2xl p-5 w-full space-y-4"
+      >
+        <div className="flex items-center justify-center gap-2">
+          <Zap className="w-5 h-5 text-amber-400" />
+          <span className="text-3xl font-black text-amber-400">+{result.total_xp} XP</span>
+        </div>
+        {result.daily_bonus_xp && (
+          <p className="text-xs text-amber-500/70">Includes +{result.daily_bonus_xp} XP daily completion bonus</p>
+        )}
+        {result.leveled_up && (
+          <div className="flex items-center justify-center gap-1.5 text-sky-400 text-sm font-bold">
+            <Star className="w-4 h-4" />
+            Level Up! You're now Level {result.level_info.level}!
+          </div>
+        )}
+        {result.arena_streak > 0 && (
+          <div className="flex items-center justify-center gap-1.5 text-amber-400 text-sm">
+            <Flame className="w-4 h-4" />
+            <span>{result.arena_streak} Day Streak!</span>
+          </div>
+        )}
+      </motion.div>
+
+      {/* Per-game breakdown */}
+      {result.game_results.length > 0 && (
+        <motion.div
+          initial={{ opacity: 0, y: 8 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ delay: 0.4 }}
+          className="w-full space-y-2"
+        >
+          {result.game_results.map((gr) => {
+            const step = GAME_STEPS.find((s) => s.key === gr.game_type);
+            const Icon = step?.icon || Zap;
+            return (
+              <div key={gr.question_id} className="flex items-center gap-3 bg-slate-900/60 border border-white/5 rounded-xl px-4 py-3">
+                <div className={`w-7 h-7 rounded-lg flex items-center justify-center ${step?.bg || "bg-slate-800"}`}>
+                  <Icon className={`w-3.5 h-3.5 ${step?.color || "text-slate-400"}`} />
+                </div>
+                <div className="flex-1 min-w-0">
+                  <p className="text-sm font-semibold text-white truncate">{step?.label || gr.game_type}</p>
+                  <p className="text-xs text-slate-500">{gr.skill}</p>
+                </div>
+                <div className="text-right">
+                  <p className="text-sm font-bold text-amber-400">+{gr.xp_earned} XP</p>
+                  <p className="text-xs text-slate-500">{Math.round(gr.accuracy * 100)}% acc.</p>
+                </div>
+              </div>
+            );
+          })}
+        </motion.div>
+      )}
+
+      {/* Badges */}
+      {result.badges_earned.length > 0 && (
+        <div className="flex flex-wrap gap-2 justify-center">
+          {result.badges_earned.map((b) => (
+            <span key={b} className="px-3 py-1 bg-amber-500/15 border border-amber-500/30 text-amber-400 text-xs font-bold rounded-full">
+              🏆 {b}
+            </span>
+          ))}
+        </div>
+      )}
+
+      {/* CTAs */}
+      <div className="flex flex-col gap-3 w-full">
+        <Link href="/student/skill-tests/leaderboard">
+          <button className="w-full flex items-center justify-center gap-2 py-3.5 bg-sky-500 hover:bg-sky-400 text-white font-bold text-sm rounded-xl transition-colors shadow-lg shadow-sky-500/25 active:scale-95">
+            <Trophy className="w-4 h-4" />
+            View Ranking
+          </button>
+        </Link>
+        <button
+          onClick={onViewDetails}
+          className="w-full flex items-center justify-center gap-2 py-3 bg-slate-800 hover:bg-slate-700 text-slate-200 font-semibold text-sm rounded-xl border border-white/8 transition-colors active:scale-95"
+        >
+          View Detailed Results
+        </button>
+        <Link href="/student/skill-tests">
+          <button className="w-full text-xs text-slate-500 hover:text-slate-400 transition-colors py-2">
+            ← Back to Arena
+          </button>
+        </Link>
+      </div>
     </motion.div>
   );
 }
 
-const GAME_ICONS: Record<string, React.ElementType> = {
-  quick_fire: Zap,
-  debug_rush: Bug,
-  tech_decision: GitBranch,
-};
-const GAME_COLORS: Record<string, string> = {
-  quick_fire: "text-amber-400",
-  debug_rush: "text-rose-400",
-  tech_decision: "text-violet-400",
-};
+//  Main Page 
 
 export default function DailyArenaPage() {
   const router = useRouter();
+  const [phase, setPhase] = useState<Phase>("checking");
   const [daily, setDaily] = useState<DailyArenaOut | null>(null);
   const [session, setSession] = useState<StartSessionResponse | null>(null);
-  const [phase, setPhase] = useState<Phase>("info");
-  const [currentIdx, setCurrentIdx] = useState(0);
-  const [selectedKey, setSelectedKey] = useState<string | null>(null);
-  const [feedback, setFeedback] = useState<SubmitAnswerResponse | null>(null);
-  const [totalElapsed, setTotalElapsed] = useState(0);
-  const [showXP, setShowXP] = useState(false);
-  const [floatXP, setFloatXP] = useState(0);
-  const [error, setError] = useState("");
+  const [result, setResult] = useState<CompleteSessionResponse | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const [completedSessionId, setCompletedSessionId] = useState<string | null>(null);
+  const completedRef = useRef(false);
 
-  const timerRef = useRef<NodeJS.Timeout | null>(null);
-  const gameStartRef = useRef<number>(0);
-  const questionStartRef = useRef<number>(0);
+  // Get questions for each game type from session
+  const getQuestion = useCallback((gameType: string): ArenaQuestion | null => {
+    return session?.questions.find((q) => q.game_type === gameType) ?? null;
+  }, [session]);
 
+  // Check daily status on mount
   useEffect(() => {
     getDailyArena()
       .then((d) => {
         setDaily(d);
         if (d.already_completed) {
-          setPhase("done");
+          setPhase("completed_today");
+        } else {
+          setPhase("info");
         }
       })
-      .catch(() => {
-        setError("Failed to load today's Arena");
-        setPhase("error");
-      });
-
-    return () => {
-      if (timerRef.current) clearInterval(timerRef.current);
-    };
+      .catch(() => setPhase("error"));
   }, []);
 
-  const totalGameTime = session
-    ? session.questions.reduce((acc, q) => acc + q.time_limit, 0)
-    : 300;
-
-  const handleStart = async () => {
+  const handleStartArena = async () => {
     setPhase("loading");
     try {
       const s = await startDailyArena();
       setSession(s);
-      setPhase("countdown");
-    } catch (e: any) {
-      const msg = e?.response?.data?.detail;
-      if (msg && msg.includes("already completed")) {
-        setPhase("done");
+      setPhase("game_spotbug");
+    } catch (e: unknown) {
+      const msg = e instanceof Error ? e.message : "Failed to start Daily Arena. Please try again.";
+      const axiosMsg = (e as { response?: { data?: { detail?: string } } })?.response?.data?.detail;
+      if (axiosMsg?.includes("already completed")) {
+        // Refresh daily status
+        const d = await getDailyArena().catch(() => null);
+        if (d) setDaily(d);
+        setPhase("completed_today");
       } else {
-        setError(msg || "Failed to start Daily Arena");
+        setError(axiosMsg || msg);
         setPhase("error");
       }
     }
   };
 
-  const handleCountdownDone = useCallback(() => {
+  // ── SpotBug complete ──
+  const handleSpotBugComplete = async (calls: SpotBugCall[], elapsedMs: number) => {
     if (!session) return;
-    setPhase("question");
-    const start = Date.now();
-    gameStartRef.current = start;
-    questionStartRef.current = start;
-    setTotalElapsed(0);
+    const q = getQuestion("spotbug");
+    if (!q) { setPhase("game_orderit"); return; }
+    try {
+      await submitSpotBugAnswer({
+        session_id: session.session_id,
+        question_id: q.question_id,
+        calls,
+        elapsed_ms: elapsedMs,
+      });
+    } catch (e) {
+      console.warn("SpotBug answer submit failed (non-fatal):", e);
+    }
+    setPhase("game_orderit");
+  };
 
-    const totalSecs = session.questions.reduce((acc, q) => acc + q.time_limit, 0);
+  // ── OrderIt complete ──
+  const handleOrderItComplete = async (userOrder: string[], elapsedMs: number) => {
+    if (!session) return;
+    const q = getQuestion("orderit");
+    if (!q) { setPhase("game_stackit"); return; }
+    try {
+      await submitOrderItAnswer({
+        session_id: session.session_id,
+        question_id: q.question_id,
+        user_order: userOrder,
+        elapsed_ms: elapsedMs,
+      });
+    } catch (e) {
+      console.warn("OrderIt answer submit failed (non-fatal):", e);
+    }
+    setPhase("game_stackit");
+  };
 
-    timerRef.current = setInterval(() => {
-      const e = (Date.now() - start) / 1000;
-      setTotalElapsed(e);
-      if (e >= totalSecs + 2) {
-        if (timerRef.current) clearInterval(timerRef.current);
+  // ── StackIt complete ──
+  const handleStackItComplete = async (placements: StackItPlacement[], elapsedMs: number) => {
+    if (!session) return;
+    const q = getQuestion("stackit");
+    if (!q) { finalizeArena(); return; }
+    try {
+      await submitStackItAnswer({
+        session_id: session.session_id,
+        question_id: q.question_id,
+        placements,
+        elapsed_ms: elapsedMs,
+      });
+    } catch (e) {
+      console.warn("StackIt answer submit failed (non-fatal):", e);
+    }
+    finalizeArena();
+  };
+
+  const finalizeArena = useCallback(async () => {
+    if (completedRef.current || !session) return;
+    completedRef.current = true;
+    setPhase("completing");
+    try {
+      const res = await completeDailyArena(session.session_id);
+      setResult(res);
+      setCompletedSessionId(session.session_id);
+      setPhase("done");
+    } catch (e: unknown) {
+      const axiosMsg = (e as { response?: { data?: { detail?: string } } })?.response?.data?.detail;
+      if (axiosMsg?.includes("already completed")) {
+        // Already completed (e.g. double-submit) — show completed state
+        const d = await getDailyArena().catch(() => null);
+        if (d) setDaily(d);
+        setPhase("completed_today");
+      } else {
+        setError(axiosMsg || "Failed to finalize arena.");
+        setPhase("error");
       }
-    }, 100);
-
-    setSelectedKey(null);
-    setFeedback(null);
+    }
   }, [session]);
 
-  const handleAnswer = useCallback(
-    async (key: string) => {
-      if (!session || phase !== "question" || selectedKey) return;
-
-      const q = session.questions[currentIdx];
-      const elapsedMs = Math.round(Date.now() - questionStartRef.current);
-      setSelectedKey(key);
-
-      try {
-        const res = await submitAnswer({
-          session_id: session.session_id,
-          question_id: q.question_id,
-          answer_key: key,
-          elapsed_ms: elapsedMs,
-        });
-        setFeedback(res);
-        setPhase("feedback");
-        if (res.xp_earned > 0) {
-          setFloatXP(res.xp_earned);
-          setShowXP(true);
-        }
-      } catch {
-        setError("Failed to submit answer");
-        setPhase("error");
-      }
-    },
-    [session, phase, selectedKey, currentIdx]
-  );
-
-  const handleNext = useCallback(async () => {
-    if (!session) return;
-    const next = currentIdx + 1;
-    if (next >= session.questions.length) {
-      if (timerRef.current) clearInterval(timerRef.current);
-      setPhase("completing");
-      try {
-        await completeDailyArena(session.session_id);
-        router.push(`/student/skill-tests/results/${session.session_id}`);
-      } catch (e: any) {
-        setError(e?.response?.data?.detail || "Failed to complete Arena");
-        setPhase("error");
-      }
-    } else {
-      questionStartRef.current = Date.now();
-      setCurrentIdx(next);
-      setSelectedKey(null);
-      setFeedback(null);
-      setPhase("question");
-    }
-  }, [session, currentIdx, router]);
-
-  useEffect(() => {
-    if (phase !== "question" || !session) return;
-    const handler = (e: KeyboardEvent) => {
-      const m: Record<string, string> = {
-        a: "A",
-        b: "B",
-        c: "C",
-        d: "D",
-        "1": "A",
-        "2": "B",
-        "3": "C",
-        "4": "D",
-      };
-      const k = m[e.key.toLowerCase()];
-      if (k) handleAnswer(k);
-    };
-    window.addEventListener("keydown", handler);
-    return () => window.removeEventListener("keydown", handler);
-  }, [phase, currentIdx, session, selectedKey, handleAnswer]);
-
-  // ── Info Screen ──
-  if (phase === "info" && daily) {
-    const total =
-      daily.quick_fire_count + daily.debug_rush_count + daily.tech_decision_count;
-    return (
-      <div className="min-h-screen bg-slate-950 text-slate-200 flex flex-col items-center justify-center px-4">
-        <motion.div
-          initial={{ opacity: 0, y: 20 }}
-          animate={{ opacity: 1, y: 0 }}
-          className="max-w-md w-full bg-slate-900/60 border border-white/5 rounded-3xl p-6 sm:p-8 backdrop-blur-md"
-        >
-          <button
-            onClick={() => router.push("/student/skill-tests")}
-            className="flex items-center gap-2 text-slate-500 hover:text-slate-300 text-sm mb-6 transition-colors"
-          >
-            <ArrowLeft className="w-4 h-4" /> Back to Arena
-          </button>
-          <div className="flex items-center gap-2 mb-2">
-            <Target className="w-4 h-4 text-sky-400" />
-            <span className="text-xs font-bold tracking-widest text-sky-400 uppercase">
-              Today&apos;s Challenge
-            </span>
-          </div>
-          <h1 className="text-3xl font-black text-white mb-2">Daily Skill Sprint</h1>
-          <p className="text-slate-400 text-sm mb-6">
-            Test your skills with {total} dynamic AI challenges tailored to your skill gaps.
-            Complete today&apos;s sprint to climb today&apos;s leaderboard.
-          </p>
-
-          <div className="grid grid-cols-3 gap-2.5 mb-6">
-            {[
-              ["quick_fire", daily.quick_fire_count, "Quick Fire"],
-              ["debug_rush", daily.debug_rush_count, "Debug Rush"],
-              ["tech_decision", daily.tech_decision_count, "Tech Decision"],
-            ].map(([type, count, label]) => {
-              const Icon = GAME_ICONS[type as string] || Target;
-              return (
-                <div
-                  key={type as string}
-                  className="bg-slate-950/60 border border-white/5 rounded-xl p-3 text-center"
-                >
-                  <Icon
-                    className={`w-5 h-5 mx-auto mb-1 ${GAME_COLORS[type as string]}`}
-                  />
-                  <p className="text-white font-bold text-sm">{count as number}Q</p>
-                  <p className="text-slate-500 text-[11px]">{label as string}</p>
-                </div>
-              );
-            })}
-          </div>
-
-          <div className="flex items-center justify-between p-3 bg-white/3 rounded-xl border border-white/5 mb-6 text-xs text-slate-400">
-            <span>⏱️ ~5 min overall</span>
-            <span className="text-amber-400 font-bold">+{daily.total_xp} XP Total</span>
-            <span className="text-emerald-400 font-semibold">🔥 +1 Streak</span>
-          </div>
-
-          <motion.button
-            whileHover={{ scale: 1.02 }}
-            whileTap={{ scale: 0.98 }}
-            onClick={handleStart}
-            className="w-full flex items-center justify-center gap-2 py-4 bg-sky-500 hover:bg-sky-400 text-white font-black text-base rounded-2xl shadow-lg shadow-sky-500/25 transition-all"
-          >
-            <Play className="w-5 h-5 fill-current" /> Start Today&apos;s Sprint
-          </motion.button>
-        </motion.div>
-      </div>
-    );
-  }
-
-  // ── Loading Screen ──
-  if (phase === "loading" || phase === "completing") {
-    return (
-      <div className="flex min-h-screen bg-slate-950 flex-col items-center justify-center gap-4">
-        <Loader2 className="w-8 h-8 text-sky-400 animate-spin" />
-        <p className="text-slate-400 text-sm font-medium">
-          {phase === "loading" ? "Generating Today's Sprint via AI..." : "Submitting final sprint..."}
-        </p>
-      </div>
-    );
-  }
-
-  // ── Error Screen ──
-  if (phase === "error") {
-    return (
-      <div className="flex min-h-screen bg-slate-950 items-center justify-center p-4">
-        <div className="bg-slate-900 border border-rose-500/20 rounded-2xl p-6 text-center space-y-4 max-w-sm w-full">
-          <AlertCircle className="w-10 h-10 text-rose-400 mx-auto" />
-          <p className="text-slate-200 text-sm font-semibold">{error}</p>
-          <button
-            onClick={() => router.push("/student/skill-tests")}
-            className="w-full py-2.5 bg-sky-500 hover:bg-sky-400 text-white font-bold text-sm rounded-xl transition-colors"
-          >
-            Back to Arena
-          </button>
-        </div>
-      </div>
-    );
-  }
-
-  // ── Completed / Locked Screen ──
-  if (phase === "done") {
-    return (
-      <div className="flex min-h-screen bg-slate-950 items-center justify-center px-4">
-        <motion.div
-          initial={{ opacity: 0, scale: 0.95 }}
-          animate={{ opacity: 1, scale: 1 }}
-          className="bg-slate-900/60 border border-emerald-500/20 rounded-3xl p-8 max-w-md w-full text-center space-y-5"
-        >
-          <div className="w-16 h-16 rounded-full bg-emerald-500/10 border border-emerald-500/20 flex items-center justify-center mx-auto">
-            <CheckCircle2 className="w-9 h-9 text-emerald-400" />
-          </div>
-          <div>
-            <h2 className="text-2xl font-black text-white">Today&apos;s Arena Complete! 🎉</h2>
-            <p className="text-slate-400 text-sm mt-1">
-              You&apos;ve completed today&apos;s challenge and locked in your sprint time. Come back tomorrow for a new sprint!
-            </p>
-          </div>
-
-          <div className="flex flex-col gap-2.5 pt-2">
-            <Link href="/student/skill-tests/leaderboard">
-              <button className="w-full flex items-center justify-center gap-2 py-3 bg-emerald-500/20 border border-emerald-500/30 hover:bg-emerald-500/30 text-emerald-400 font-bold rounded-xl transition-all text-sm">
-                <Trophy className="w-4 h-4" /> View Today&apos;s Leaderboard
-              </button>
-            </Link>
-            <button
-              onClick={() => router.push("/student/skill-tests")}
-              className="w-full py-3 bg-slate-800 hover:bg-slate-700 text-slate-300 font-semibold rounded-xl transition-colors text-sm"
-            >
-              Back to Arena
-            </button>
-          </div>
-        </motion.div>
-      </div>
-    );
-  }
-
-  // ── Countdown Screen ──
-  if (phase === "countdown") {
-    return (
-      <div className="min-h-screen bg-slate-950 flex flex-col">
-        <div className="flex items-center gap-3 p-4 border-b border-white/5">
-          <Target className="w-5 h-5 text-sky-400" />
-          <span className="font-bold text-white">Daily Arena Sprint</span>
-        </div>
-        <Countdown onDone={handleCountdownDone} />
-      </div>
-    );
-  }
-
-  if (!session || !session.questions[currentIdx]) return null;
-
-  const q: ArenaQuestion = session.questions[currentIdx];
-  const progress = ((currentIdx + 1) / session.total_questions) * 100;
-
   return (
-    <div className="min-h-screen bg-slate-950 text-slate-200 flex flex-col select-none">
-      <AnimatePresence>
-        {showXP && <XPFloat xp={floatXP} onDone={() => setShowXP(false)} />}
-      </AnimatePresence>
+    <div className="min-h-screen bg-slate-950 text-slate-200 px-4 sm:px-6 py-6 max-w-2xl mx-auto">
+      {/* Back link (only when not playing) */}
+      {(phase === "info" || phase === "completed_today" || phase === "error") && (
+        <Link href="/student/skill-tests" className="inline-flex items-center gap-1.5 text-sm text-slate-500 hover:text-slate-300 transition-colors mb-6">
+          <ArrowLeft className="w-4 h-4" />
+          Arena Home
+        </Link>
+      )}
 
-      {/* ── Top Header Bar ── */}
-      <div className="flex items-center justify-between p-4 border-b border-white/5 bg-slate-900/60 backdrop-blur-md sticky top-0 z-30">
-        <div className="flex items-center gap-2">
-          <Target className="w-4 h-4 text-sky-400" />
-          <span className="font-bold text-white text-sm">Daily Sprint</span>
-        </div>
+      <AnimatePresence mode="wait">
 
-        <div className="flex items-center gap-1 text-xs font-mono font-bold text-slate-400 bg-white/5 px-3 py-1.5 rounded-lg border border-white/5">
-          <span>Q</span>
-          <span className="text-white">{currentIdx + 1}</span>
-          <span className="text-slate-600">/</span>
-          <span className="text-slate-400">{session.total_questions}</span>
-        </div>
+        {/* ── Checking ── */}
+        {phase === "checking" && (
+          <motion.div key="checking" className="flex items-center justify-center min-h-[60vh]">
+            <Loader2 className="w-8 h-8 text-sky-400 animate-spin" />
+          </motion.div>
+        )}
 
-        {/* Master Timer Ring for entire daily sprint */}
-        <MasterDailyTimerRing total={totalGameTime} elapsed={totalElapsed} />
-      </div>
+        {/* ── Completed Today ── */}
+        {phase === "completed_today" && daily && (
+          <motion.div key="completed" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}>
+            <CompletedTodayScreen daily={daily} sessionId={completedSessionId || undefined} />
+          </motion.div>
+        )}
 
-      {/* ── Progress Bar ── */}
-      <div className="h-1 bg-slate-800">
-        <motion.div
-          className="h-full bg-gradient-to-r from-sky-500 to-indigo-500"
-          animate={{ width: `${progress}%` }}
-          transition={{ ease: "easeInOut", duration: 0.3 }}
-        />
-      </div>
-
-      {/* ── Question Content ── */}
-      <div className="flex-1 overflow-auto">
-        <div className="max-w-2xl mx-auto px-4 py-6 space-y-5">
-          <AnimatePresence mode="wait">
-            <motion.div
-              key={currentIdx}
-              initial={{ opacity: 0, x: 20 }}
-              animate={{ opacity: 1, x: 0 }}
-              exit={{ opacity: 0, x: -20 }}
-              transition={{ duration: 0.25 }}
-              className="space-y-5"
-            >
-              <div className="flex items-center gap-2">
-                <span className="text-[10px] font-bold tracking-widest text-sky-400 bg-sky-500/10 border border-sky-500/20 px-2.5 py-1 rounded-md uppercase">
-                  {q.skill}
-                </span>
-                <span className="text-xs text-slate-500">+{q.xp_reward} XP</span>
+        {/* ── Info / Pre-start ── */}
+        {phase === "info" && daily && (
+          <motion.div
+            key="info"
+            initial={{ opacity: 0, y: 12 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0, y: -12 }}
+            className="space-y-6"
+          >
+            <div>
+              <div className="flex items-center gap-2 mb-1">
+                <Trophy className="w-4 h-4 text-amber-400" />
+                <span className="text-xs font-bold tracking-widest text-amber-400 uppercase">Daily Arena</span>
               </div>
+              <h1 className="text-3xl font-black text-white">Today's Challenge</h1>
+              <p className="text-slate-400 mt-1 text-sm">Three games. ~5 minutes. Earn XP and climb the leaderboard.</p>
+            </div>
 
-              {q.scenario && (
-                <div className="bg-slate-900/80 border border-white/10 rounded-xl p-4">
-                  <p className="text-sm text-slate-300 leading-relaxed">{q.scenario}</p>
-                </div>
-              )}
-
-              {q.code_snippet && (
-                <div className="bg-slate-950 border border-white/10 rounded-xl overflow-hidden font-mono text-sm">
-                  <div className="flex items-center gap-2 px-4 py-2 bg-slate-900/60 border-b border-white/5">
-                    <div className="flex gap-1.5">
-                      <div className="w-3 h-3 rounded-full bg-rose-500/70" />
-                      <div className="w-3 h-3 rounded-full bg-amber-500/70" />
-                      <div className="w-3 h-3 rounded-full bg-emerald-500/70" />
+            {/* Three game cards */}
+            <div className="grid grid-cols-1 gap-3">
+              {GAME_STEPS.map((step, i) => {
+                const Icon = step.icon;
+                const xpMap = ["Up to 116 XP", "Up to 20 XP", "Up to 40 XP"];
+                const timeMap = ["90 seconds", "60 seconds", "75 seconds"];
+                return (
+                  <div key={step.key} className={`flex items-center gap-4 p-4 rounded-xl border ${step.bg}`}>
+                    <div className={`w-10 h-10 rounded-xl flex items-center justify-center shrink-0 ${step.bg}`}>
+                      <Icon className={`w-5 h-5 ${step.color}`} />
                     </div>
-                    <span className="text-xs text-slate-500">code snippet</span>
+                    <div className="flex-1">
+                      <p className="font-bold text-white text-sm">{step.label}</p>
+                      <p className="text-xs text-slate-400">{xpMap[i]} · {timeMap[i]}</p>
+                    </div>
+                    <span className="text-xs text-slate-600 font-mono">#{i + 1}</span>
                   </div>
-                  <pre className="p-4 text-slate-200 text-xs sm:text-sm leading-6 overflow-x-auto">
-                    {q.code_snippet}
-                  </pre>
-                </div>
-              )}
+                );
+              })}
+            </div>
 
-              <h2 className="text-lg sm:text-xl font-bold text-white leading-snug">
-                {q.question}
-              </h2>
-
-              <div className="space-y-2.5">
-                {q.options.map((opt) => {
-                  let cls =
-                    "border-white/10 text-slate-300 hover:bg-white/5 hover:border-sky-500/40";
-                  if (phase === "feedback" && feedback) {
-                    if (opt.key === feedback.correct_key)
-                      cls = "border-emerald-500/60 bg-emerald-500/10 text-emerald-400";
-                    else if (opt.key === selectedKey)
-                      cls = "border-rose-500/60 bg-rose-500/10 text-rose-400";
-                    else cls = "border-white/5 text-slate-600";
-                  } else if (opt.key === selectedKey) {
-                    cls = "border-sky-500 bg-sky-500/10 text-sky-400";
-                  }
-
-                  return (
-                    <button
-                      key={opt.key}
-                      onClick={() => handleAnswer(opt.key)}
-                      disabled={phase === "feedback"}
-                      className={`w-full flex items-center gap-4 px-5 py-4 rounded-xl border text-left text-sm transition-all ${cls} ${
-                        phase === "feedback" ? "cursor-default" : "cursor-pointer"
-                      }`}
-                    >
-                      <span className="w-7 h-7 shrink-0 flex items-center justify-center rounded-lg bg-white/5 text-sm font-bold">
-                        {opt.key}
-                      </span>
-                      <span className="leading-relaxed">{opt.text}</span>
-                      {phase === "feedback" &&
-                        feedback &&
-                        opt.key === feedback.correct_key && (
-                          <CheckCircle2 className="ml-auto w-5 h-5 text-emerald-400 shrink-0" />
-                        )}
-                      {phase === "feedback" &&
-                        feedback &&
-                        opt.key === selectedKey &&
-                        opt.key !== feedback.correct_key && (
-                          <XCircle className="ml-auto w-5 h-5 text-rose-400 shrink-0" />
-                        )}
-                    </button>
-                  );
-                })}
+            {/* Daily bonus callout */}
+            <div className="flex items-center gap-3 p-4 bg-amber-500/8 border border-amber-500/20 rounded-xl">
+              <Zap className="w-5 h-5 text-amber-400 shrink-0" />
+              <div>
+                <p className="text-sm font-bold text-white">+50 XP Completion Bonus</p>
+                <p className="text-xs text-slate-400">Awarded once when you finish all three games</p>
               </div>
+            </div>
 
-              {/* Feedback Banner */}
-              <AnimatePresence>
-                {phase === "feedback" && feedback && (
-                  <motion.div
-                    initial={{ opacity: 0, y: 8 }}
-                    animate={{ opacity: 1, y: 0 }}
-                    className={`rounded-xl p-4 border ${
-                      feedback.is_correct
-                        ? "bg-emerald-500/10 border-emerald-500/30"
-                        : "bg-rose-500/10 border-rose-500/30"
-                    }`}
-                  >
-                    <div className="flex items-center gap-2 mb-1.5">
-                      {feedback.is_correct ? (
-                        <>
-                          <CheckCircle2 className="w-4 h-4 text-emerald-400 shrink-0" />
-                          <span className="font-bold text-emerald-400 text-sm">
-                            Correct! +{feedback.xp_earned} XP
-                          </span>
-                        </>
-                      ) : (
-                        <>
-                          <XCircle className="w-4 h-4 text-rose-400 shrink-0" />
-                          <span className="font-bold text-rose-400 text-sm">
-                            Incorrect — 0 XP
-                          </span>
-                        </>
-                      )}
-                    </div>
-                    {feedback.explanation && (
-                      <p className="text-xs sm:text-sm text-slate-300 leading-relaxed">
-                        {feedback.explanation}
-                      </p>
-                    )}
-                  </motion.div>
-                )}
-              </AnimatePresence>
-            </motion.div>
-          </AnimatePresence>
-        </div>
-      </div>
-
-      {/* ── Bottom CTA ── */}
-      <div className="p-4 border-t border-white/5 bg-slate-900/60 backdrop-blur-md sticky bottom-0">
-        <div className="max-w-2xl mx-auto">
-          {phase === "question" && (
-            <p className="text-center text-xs text-slate-500">
-              Press keyboard keys <span className="font-mono text-slate-400">A · B · C · D</span> or click to select
-            </p>
-          )}
-          {phase === "feedback" && (
             <motion.button
-              initial={{ opacity: 0, y: 8 }}
-              animate={{ opacity: 1, y: 0 }}
-              onClick={handleNext}
-              className="w-full flex items-center justify-center gap-2 py-3.5 bg-sky-500 hover:bg-sky-400 active:scale-98 text-white font-bold rounded-xl transition-all shadow-lg shadow-sky-500/25"
+              whileTap={{ scale: 0.97 }}
+              onClick={handleStartArena}
+              className="w-full flex items-center justify-center gap-2 py-4 bg-sky-500 hover:bg-sky-400 text-white font-black text-base rounded-xl transition-colors shadow-xl shadow-sky-500/30 active:scale-95"
             >
-              <span>
-                {currentIdx + 1 >= session.total_questions
-                  ? "Finish Daily Sprint 🎉"
-                  : "Next Question"}
-              </span>
-              <ChevronRight className="w-4 h-4" />
+              <Play className="w-5 h-5 fill-current" />
+              Play Today's Arena
             </motion.button>
-          )}
-        </div>
-      </div>
+          </motion.div>
+        )}
+
+        {/* ── Loading ── */}
+        {phase === "loading" && (
+          <motion.div key="loading" className="flex flex-col items-center justify-center min-h-[60vh] gap-4">
+            <Loader2 className="w-10 h-10 text-sky-400 animate-spin" />
+            <p className="text-slate-400 text-sm">Generating your personalized arena…</p>
+            <p className="text-slate-600 text-xs">Targeting your skill gaps with Groq AI</p>
+          </motion.div>
+        )}
+
+        {/* ── Game 1: Spot the Bug ── */}
+        {phase === "game_spotbug" && session && (
+          <motion.div key="spotbug" initial={{ opacity: 0, x: 40 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: -40 }}>
+            <GameProgressBar currentPhase={phase} />
+            {(() => {
+              const q = getQuestion("spotbug");
+              if (!q?.spotbug_payload) return <div className="text-rose-400 text-sm">Spot the Bug question not found.</div>;
+              return (
+                <SpotBugGame
+                  questionId={q.question_id}
+                  question={q.question}
+                  cards={q.spotbug_payload.cards}
+                  timeLimit={q.time_limit}
+                  xpReward={q.xp_reward}
+                  onComplete={handleSpotBugComplete}
+                />
+              );
+            })()}
+          </motion.div>
+        )}
+
+        {/* ── Game 2: Order the Steps ── */}
+        {phase === "game_orderit" && session && (
+          <motion.div key="orderit" initial={{ opacity: 0, x: 40 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: -40 }}>
+            <GameProgressBar currentPhase={phase} />
+            {(() => {
+              const q = getQuestion("orderit");
+              if (!q?.orderit_payload) return <div className="text-rose-400 text-sm">Order the Steps question not found.</div>;
+              return (
+                <OrderItGame
+                  questionId={q.question_id}
+                  question={q.question}
+                  items={q.orderit_payload.items}
+                  timeLimit={q.time_limit}
+                  xpReward={q.xp_reward}
+                  onComplete={handleOrderItComplete}
+                />
+              );
+            })()}
+          </motion.div>
+        )}
+
+        {/* ── Game 3: Stack It ── */}
+        {phase === "game_stackit" && session && (
+          <motion.div key="stackit" initial={{ opacity: 0, x: 40 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: -40 }}>
+            <GameProgressBar currentPhase={phase} />
+            {(() => {
+              const q = getQuestion("stackit");
+              if (!q?.stackit_payload) return <div className="text-rose-400 text-sm">Stack It question not found.</div>;
+              return (
+                <StackItGame
+                  questionId={q.question_id}
+                  question={q.question}
+                  scenario={q.stackit_payload.scenario}
+                  zones={q.stackit_payload.zones}
+                  components={q.stackit_payload.components}
+                  timeLimit={q.time_limit}
+                  xpReward={q.xp_reward}
+                  difficulty={q.difficulty}
+                  onComplete={handleStackItComplete}
+                />
+              );
+            })()}
+          </motion.div>
+        )}
+
+        {/* ── Completing ── */}
+        {phase === "completing" && (
+          <motion.div key="completing" className="flex flex-col items-center justify-center min-h-[60vh] gap-4">
+            <Loader2 className="w-10 h-10 text-amber-400 animate-spin" />
+            <p className="text-slate-300 font-semibold">Calculating your score…</p>
+          </motion.div>
+        )}
+
+        {/* ── Done ── */}
+        {phase === "done" && result && (
+          <motion.div key="done" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}>
+            <DoneScreen
+              result={result}
+              onViewDetails={() =>
+                router.push(`/student/skill-tests/results/${session?.session_id}`)
+              }
+            />
+          </motion.div>
+        )}
+
+        {/* ── Error ── */}
+        {phase === "error" && (
+          <motion.div
+            key="error"
+            className="flex flex-col items-center justify-center min-h-[60vh] gap-4 text-center"
+          >
+            <AlertCircle className="w-12 h-12 text-rose-400" />
+            <h2 className="text-xl font-bold text-white">Something went wrong</h2>
+            <p className="text-slate-400 text-sm max-w-xs">{error || "Failed to load the Daily Arena."}</p>
+            <button
+              onClick={() => window.location.reload()}
+              className="px-5 py-2.5 bg-sky-500 text-white text-sm font-bold rounded-xl hover:bg-sky-400 transition-colors active:scale-95"
+            >
+              Try Again
+            </button>
+            <Link href="/student/skill-tests" className="text-xs text-slate-500 hover:text-slate-400">
+              ← Back to Arena
+            </Link>
+          </motion.div>
+        )}
+
+      </AnimatePresence>
     </div>
   );
 }

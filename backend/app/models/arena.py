@@ -1,43 +1,111 @@
-"""
-Arena models — Game Arena feature
-Separate from existing AssessmentQuestion / AssessmentSession (MCQ skill tests).
-"""
+
 from beanie import Document
 from pydantic import BaseModel, Field
 from typing import Optional, List, Literal, Dict, Any
 from datetime import datetime, date, timezone
 
 
-# ─── Embedded models ─────────────────────────────────────────────────────────
+# ─── Legacy stub — kept so database.py can import and register it ─────────────
+
+class DailyArena(Document):
+    """
+    V1 shared daily set — superseded by per-user ArenaSession in V2.
+    Kept as a Beanie document model so database.py initialisation doesn't break.
+    No new documents are written to this collection in V2.
+    """
+    date_str: str = ""
+    quick_fire_ids: List[str] = []
+    debug_rush_ids: List[str] = []
+    tech_decision_ids: List[str] = []
+    created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+
+    class Settings:
+        name = "daily_arenas"
+
+
+#  Embedded models (shared) 
 
 class ArenaOption(BaseModel):
-    key: str          # "A", "B", "C", "D"
+    key: str          # "A", "B", "C", "D"  — kept for legacy MCQ game types
     text: str
 
 
-# ─── Arena Question (stored in DB, correct_key NEVER sent to frontend) ───────
+#  Game-type payloads 
+
+class SpotBugCard(BaseModel):
+    id: str
+    snippet: str          # code line / statement shown on the card
+    is_buggy: bool
+    fix_explanation: str  # shown only when is_buggy is True; empty string for clean cards
+
+
+class SpotBugPayload(BaseModel):
+    cards: List[SpotBugCard]   # ~12 cards, mix of buggy and clean
+
+
+class OrderItItem(BaseModel):
+    id: str
+    label: str               # human-readable step description
+
+
+class OrderItPayload(BaseModel):
+    items: List[OrderItItem]          # shuffled on the client before display
+    correct_order: List[str]          # list of item ids in correct sequence — NEVER sent to client
+
+
+class StackItZone(BaseModel):
+    id: str
+    label: str               # e.g. "Correct Action", "Harmful / Irrelevant"
+
+
+class StackItComponent(BaseModel):
+    id: str
+    label: str               # e.g. "Add Cache Layer", "Reboot the Server"
+    correct_zone_id: str     # which zone this component belongs in — NEVER sent to client
+
+
+class StackItPayload(BaseModel):
+    scenario: str
+    zones: List[StackItZone]
+    components: List[StackItComponent]
+
+
+# Arena Question  
 
 class ArenaQuestion(Document):
-    game_type: Literal["quick_fire", "debug_rush", "tech_decision"]
-    skill: str                          # "javascript", "python", "react", "sql", etc.
+    game_type: Literal[
+        "spotbug", "orderit", "stackit",
+        "oddoneout", "guessoutput",          # V1.1 additions (not yet built)
+        "quick_fire", "debug_rush", "tech_decision",  # V1 legacy — kept for existing docs
+    ]
+    skill: str                          # e.g. "React Hooks", "API Design"
     difficulty: Literal["easy", "medium", "hard"] = "medium"
 
     # Common fields
     question: str
-    options: List[ArenaOption]
-    correct_key: str                    # "A" / "B" / "C" / "D"
     explanation: str = ""
-    xp_reward: int = 10                 # base XP for correct answer
-    time_limit: int = 30                # seconds per question
+    xp_reward: int = 20                 # base XP before accuracy/combo scaling
+    time_limit: int = 60                # seconds for the whole game (not per card)
     is_active: bool = True
 
-    # Debug Rush extras
-    code_snippet: Optional[str] = None  # the broken code
-    bug_line: Optional[int] = None      # 1-indexed line that contains the bug
-    bug_explanation: Optional[str] = None
+    #  V2 payloads 
+    spotbug_payload: Optional[SpotBugPayload] = None
+    orderit_payload: Optional[OrderItPayload] = None
+    stackit_payload: Optional[StackItPayload] = None
 
-    # Tech Decision extras
-    scenario: Optional[str] = None      # longer scenario text shown above options
+    # Legacy MCQ fields (quick_fire / debug_rush / tech_decision) 
+    options: List[ArenaOption] = []
+    correct_key: str = ""
+    code_snippet: Optional[str] = None
+    bug_line: Optional[int] = None
+    bug_explanation: Optional[str] = None
+    scenario: Optional[str] = None      # used by tech_decision (legacy) and stackit
+
+    #  Generation metadata 
+    generated_for: Optional[str] = None          # student_id this was generated for
+    targeted_skill_gap: Optional[str] = None     # the weak skill targeted, e.g. "React Hooks"
+    generated_at: Optional[datetime] = None
+    generation_model: Optional[str] = None       # e.g. "llama-3.3-70b-versatile"
 
     created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
 
@@ -45,21 +113,34 @@ class ArenaQuestion(Document):
         name = "arena_questions"
 
 
-# ─── Arena Session (one game run) ─────────────────────────────────────────────
+#  Answer record 
 
 class AnswerRecord(BaseModel):
     question_id: str
-    submitted_key: str
-    is_correct: bool
-    elapsed_ms: int
-    xp_earned: int
-    answered_at: datetime
+    # Default "" so V1 documents (written before game_type existed) still load
+    game_type: str = ""
+    is_correct: bool = False
+    accuracy: float = 0.0
+    elapsed_ms: int = 0
+    xp_earned: int = 0
+    answered_at: Optional[datetime] = None
+    # Legacy MCQ
+    submitted_key: str = ""
+    # V2 raw payloads (for audit / anti-cheat logging; not shown to user)
+    raw_calls: Optional[List[Dict[str, Any]]] = None        # spotbug
+    raw_user_order: Optional[List[str]] = None              # orderit
+    raw_placements: Optional[List[Dict[str, Any]]] = None   # stackit
 
+
+#  Arena Session
 
 class ArenaSession(Document):
     session_id: str                         # UUID
     student_id: str
-    game_type: Literal["quick_fire", "debug_rush", "tech_decision", "daily"]
+    game_type: Literal[
+        "spotbug", "orderit", "stackit", "daily",
+        "quick_fire", "debug_rush", "tech_decision",  # V1 legacy
+    ]
     question_ids: List[str]                 # ordered list of ArenaQuestion IDs
     answers: List[AnswerRecord] = []
     status: Literal["active", "completed", "expired"] = "active"
@@ -67,37 +148,21 @@ class ArenaSession(Document):
     # Computed on completion
     total_xp: int = 0
     correct_count: int = 0
-    accuracy: float = 0.0                   # 0.0–1.0
-    total_time_ms: int = 0                  # total elapsed time in milliseconds
+    accuracy: float = 0.0
+    total_time_ms: int = 0
 
     started_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
-    expires_at: datetime                    # started_at + time_limit_per_q * n + buffer
+    expires_at: datetime
     completed_at: Optional[datetime] = None
 
-    # For Daily Arena: links to individual sub-sessions
-    sub_session_ids: List[str] = []
-    daily_date: Optional[str] = None        # "YYYY-MM-DD"
+    # Daily Arena fields
+    daily_date: Optional[str] = None        # "YYYY-MM-DD" — for per-user daily sessions
 
     class Settings:
         name = "arena_sessions"
 
 
-# ─── Daily Arena configuration ────────────────────────────────────────────────
-
-class DailyArena(Document):
-    date_str: str                           # "YYYY-MM-DD"
-    quick_fire_ids: List[str] = []          # ArenaQuestion IDs
-    debug_rush_ids: List[str] = []
-    tech_decision_ids: List[str] = []
-    total_xp: int = 150
-    is_active: bool = True
-    created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
-
-    class Settings:
-        name = "arena_daily_challenges"
-
-
-# ─── Daily Arena completion record (one per student per day) ──────────────────
+#  Daily Arena completion record
 
 class ArenaAttempt(Document):
     student_id: str
@@ -105,14 +170,14 @@ class ArenaAttempt(Document):
     session_ids: List[str] = []
     total_xp: int = 0
     accuracy: float = 0.0
-    total_time_ms: int = 0                  # total time taken to complete the daily arena
+    total_time_ms: int = 0
     completed_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
 
     class Settings:
         name = "arena_attempts"
 
 
-# ─── Per-student arena stats (XP, level, streak, skill scores) ───────────────
+#  Per-student arena stats
 
 class SkillScoreEntry(BaseModel):
     correct: int = 0
@@ -126,17 +191,17 @@ class ArenaUserStats(Document):
     # XP & Level
     total_xp: int = 0
     weekly_xp: int = 0
-    weekly_xp_reset_at: Optional[datetime] = None   # date of last Monday reset
+    weekly_xp_reset_at: Optional[datetime] = None
 
-    # Streak (Arena-specific — not the general StudentStreak)
+    # Streak
     arena_streak: int = 0
     longest_arena_streak: int = 0
     last_arena_date: Optional[str] = None   # "YYYY-MM-DD"
 
-    # Skill breakdown  {"javascript": {"correct": 10, "total": 15, "score": 66.7}}
+    # Skill breakdown  {"React Hooks": {"correct": 8, "total": 12, "score": 66.7}}
     skill_scores: Dict[str, Any] = {}
 
-    # Badges earned  ["speed_demon", "7_day_warrior", ...]
+    # Badges earned
     badges_earned: List[str] = []
 
     updated_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
@@ -153,21 +218,25 @@ class ArenaUserStats(Document):
         return doc
 
 
-# ─── Badge definitions ────────────────────────────────────────────────────────
+#  Badge definitions
 
 class ArenaBadge(Document):
-    badge_id: str                           # "speed_demon", "7_day_warrior", etc.
+    badge_id: str
     name: str
     description: str
     requirement_type: Literal[
-        "questions_under_5s",               # Answer N questions < 5 s
-        "arena_streak",                     # Maintain N-day streak
-        "debug_rush_solved",                # Solve N Debug Rush challenges
-        "tech_decision_solved",             # Solve N Tech Decision challenges
-        "perfect_run",                      # 100% accuracy in one Arena
-        "weekly_champion",                  # Finish #1 on weekly leaderboard
+        "questions_under_5s",
+        "arena_streak",
+        "spotbug_solved",
+        "stackit_solved",
+        "orderit_solved",
+        "perfect_run",
+        "weekly_champion",
+        # V1 legacy — kept so existing badge records don't break
+        "debug_rush_solved",
+        "tech_decision_solved",
     ]
-    requirement_value: int                  # threshold number
+    requirement_value: int
     icon: str = "🏆"
     is_active: bool = True
 
@@ -184,7 +253,7 @@ class UserBadge(Document):
         name = "arena_user_badges"
 
 
-# ─── Level helper (pure function, not a model) ───────────────────────────────
+#  Level helper
 
 def get_level_info(total_xp: int) -> dict:
     """
@@ -193,7 +262,7 @@ def get_level_info(total_xp: int) -> dict:
     """
     level = 1
     remaining = total_xp
-    xp_for_current = 100  # XP needed to pass level 1 → 2
+    xp_for_current = 100
 
     while remaining >= xp_for_current:
         remaining -= xp_for_current
@@ -210,7 +279,7 @@ def get_level_info(total_xp: int) -> dict:
 
 def calculate_speed_bonus(elapsed_ms: int, time_limit_s: int) -> int:
     """
-    Returns speed bonus XP (0–15).
+    Returns speed bonus XP (0–15) for legacy MCQ game types.
     Under 25% of time limit → +15
     Under 50%              → +10
     Under 75%              → +5
@@ -224,3 +293,95 @@ def calculate_speed_bonus(elapsed_ms: int, time_limit_s: int) -> int:
     if ratio < 0.75:
         return 5
     return 0
+
+
+#  V2 Scoring functions (run server-side, never client-side)    
+
+def score_spot_bug(question: ArenaQuestion, calls: List[Dict[str, Any]]) -> Dict[str, Any]:
+    """
+    calls: [{"card_id": str, "user_said_buggy": bool, "time_taken_ms": int}]
+    Returns {"accuracy": float, "xp": int, "correct": int, "total": int}
+    """
+    if not question.spotbug_payload:
+        return {"accuracy": 0.0, "xp": 0, "correct": 0, "total": 0}
+
+    card_map = {c.id: c for c in question.spotbug_payload.cards}
+    correct = 0
+    combo = 0
+    xp = 0
+    total = len(calls)
+
+    for call in calls:
+        card = card_map.get(call.get("card_id"))
+        if not card:
+            combo = 0
+            continue
+        is_correct = call.get("user_said_buggy") == card.is_buggy
+        if is_correct:
+            correct += 1
+            combo += 1
+            combo_bonus = min((combo - 3) * 2, 20) if combo > 3 else 0
+            xp += 8 + combo_bonus
+        else:
+            combo = 0
+
+    accuracy = correct / total if total > 0 else 0.0
+    return {"accuracy": accuracy, "xp": round(xp), "correct": correct, "total": total}
+
+
+def score_order_it(question: ArenaQuestion, user_order: List[str]) -> Dict[str, Any]:
+    """
+    user_order: array of item ids in the order the user placed them.
+    Returns {"accuracy": float, "xp": int, "correct_positions": int, "total": int}
+    """
+    if not question.orderit_payload:
+        return {"accuracy": 0.0, "xp": 0, "correct_positions": 0, "total": 0}
+
+    correct_order = question.orderit_payload.correct_order
+    total = len(correct_order)
+    correct_positions = sum(
+        1 for i, item_id in enumerate(user_order)
+        if i < total and item_id == correct_order[i]
+    )
+    accuracy = correct_positions / total if total > 0 else 0.0
+    is_fully_correct = accuracy == 1.0
+
+    xp = (
+        question.xp_reward
+        if is_fully_correct
+        else round(question.xp_reward * accuracy * 0.5)
+    )
+    return {
+        "accuracy": accuracy,
+        "xp": xp,
+        "correct_positions": correct_positions,
+        "total": total,
+    }
+
+
+def score_stack_it(question: ArenaQuestion, placements: List[Dict[str, Any]]) -> Dict[str, Any]:
+    """
+    placements: [{"component_id": str, "placed_zone_id": str}]
+    Returns {"accuracy": float, "xp": int, "correct": int, "total": int}
+    """
+    if not question.stackit_payload:
+        return {"accuracy": 0.0, "xp": 0, "correct": 0, "total": 0}
+
+    component_map = {c.id: c for c in question.stackit_payload.components}
+    total = len(question.stackit_payload.components)
+    correct = 0
+
+    for placement in placements:
+        component = component_map.get(placement.get("component_id"))
+        if component and component.correct_zone_id == placement.get("placed_zone_id"):
+            correct += 1
+
+    accuracy = correct / total if total > 0 else 0.0
+    difficulty_multiplier = {"easy": 1, "medium": 1.5, "hard": 2}.get(question.difficulty, 1)
+
+    return {
+        "accuracy": accuracy,
+        "xp": round(question.xp_reward * accuracy * difficulty_multiplier),
+        "correct": correct,
+        "total": total,
+    }

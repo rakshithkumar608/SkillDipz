@@ -1,6 +1,51 @@
 import api from "./api";
 
-// ─── Types ────────────────────────────────────────────────────────────────────
+
+
+export interface SpotBugCardOut {
+  id: string;
+  snippet: string;
+  // is_buggy intentionally absent — revealed only after submit
+}
+
+export interface SpotBugCardReveal {
+  id: string;
+  is_buggy: boolean;
+  fix_explanation: string;
+}
+
+export interface SpotBugPayloadOut {
+  cards: SpotBugCardOut[];
+}
+
+export interface OrderItItemOut {
+  id: string;
+  label: string;
+}
+
+export interface OrderItPayloadOut {
+  items: OrderItItemOut[];
+  // correct_order intentionally absent
+}
+
+export interface StackItZoneOut {
+  id: string;
+  label: string;
+}
+
+export interface StackItComponentOut {
+  id: string;
+  label: string;
+  // correct_zone_id intentionally absent
+}
+
+export interface StackItPayloadOut {
+  scenario: string;
+  zones: StackItZoneOut[];
+  components: StackItComponentOut[];
+}
+
+//  Shared Types 
 
 export interface ArenaOption {
   key: string;
@@ -9,11 +54,18 @@ export interface ArenaOption {
 
 export interface ArenaQuestion {
   question_id: string;
+  game_type: string;
   question: string;
-  options: ArenaOption[];
+  skill: string;
+  difficulty: string;
   time_limit: number;
   xp_reward: number;
-  skill: string;
+  // V2 payloads
+  spotbug_payload?: SpotBugPayloadOut | null;
+  orderit_payload?: OrderItPayloadOut | null;
+  stackit_payload?: StackItPayloadOut | null;
+  // Legacy MCQ
+  options?: ArenaOption[] | null;
   code_snippet?: string | null;
   scenario?: string | null;
 }
@@ -26,6 +78,48 @@ export interface StartSessionResponse {
   total_questions: number;
 }
 
+//  V2 Submit Types 
+
+export interface SpotBugCall {
+  card_id: string;
+  user_said_buggy: boolean;
+  time_taken_ms: number;
+}
+
+export interface SpotBugAnswerResponse {
+  accuracy: number;
+  xp_earned: number;
+  correct_count: number;
+  total_cards: number;
+  card_reveals: SpotBugCardReveal[];
+  explanation: string;
+}
+
+export interface OrderItAnswerResponse {
+  accuracy: number;
+  xp_earned: number;
+  correct_positions: number;
+  total_items: number;
+  correct_order: string[];
+  explanation: string;
+}
+
+export interface StackItPlacement {
+  component_id: string;
+  placed_zone_id: string;
+}
+
+export interface StackItAnswerResponse {
+  accuracy: number;
+  xp_earned: number;
+  correct_count: number;
+  total_components: number;
+  correct_placements: { component_id: string; correct_zone_id: string }[];
+  explanation: string;
+}
+
+//  Legacy MCQ Submit Types 
+
 export interface SubmitAnswerResponse {
   is_correct: boolean;
   correct_key: string;
@@ -34,13 +128,25 @@ export interface SubmitAnswerResponse {
   speed_bonus: number;
 }
 
+//  Complete Session 
+
+export interface ArenaGameResult {
+  game_type: string;
+  skill: string;
+  accuracy: number;
+  xp_earned: number;
+  question_id: string;
+}
+
 export interface AnswerSummary {
   question_id: string;
   question: string;
   skill: string;
+  game_type: string;
   submitted_key: string;
   correct_key: string;
   is_correct: boolean;
+  accuracy: number;
   xp_earned: number;
   explanation: string;
 }
@@ -63,24 +169,31 @@ export interface CompleteSessionResponse {
   total_time_ms?: number;
   total_time_str?: string | null;
   answers: AnswerSummary[];
+  game_results: ArenaGameResult[];
   new_total_xp: number;
   level_info: LevelInfo;
   leveled_up: boolean;
   old_level: number;
   arena_streak: number;
   badges_earned: string[];
+  daily_bonus_xp?: number;
 }
+
+//  Daily Arena 
 
 export interface DailyArenaOut {
   date_str: string;
   total_xp: number;
-  quick_fire_count: number;
-  debug_rush_count: number;
-  tech_decision_count: number;
+  spotbug_ready: boolean;
+  orderit_ready: boolean;
+  stackit_ready: boolean;
   already_completed: boolean;
   completed_at?: string | null;
   time_taken_str?: string | null;
+  next_reset_at?: string | null;
 }
+
+//  Arena Home 
 
 export interface SkillScoreOut {
   skill: string;
@@ -119,6 +232,8 @@ export interface ArenaHomeResponse {
   skill_scores: SkillScoreOut[];
   completed_game_types_today?: string[];
 }
+
+//  Leaderboard 
 
 export interface ArenaLeaderboardEntry {
   rank: number;
@@ -176,7 +291,7 @@ export interface SkillsResponse {
   weakest_skill?: string | null;
 }
 
-// ─── API Functions ────────────────────────────────────────────────────────────
+//  API Functions 
 
 export const getArenaHome = async (): Promise<ArenaHomeResponse> => {
   const { data } = await api.get<ArenaHomeResponse>("/arena/home");
@@ -188,8 +303,56 @@ export const getDailyArena = async (): Promise<DailyArenaOut> => {
   return data;
 };
 
+export const startDailyArena = async (): Promise<StartSessionResponse> => {
+  const { data } = await api.post<StartSessionResponse>("/arena/daily/start", {});
+  return data;
+};
+
+export const completeDailyArena = async (
+  session_id: string
+): Promise<CompleteSessionResponse> => {
+  const { data } = await api.post<CompleteSessionResponse>("/arena/daily/complete", {
+    session_id,
+  });
+  return data;
+};
+
+//  V2 Game Answer Submitters 
+
+export const submitSpotBugAnswer = async (payload: {
+  session_id: string;
+  question_id: string;
+  calls: SpotBugCall[];
+  elapsed_ms: number;
+}): Promise<SpotBugAnswerResponse> => {
+  const { data } = await api.post<SpotBugAnswerResponse>("/arena/answer/spotbug", payload);
+  return data;
+};
+
+export const submitOrderItAnswer = async (payload: {
+  session_id: string;
+  question_id: string;
+  user_order: string[];
+  elapsed_ms: number;
+}): Promise<OrderItAnswerResponse> => {
+  const { data } = await api.post<OrderItAnswerResponse>("/arena/answer/orderit", payload);
+  return data;
+};
+
+export const submitStackItAnswer = async (payload: {
+  session_id: string;
+  question_id: string;
+  placements: StackItPlacement[];
+  elapsed_ms: number;
+}): Promise<StackItAnswerResponse> => {
+  const { data } = await api.post<StackItAnswerResponse>("/arena/answer/stackit", payload);
+  return data;
+};
+
+//  Legacy MCQ 
+
 export const startSession = async (
-  game_type: "quick_fire" | "debug_rush" | "tech_decision",
+  game_type: "quick_fire" | "debug_rush" | "tech_decision" | "spotbug" | "orderit" | "stackit",
   difficulty?: "easy" | "medium" | "hard"
 ): Promise<StartSessionResponse> => {
   const { data } = await api.post<StartSessionResponse>("/arena/start", {
@@ -213,20 +376,6 @@ export const completeSession = async (
   session_id: string
 ): Promise<CompleteSessionResponse> => {
   const { data } = await api.post<CompleteSessionResponse>("/arena/complete", {
-    session_id,
-  });
-  return data;
-};
-
-export const startDailyArena = async (): Promise<StartSessionResponse> => {
-  const { data } = await api.post<StartSessionResponse>("/arena/daily/start", {});
-  return data;
-};
-
-export const completeDailyArena = async (
-  session_id: string
-): Promise<CompleteSessionResponse> => {
-  const { data } = await api.post<CompleteSessionResponse>("/arena/daily/complete", {
     session_id,
   });
   return data;
@@ -260,9 +409,12 @@ export const getSkillBreakdown = async (): Promise<SkillsResponse> => {
   return data;
 };
 
-// ─── Helpers ──────────────────────────────────────────────────────────────────
+//  Helpers 
 
 export const GAME_TYPE_LABELS: Record<string, string> = {
+  spotbug: "Spot the Bug",
+  orderit: "Order the Steps",
+  stackit: "Stack It",
   quick_fire: "Quick Fire",
   debug_rush: "Debug Rush",
   tech_decision: "Tech Decision",
@@ -270,24 +422,33 @@ export const GAME_TYPE_LABELS: Record<string, string> = {
 };
 
 export const GAME_TYPE_DESCRIPTIONS: Record<string, string> = {
-  quick_fire: "Fast technical questions. 10 Qs. Prove your fundamentals.",
-  debug_rush: "Spot the bug before the clock beats you. 10 snippets.",
-  tech_decision: "Make the right engineering call. 10 real scenarios.",
+  spotbug: "Swipe through code snippets — call out the bugs before the timer runs out.",
+  orderit: "Drag the shuffled steps into the correct sequence.",
+  stackit: "Drag component chips into the right architecture zones.",
 };
 
 export const GAME_TYPE_XP: Record<string, string> = {
-  quick_fire: "10 XP / question",
-  debug_rush: "20 XP / question",
-  tech_decision: "20 XP / question",
+  spotbug: "Up to 116 XP (combo bonuses)",
+  orderit: "Up to 20 XP (partial credit)",
+  stackit: "Up to 40 XP (difficulty ×2)",
 };
 
 export const GAME_TYPE_TIME: Record<string, string> = {
-  quick_fire: "~3 minutes",
-  debug_rush: "~4 minutes",
-  tech_decision: "~5 minutes",
+  spotbug: "~90 seconds",
+  orderit: "~60 seconds",
+  stackit: "~75 seconds",
+};
+
+export const GAME_TYPE_ICONS: Record<string, string> = {
+  spotbug: "bug",
+  orderit: "list-ordered",
+  stackit: "layers",
 };
 
 export const SKILL_DISPLAY: Record<string, string> = {
+  "JavaScript Fundamentals": "JavaScript",
+  "React Hooks": "React",
+  "API Design": "API Design",
   javascript: "JavaScript",
   react: "React",
   python: "Python",
@@ -297,3 +458,15 @@ export const SKILL_DISPLAY: Record<string, string> = {
   security: "Security",
   devops: "DevOps",
 };
+
+/** Format ms countdown to "Xh Ym" or "Xm Ys" */
+export function formatCountdown(targetIso: string): string {
+  const diff = new Date(targetIso).getTime() - Date.now();
+  if (diff <= 0) return "now";
+  const h = Math.floor(diff / 3600000);
+  const m = Math.floor((diff % 3600000) / 60000);
+  const s = Math.floor((diff % 60000) / 1000);
+  if (h > 0) return `${h}h ${m}m`;
+  if (m > 0) return `${m}m ${s}s`;
+  return `${s}s`;
+}
