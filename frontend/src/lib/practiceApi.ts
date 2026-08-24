@@ -2,8 +2,8 @@ import api from "./api";
 
 //  Student Profile helper (for role + CF handle) 
 export const getMyProfile = async () => {
-  const { data } = await api.get("/student-profile/me");
-  return data as { target_roles: string; cf_handle: string | null };
+  const { data } = await api.get("/students/me/profile");
+  return data as { target_role?: string; target_roles?: string; cf_handle: string | null };
 };
 
 //  MCQ Skill Tests 
@@ -21,6 +21,9 @@ export interface AssessmentTopic {
   can_retake: boolean;
   cooldown_until: string | null;
   attempt_count: number;
+  is_unlocked?: boolean;
+  lock_reason?: string | null;
+  roadmap_progress_pct?: number;
 }
 
 export interface MCQOption {
@@ -244,8 +247,132 @@ export const fetchWeakSkills = async (): Promise<WeakSkill[]> => {
   }
 };
 
-// Real Dynamic Coding Arena Problems (Served by Skill Gap) 
+// ─── LeetCode AI Coding Arena Types & APIs ────────────────────────────────────
 
+export interface LeetCodeProblemSummary {
+  question_id: string;
+  title: string;
+  difficulty: "EASY" | "MEDIUM" | "HARD";
+  concept: string;
+  topics: string[];
+  skill_tags: string[];
+  acceptance_rate: number;
+  is_solved: boolean;
+  is_unlocked?: boolean;
+  lock_reason?: string | null;
+  examples_count: number;
+  test_cases_count: number;
+}
+
+export interface LeetCodeProblemDetail {
+  question_id: string;
+  title: string;
+  difficulty: "EASY" | "MEDIUM" | "HARD";
+  concept: string;
+  topics: string[];
+  skill_tags: string[];
+  description: string;
+  constraints: string[];
+  examples: { input: string; output: string; explanation?: string }[];
+  starter_code: string;
+  starter_code_templates: Record<string, string>;
+  hints: string[];
+  acceptance_rate: number;
+  is_solved: boolean;
+  public_test_cases: { input: any[]; expected: any }[];
+}
+
+export interface SkillMeta {
+  is_unlocked: boolean;
+  lock_reason: string | null;
+  progress_pct: number;
+}
+
+export interface LeetCodeProblemsResponse {
+  skill: string;
+  has_skill_gap?: boolean;
+  student_skills?: string[];
+  skills_meta?: Record<string, SkillMeta>;
+  is_locked?: boolean;
+  lock_reason?: string | null;
+  total: number;
+  page: number;
+  limit: number;
+  total_solved: number;
+  concepts: string[];
+  problems: LeetCodeProblemSummary[];
+}
+
+export interface TestCaseResult {
+  case_index: number;
+  passed: boolean;
+  input: any[];
+  expected: any;
+  actual: any;
+  runtime_ms: number;
+  error?: string | null;
+}
+
+export interface CodeExecutionResponse {
+  status: "ACCEPTED" | "WRONG_ANSWER" | "RUNTIME_ERROR" | "TIME_LIMIT_EXCEEDED";
+  message: string;
+  total_cases: number;
+  passed_cases: number;
+  runtime_ms: number;
+  results: TestCaseResult[];
+  stdout?: string;
+  already_credited?: boolean;
+}
+
+export const getLeetCodeProblems = async (params: {
+  skill?: string;
+  difficulty?: string;
+  concept?: string;
+  search?: string;
+  page?: number;
+  limit?: number;
+}): Promise<LeetCodeProblemsResponse> => {
+  const { data } = await api.get<LeetCodeProblemsResponse>("/practice/leetcode-problems", {
+    params,
+  });
+  return data;
+};
+
+export const getLeetCodeProblemDetails = async (
+  questionId: string
+): Promise<LeetCodeProblemDetail> => {
+  const { data } = await api.get<LeetCodeProblemDetail>(
+    `/practice/leetcode-problems/${questionId}`
+  );
+  return data;
+};
+
+export const runStudentCode = async (payload: {
+  question_id: string;
+  language: string;
+  code: string;
+  custom_test_cases?: { input: any[]; expected: any }[];
+}): Promise<CodeExecutionResponse> => {
+  const { data } = await api.post<CodeExecutionResponse>(
+    "/practice/run-code",
+    payload
+  );
+  return data;
+};
+
+export const submitStudentCode = async (payload: {
+  question_id: string;
+  language: string;
+  code: string;
+}): Promise<CodeExecutionResponse> => {
+  const { data } = await api.post<CodeExecutionResponse>(
+    "/practice/submit-code",
+    payload
+  );
+  return data;
+};
+
+// Legacy Arena Compatibility
 export interface CodingArenaProblem {
   id: string;
   title: string;
@@ -280,3 +407,4 @@ export const submitSolvedProblem = async (problem: {
   const { data } = await api.post("/practice/arena-problems/submit-solved", problem);
   return data;
 };
+

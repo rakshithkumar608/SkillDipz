@@ -49,35 +49,83 @@ async def _get_student_info(student_id: str, student: Optional[StudentProfile] =
     return student_skills, student_score or 0.0, student_role or ""
 
 
+async def _get_company_requirements(company: CompanyProfile) -> Tuple[List[str], float, List[str]]:
+    """
+    Derives real requirements dynamically:
+    1. Looks up active JobRequirement docs for this company to get live required skills, nice_to_have skills, and min_score.
+    2. Falls back to company.must_have_skills, company.nice_to_have_skills, and company.min_score.
+    """
+    comp_slug = company.name.lower().strip().replace(" ", "-") if company.name else ""
+    query_ids = list(set(filter(None, [
+        company.company_id,
+        comp_slug,
+        company.name,
+    ])))
+
+    jobs = await JobRequirement.find({
+        "company_id": {"$in": query_ids},
+        "status": "ACTIVE",
+    }).to_list()
+
+    required_skills = list(company.must_have_skills or [])
+    nice_to_have = list(company.nice_to_have_skills or [])
+    min_score = float(company.min_score or 0.0)
+
+    if jobs:
+        job_skills = []
+        job_nice = []
+        job_min_scores = []
+        for j in jobs:
+            if j.required_skills:
+                job_skills.extend(j.required_skills)
+            if j.nice_to_have:
+                job_nice.extend(j.nice_to_have)
+            if j.min_score:
+                job_min_scores.append(float(j.min_score))
+
+        if job_skills:
+            seen = set()
+            required_skills = [s for s in job_skills if not (s.lower() in seen or seen.add(s.lower()))]
+        if job_nice:
+            seen_nice = set()
+            nice_to_have = [s for s in job_nice if not (s.lower() in seen_nice or seen_nice.add(s.lower()))]
+        if job_min_scores:
+            min_score = max(job_min_scores)
+
+    return required_skills, min_score, nice_to_have
+
+
 def _compute_match(
     student_skills: List[str],
     student_score: float,
-    company: CompanyProfile,
+    must_have_skills: List[str],
+    min_score: float,
 ) -> Dict[str, Any]:
-    student_skill_set = {s.lower().strip() for s in student_skills}
-    must_have_set = {s.lower().strip() for s in company.must_have_skills}
+    student_skill_set = {s.lower().strip() for s in student_skills if s}
+    must_have_set = {s.lower().strip() for s in must_have_skills if s}
 
     if must_have_set:
         matched = student_skill_set & must_have_set
-        matched_skills = [s for s in company.must_have_skills if s.lower().strip() in matched]
-        missing_skills = [s for s in company.must_have_skills if s.lower().strip() not in matched]
-        skill_match_pct = (len(matched) / len(must_have_set)) * 100
+        matched_skills = [s for s in must_have_skills if s.lower().strip() in matched]
+        missing_skills = [s for s in must_have_skills if s.lower().strip() not in matched]
+        skill_match_pct = (len(matched) / len(must_have_set)) * 100.0
     else:
         matched_skills = []
         missing_skills = []
-        skill_match_pct = 100.0
+        # Strictly 0% if no matched skills
+        skill_match_pct = 0.0
 
-    if company.min_score > 0:
-        score_readiness_pct = min((student_score / company.min_score) * 100, 100.0)
+    if min_score > 0:
+        score_readiness_pct = min((student_score / min_score) * 100.0, 100.0)
     else:
-        score_readiness_pct = 100.0
+        score_readiness_pct = 0.0
 
     match_score = (skill_match_pct * 0.6) + (score_readiness_pct * 0.4)
 
-    score_ok = student_score >= company.min_score
-    if score_ok and not missing_skills:
+    score_ok = (student_score >= min_score) if min_score > 0 else False
+    if score_ok and not missing_skills and skill_match_pct == 100.0:
         status = EligibilityStatus.FULL_MATCH
-    elif score_ok and missing_skills:
+    elif missing_skills or skill_match_pct < 100.0:
         status = EligibilityStatus.SKILL_GAP
     else:
         status = EligibilityStatus.NOT_YET
@@ -125,7 +173,8 @@ async def select_target_company(
     )
 
     student_skills, student_score, _ = await _get_student_info(student_id, student)
-    match_result = _compute_match(student_skills, student_score, company)
+    req_skills, min_sc, _ = await _get_company_requirements(company)
+    match_result = _compute_match(student_skills, student_score, req_skills, min_sc)
 
     now = datetime.now(timezone.utc)
     if existing:
@@ -155,23 +204,50 @@ async def select_target_company(
         )
         await record.insert()
 
+    # ── Update StudentProfile target_company field ─────────────────────────
+    if student:
+        try:
+            student.target_company = company.name
+            await student.save()
+        except Exception as _sp_err:
+            logger.warning(f"Failed to update student target_company: {_sp_err}")
+
     # ── Notify company via WebSocket (real-time toast on their dashboard) ──────
     try:
+        import re
+        from app.models.company import Company as CompanyDoc
         from app.models.user import User as UserModel
-        company_user = await UserModel.find_one(
-            UserModel.company_name == company_id,
-            UserModel.role == "COMPANY",
-        )
-        if company_user:
-            student_name = student.name or "A student"
+
+        target_ws_ids = []
+        # 1. Company collection lookup
+        comp_docs = await CompanyDoc.find({
+            "company_name": {"$regex": f"^{re.escape(company.name)}$", "$options": "i"}
+        }).to_list()
+        for cd in comp_docs:
+            target_ws_ids.append(str(cd.id))
+
+        # 2. User collection lookup
+        company_users = await UserModel.find({
+            "$or": [
+                {"company_name": {"$regex": f"^{re.escape(company.name)}$", "$options": "i"}},
+                {"company_name": company_id},
+            ],
+            "role": "COMPANY",
+        }).to_list()
+        for cu in company_users:
+            target_ws_ids.append(str(cu.id))
+
+        student_name = (student.name if student else None) or "A student"
+        for tid in set(target_ws_ids):
             await ws_manager.broadcast(
-                str(company_user.id),
+                tid,
                 "new_candidate",
                 {
                     "student_id": student_id,
                     "student_name": student_name,
                     "skill_match_pct": round(match_result["skill_match_pct"], 1),
                     "company_id": company_id,
+                    "company_name": company.name,
                 },
             )
     except Exception as _ws_err:
@@ -281,7 +357,8 @@ async def get_target_companies(student_id: str, force_refresh: bool = False) -> 
         if not role_matches:
             continue
 
-        match_result = _compute_match(student_skills, student_score, company)
+        req_skills, min_sc, nice_skills = await _get_company_requirements(company)
+        match_result = _compute_match(student_skills, student_score, req_skills, min_sc)
 
         active_openings = await JobRequirement.find(
             JobRequirement.company_id == company.company_id,
@@ -296,7 +373,7 @@ async def get_target_companies(student_id: str, force_refresh: bool = False) -> 
             "industry": company.industry,
             "website": company.website,
             "headquarters": company.headquarters,
-            "min_score": company.min_score,
+            "min_score": min_sc,
             "your_score": student_score,
             "eligible": match_result["eligible"],
             "eligibility_status": match_result["eligibility_status"],
@@ -310,16 +387,16 @@ async def get_target_companies(student_id: str, force_refresh: bool = False) -> 
             "match_rank": 0,
         }
 
-        if not match_result["eligible"] and student_score < company.min_score:
+        if not match_result["eligible"] and student_score < min_sc:
             not_yet_eligible.append({
                 "company_id": company.company_id,
                 "name": company.name,
                 "logo_emoji": company.logo_emoji,
                 "logo_url": company.logo_url,
                 "industry": company.industry,
-                "min_score": company.min_score,
+                "min_score": min_sc,
                 "your_score": student_score,
-                "score_gap": round(company.min_score - student_score, 1),
+                "score_gap": round(min_sc - student_score, 1),
                 "missing_skills": match_result["missing_skills"],
                 "active_openings": active_openings,
             })
@@ -390,7 +467,8 @@ async def on_score_or_profile_updated(student_id: str, event_bus) -> None:
         if not company:
             continue
 
-        match_result = _compute_match(student_skills, student_score, company)
+        req_skills, min_sc, _ = await _get_company_requirements(company)
+        match_result = _compute_match(student_skills, student_score, req_skills, min_sc)
         record.match_score = match_result["match_score"]
         record.skill_match_pct = match_result["skill_match_pct"]
         record.score_readiness_pct = match_result["score_readiness_pct"]
@@ -409,7 +487,7 @@ async def on_score_or_profile_updated(student_id: str, event_bus) -> None:
                 "company_name": company.name,
                 "notification_body": (
                     f"You are now eligible for {company.name}! "
-                    f"Your score ({student_score}) meets their requirement ({company.min_score})."
+                    f"Your score ({student_score}) meets their requirement ({min_sc})."
                 ),
                 "action_url": "/student/target-company",
             })
@@ -441,7 +519,8 @@ async def on_company_registered(company_id: str, event_bus) -> None:
 
     for student in matching_students:
         student_skills, student_score, _ = await _get_student_info(student.student_id, student)
-        match_result = _compute_match(student_skills, student_score, company)
+        req_skills, min_sc, _ = await _get_company_requirements(company)
+        match_result = _compute_match(student_skills, student_score, req_skills, min_sc)
 
         if match_result["match_score"] >= 50:
             await event_bus.publish("company.new_match", {

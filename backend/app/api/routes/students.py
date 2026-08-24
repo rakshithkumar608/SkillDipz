@@ -114,6 +114,10 @@ class SkillGapOut(BaseModel):
 async def get_my_score(current_user: User = Depends(get_current_user)):
     student_id = str(current_user.id)
     doc = await EmployabilityScore.get_or_create(student_id)
+    prof = await StudentProfile.find_one(StudentProfile.student_id == student_id)
+    if prof and prof.target_roles and doc.target_role != prof.target_roles:
+        doc.target_role = prof.target_roles
+        await doc.save()
 
     overall = doc.compute_overall()
     if overall != doc.overall_score:
@@ -131,7 +135,7 @@ async def get_my_score(current_user: User = Depends(get_current_user)):
             interview_readiness=doc.components.interview_readiness,
             activity_consistency=doc.components.activity_consistency,
         ),
-        target_role=doc.target_role,
+        target_role=doc.target_role or (prof.target_roles if prof else None),
         last_updated=doc.last_updated,
         history=[
             ScoreHistoryItem(score=h.score, recorded_at=h.recorded_at)
@@ -202,10 +206,14 @@ async def update_score(
 async def get_roadmap_summary(current_user: User = Depends(get_current_user)):
     student_id = str(current_user.id)
     doc = await StudentRoadmap.get_or_create(student_id)
+    prof = await StudentProfile.find_one(StudentProfile.student_id == student_id)
+    if prof and prof.target_roles and not doc.role:
+        doc.role = prof.target_roles
+        await doc.save()
     return RoadmapSummaryOut(
         student_id=student_id,
         resume_uploaded=doc.resume_uploaded,
-        role=doc.role,
+        role=doc.role or (prof.target_roles if prof else None),
         progress_pct=doc.progress_pct,
         total_skills=doc.total_skills,
         completed_skills=doc.completed_skills,
@@ -352,6 +360,8 @@ async def upload_resume(
     roadmap = await StudentRoadmap.get_or_create(student_id)
     roadmap.resume_uploaded = True
     roadmap.resume_file_path = str(dest)
+    if profile and profile.target_roles:
+        roadmap.role = profile.target_roles
     roadmap.phases = []
     roadmap.last_regenerated = None
     roadmap.progress_pct = 0
@@ -362,6 +372,8 @@ async def upload_resume(
 
     # Update resume_quality score based on real extracted skills count
     score_doc = await EmployabilityScore.get_or_create(student_id)
+    if profile and profile.target_roles:
+        score_doc.target_role = profile.target_roles
     quality_score = min(100.0, float(len(extracted_skills)
                         * 15 + 40)) if extracted_skills else 50.0
     score_doc.components.resume_quality = quality_score
@@ -653,11 +665,15 @@ async def get_skill_gap(current_user: User = Depends(get_current_user)):
     student_id = str(current_user.id)
 
     # 1. Get student's target role
+    prof = await StudentProfile.find_one(StudentProfile.student_id == student_id)
     score_doc = await EmployabilityScore.get_or_create(student_id)
     roadmap_doc = await StudentRoadmap.get_or_create(student_id)
 
-    target_role = getattr(current_user, "target_role",
-                          None) or score_doc.target_role or roadmap_doc.role
+    target_role = (
+        (prof.target_roles if prof and prof.target_roles else None)
+        or score_doc.target_role
+        or roadmap_doc.role
+    )
     if not target_role:
         return SkillGapOut(
             role="No target role set",

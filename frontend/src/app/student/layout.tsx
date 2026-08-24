@@ -10,6 +10,7 @@ import {
   Briefcase,
   Building2,
   CalendarCheck,
+  Code2,
   FlaskConical,
   FolderOpen,
   LayoutDashboard,
@@ -28,19 +29,20 @@ import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 
 const navItems = [
-  { label: "Overview",          href: "/student/overview",          icon: LayoutDashboard },
-  { label: "Skill Gap",         href: "/student/skill-gap",         icon: TrendingUp },
-  { label: "Learning Roadmap",  href: "/student/roadmap",           icon: Map },
-  { label: "Target Company",    href: "/student/target-company",    icon: Building2 },
-  { label: "My Activity",       href: "/student/activity",          icon: Activity },
-  { label: "Jobs Hub",          href: "/student/jobs",              icon: Briefcase },
-  { label: "Notifications",     href: "/student/notifications",     icon: Bell, showBadge: true },
-  { label: "Projects",          href: "/student/projects",          icon: FolderOpen },
-  { label: "Game Arena",        href: "/student/skill-tests",       icon: Swords },
-  { label: "Mock Interview",    href: "/student/mock-interview",    icon: Video },
-  { label: "Daily Assignments", href: "/student/daily-assignments", icon: CalendarCheck },
-  { label: "Leaderboard",       href: "/student/leaderboard",       icon: Trophy },
-  { label: "My Profile",        href: "/student/profile",           icon: UserCircle },
+  { label: "Overview",               href: "/student/overview",          icon: LayoutDashboard },
+  { label: "Skill Gap",              href: "/student/skill-gap",         icon: TrendingUp },
+  { label: "Learning Roadmap",       href: "/student/roadmap",           icon: Map },
+  { label: "Skill Tests & Practice", href: "/student/practice",          icon: Code2 },
+  { label: "Target Company",         href: "/student/target-company",    icon: Building2 },
+  { label: "My Activity",            href: "/student/activity",          icon: Activity },
+  { label: "Jobs Hub",               href: "/student/jobs",              icon: Briefcase },
+  { label: "Notifications",          href: "/student/notifications",     icon: Bell, showBadge: true },
+  { label: "Projects",               href: "/student/projects",          icon: FolderOpen },
+  { label: "Game Arena",             href: "/student/skill-tests",       icon: Swords },
+  { label: "Mock Interview",         href: "/student/mock-interview",    icon: Video },
+  { label: "Daily Assignments",      href: "/student/daily-assignments", icon: CalendarCheck },
+  { label: "Leaderboard",            href: "/student/leaderboard",       icon: Trophy },
+  { label: "My Profile",             href: "/student/profile",           icon: UserCircle },
 ];
 
 export default function StudentLayout({ children }: { children: React.ReactNode }) {

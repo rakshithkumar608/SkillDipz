@@ -17,6 +17,7 @@ import {
   Building2,
   CheckCircle2,
   Loader2,
+  RefreshCw,
   Star,
   Users,
   Zap,
@@ -73,20 +74,26 @@ export default function EmployerDashboardPage() {
       router.push("/login");
       return;
     }
-    if (!dashboard) {
+    // Always load fresh dashboard data on page visit
+    load();
+
+    // Periodic auto-sync every 15 seconds to ensure instant visibility of new candidate selections
+    const interval = setInterval(() => {
       load();
-    }
-  }, [companyHydrated, userHydrated, company, user, dashboard, router, load]);
+    }, 15000);
+
+    return () => clearInterval(interval);
+  }, [companyHydrated, userHydrated, company, user, router, load]);
 
   // ── Real-time WebSocket — listen for new candidates ───
   const handleWsEvent = useCallback((event: CompanyWsEvent) => {
     if (event.type === "new_candidate") {
       const { student_name, skill_match_pct } = event.payload;
       toast.success(
-        `${student_name} selected your company`,
+        `${student_name} selected your company! 🎯`,
         {
-          description: `AI Skill Fit: ${skill_match_pct}%`,
-          duration: 6000,
+          description: `AI Skill Readiness: ${skill_match_pct}%`,
+          duration: 7000,
           icon: "🎯",
         }
       );
@@ -162,20 +169,32 @@ export default function EmployerDashboardPage() {
           </p>
         </div>
 
-        {dashboard && (
-          <div className="self-start sm:self-auto shrink-0 flex items-center gap-2.5 px-3.5 py-2 rounded-xl sm:rounded-2xl bg-slate-900 border border-slate-800 shadow-md">
-            {dashboard.company_logo_emoji
-              ? <span className="text-xl sm:text-2xl">{dashboard.company_logo_emoji}</span>
-              : <div className="w-8 h-8 rounded-lg bg-linear-to-br from-emerald-400 to-teal-500 flex items-center justify-center shadow-md shadow-emerald-500/20">
-                  <Building2 className="w-4 h-4 text-white" />
-                </div>
-            }
-            <div className="min-w-0">
-              <p className="text-xs font-semibold text-slate-100 truncate">{companyDisplayName}</p>
-              <p className="text-[9px] sm:text-[10px] text-emerald-400 font-bold uppercase tracking-wider">VERIFIED PARTNER</p>
+        <div className="flex items-center gap-3 self-start sm:self-auto shrink-0">
+          <button
+            onClick={() => load()}
+            disabled={isLoading}
+            className="flex items-center gap-1.5 px-3 py-2 rounded-xl sm:rounded-2xl bg-slate-900 hover:bg-slate-800 border border-slate-800 text-slate-300 hover:text-white text-xs font-semibold shadow-md transition-colors disabled:opacity-50"
+            title="Sync latest candidate data"
+          >
+            <RefreshCw className={`w-3.5 h-3.5 ${isLoading ? "animate-spin text-sky-400" : "text-slate-400"}`} />
+            <span className="hidden sm:inline">Sync Data</span>
+          </button>
+
+          {dashboard && (
+            <div className="flex items-center gap-2.5 px-3.5 py-2 rounded-xl sm:rounded-2xl bg-slate-900 border border-slate-800 shadow-md">
+              {dashboard.company_logo_emoji
+                ? <span className="text-xl sm:text-2xl">{dashboard.company_logo_emoji}</span>
+                : <div className="w-8 h-8 rounded-lg bg-linear-to-br from-emerald-400 to-teal-500 flex items-center justify-center shadow-md shadow-emerald-500/20">
+                    <Building2 className="w-4 h-4 text-white" />
+                  </div>
+              }
+              <div className="min-w-0">
+                <p className="text-xs font-semibold text-slate-100 truncate">{companyDisplayName}</p>
+                <p className="text-[9px] sm:text-[10px] text-emerald-400 font-bold uppercase tracking-wider">VERIFIED PARTNER</p>
+              </div>
             </div>
-          </div>
-        )}
+          )}
+        </div>
       </div>
 
       {/* Error Banner */}

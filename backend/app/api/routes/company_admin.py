@@ -1,6 +1,7 @@
 import uuid
 import logging
 import asyncio
+import re
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from pydantic import BaseModel, Field
 from typing import List, Optional
@@ -318,32 +319,66 @@ async def get_employer_dashboard(
     avg_time_saved_pct = 60  # platform benchmark (60% faster than manual screening)
 
     # 3. Talent pool — ONLY students who actually targeted this specific company
-    match_company_ids = list(set(filter(None, [
+    current_user = current_company.get("user")
+    company_doc = current_company.get("company")
+    comp_name = company.name or getattr(company_doc, "company_name", None) or (current_user.company_name if current_user else "")
+    comp_slug = comp_name.lower().strip().replace(" ", "-") if comp_name else ""
+    user_id = str(current_user.id) if current_user else str(current_company.get("company_id"))
+
+    # Fetch all CompanyProfile records matching this company name or slug
+    related_profiles = await CompanyProfile.find({
+        "$or": [
+            {"name": {"$regex": f"^{re.escape(comp_name)}$", "$options": "i"}},
+            {"company_id": {"$regex": f"^{re.escape(comp_slug)}", "$options": "i"}},
+        ]
+    }).to_list() if comp_name else []
+
+    all_matched_company_ids = set([
         company.company_id,
+        user_id,
         str(current_company.get("company_id")),
-        company.name,
-        company.name.lower().strip().replace(" ", "-") if company.name else None,
-    ])))
+        comp_name,
+        comp_slug,
+    ] + [p.company_id for p in related_profiles])
+    all_matched_company_ids = list(filter(None, all_matched_company_ids))
 
     stc_docs = (
         await StudentTargetCompany.find({
-            "company_id": {"$in": match_company_ids}
+            "$or": [
+                {"company_id": {"$in": all_matched_company_ids}},
+                {"company_id": {"$regex": f"^{re.escape(comp_slug)}", "$options": "i"}},
+            ]
         })
         .sort(-StudentTargetCompany.skill_match_pct)
         .limit(limit)
         .to_list()
     )
 
-    student_ids = [d.student_id for d in stc_docs]
+    # De-duplicate STC docs by student_id
+    seen_sids = set()
+    unique_stc_docs = []
+    for d in stc_docs:
+        if d.student_id not in seen_sids:
+            seen_sids.add(d.student_id)
+            unique_stc_docs.append(d)
+
+    student_ids = [d.student_id for d in unique_stc_docs]
     profiles = await StudentProfile.find({"student_id": {"$in": student_ids}}).to_list() if student_ids else []
     profile_map = {p.student_id: p for p in profiles}
 
-    # Also lookup User collection if profile doc is pending
-    user_docs = await User.find({"_id": {"$in": student_ids}}).to_list() if student_ids else []
-    user_map = {str(u.id): u for u in user_docs}
+    # Load User collection records safely using PydanticObjectId
+    from beanie import PydanticObjectId
+    user_map = {}
+    for sid in student_ids:
+        try:
+            u_doc = await User.get(PydanticObjectId(sid))
+            if u_doc:
+                user_map[sid] = u_doc
+        except Exception:
+            pass
 
     talent_pool: List[TalentCardOut] = []
-    for stc in stc_docs:
+    for stc in unique_stc_docs:
         prof = profile_map.get(stc.student_id)
         u_doc = user_map.get(stc.student_id)
         name = (prof.name if prof and prof.name else None) or (u_doc.full_name if u_doc else "Student")

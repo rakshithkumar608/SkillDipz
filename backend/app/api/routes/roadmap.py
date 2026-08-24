@@ -465,7 +465,15 @@ async def get_roadmap(current_user: User = Depends(get_current_user)):
     student_id = str(current_user.id)
     roadmap = await StudentRoadmap.get_or_create(student_id)
     score_doc = await EmployabilityScore.get_or_create(student_id)
-    role = roadmap.role or score_doc.target_role
+    prof = await StudentProfile.find_one(StudentProfile.student_id == student_id)
+    role = (
+        (prof.target_roles if prof and prof.target_roles else None)
+        or roadmap.role
+        or score_doc.target_role
+    )
+    if role and not roadmap.role:
+        roadmap.role = role
+        await roadmap.save()
 
     if not role or not roadmap.resume_uploaded:
         return RoadmapOut(
@@ -832,7 +840,17 @@ async def regenerate_roadmap(current_user: User = Depends(get_current_user)):
     student_id = str(current_user.id)
     roadmap = await StudentRoadmap.get_or_create(student_id)
     score_doc = await EmployabilityScore.get_or_create(student_id)
-    role = roadmap.role or score_doc.target_role
+    prof = await StudentProfile.find_one(StudentProfile.student_id == student_id)
+    role = (
+        (prof.target_roles if prof and prof.target_roles else None)
+        or roadmap.role
+        or score_doc.target_role
+    )
+    if role:
+        roadmap.role = role
+        score_doc.target_role = role
+        await roadmap.save()
+        await score_doc.save()
 
     if not role:
         raise HTTPException(status_code=400, detail="No target role set.")

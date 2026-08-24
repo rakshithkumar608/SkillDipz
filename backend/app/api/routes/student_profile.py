@@ -292,6 +292,9 @@ async def update_my_profile(
         score_doc = await EmployabilityScore.get_or_create(student_id)
         score_doc.target_role = body.target_role
         await score_doc.save()
+        roadmap_doc = await StudentRoadmap.get_or_create(student_id)
+        roadmap_doc.role = body.target_role
+        await roadmap_doc.save()
     if body.target_company is not None:
         profile.target_company = body.target_company
         from app.core.redis_client import get_redis

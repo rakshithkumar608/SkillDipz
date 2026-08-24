@@ -1,7 +1,8 @@
 "use client";
 
 import { AssessmentTopic } from "@/lib/practiceApi";
-import { CheckCircle2, Clock, Lock, RefreshCw, Zap } from "lucide-react";
+import { CheckCircle2, Clock, Lock, RefreshCw, Zap, Video, ExternalLink } from "lucide-react";
+import Link from "next/link";
 import { useEffect, useState } from "react";
 
 interface Props {
@@ -65,9 +66,14 @@ export default function MCQTestCard({ topic, onStart, isStarting }: Props) {
   const hasAttempted = topic.last_score_pct !== null;
   const passed = (topic.last_score_pct ?? 0) >= 70;
   const isCooldownActive = !topic.can_retake && cooldownLabel !== null;
+  const isUnlocked = topic.is_unlocked !== false;
 
   return (
-    <div className="bg-slate-900/70 border border-white/10 hover:border-indigo-500/30 rounded-2xl p-5 flex flex-col justify-between gap-4 transition-all duration-200 shadow-lg backdrop-blur-md">
+    <div className={`border rounded-2xl p-5 flex flex-col justify-between gap-4 transition-all duration-200 shadow-lg backdrop-blur-md ${
+      isUnlocked
+        ? "bg-slate-900/70 border-white/10 hover:border-indigo-500/30"
+        : "bg-slate-950/80 border-slate-800/80 opacity-90"
+    }`}>
       <div className="space-y-3">
         {/* Header Title + Score Badge */}
         <div className="flex items-start justify-between gap-2">
@@ -86,6 +92,11 @@ export default function MCQTestCard({ topic, onStart, isStarting }: Props) {
               {hasAttempted && (
                 <span className="text-[10px] text-slate-400 font-mono">
                   {topic.attempt_count} attempt{topic.attempt_count !== 1 ? "s" : ""}
+                </span>
+              )}
+              {!isUnlocked && (
+                <span className="text-[10px] px-2 py-0.5 rounded-full bg-rose-500/10 border border-rose-500/30 text-rose-300 font-semibold flex items-center gap-1">
+                  <Lock className="w-2.5 h-2.5" /> Locked
                 </span>
               )}
             </div>
@@ -146,7 +157,20 @@ export default function MCQTestCard({ topic, onStart, isStarting }: Props) {
           </div>
         )}
 
-        {isCooldownActive ? (
+        {!isUnlocked ? (
+          <div className="space-y-2">
+            <p className="text-[11px] text-slate-400 leading-tight">
+              {topic.lock_reason || "Complete the video tutorials on your Learning Roadmap to unlock."}
+            </p>
+            <Link
+              href="/student/roadmap"
+              className="w-full flex items-center justify-center gap-2 py-2.5 rounded-xl bg-indigo-500/10 border border-indigo-500/30 text-indigo-300 text-xs font-bold hover:bg-indigo-500/20 transition-all shadow-md"
+            >
+              <Video className="w-3.5 h-3.5 text-indigo-400" />
+              Watch Roadmap Videos ↗
+            </Link>
+          </div>
+        ) : isCooldownActive ? (
           <div className="flex items-center justify-center gap-2 py-2.5 px-3 rounded-xl bg-slate-950 border border-amber-500/30 text-amber-300 text-xs font-mono font-bold shadow-inner">
             <Lock className="w-3.5 h-3.5 text-amber-400 animate-pulse" />
             <span>Retake unlocks in {cooldownLabel}</span>

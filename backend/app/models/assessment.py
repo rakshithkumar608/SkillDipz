@@ -133,7 +133,7 @@ class CodingTestCase(BaseModel):
 
 
 class CodingQuestion(Document):
-    """Real coding practice questions stored in MongoDB and served based on Skill Gap."""
+    """Real LeetCode-style coding practice questions stored in MongoDB and served based on Skill Gap."""
     question_id: str
     title: str
     difficulty: Literal["EASY", "MEDIUM", "HARD"] = "EASY"
@@ -142,8 +142,12 @@ class CodingQuestion(Document):
     concept: Optional[str] = None
     description: str
     examples: List[CodingExample] = []
+    constraints: List[str] = []
     function_signature: str
     starter_code: str
+    starter_code_templates: dict = {}
+    hints: List[str] = []
+    acceptance_rate: float = 75.0
     test_cases: List[CodingTestCase] = []
     is_active: bool = True
     created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))

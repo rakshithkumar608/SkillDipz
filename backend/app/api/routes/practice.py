@@ -2,7 +2,7 @@ import logging
 import json
 import httpx
 import re
-from typing import Optional
+from typing import Optional, List, Dict, Any
 from fastapi import APIRouter, Depends, HTTPException, Query
 
 from pydantic import BaseModel
@@ -337,136 +337,197 @@ async def get_cf_profile(
             status_code=502, detail=f"Codeforces API error: {str(e)}")
 
 
-# ─── Arena Problems — Real Questions via Groq AI per Skill Gap ────────────────
+# ─── LeetCode Coding Arena — 70-80 AI Problems via Groq per Skill Gap ─────────
+
+from app.services.code_runner import execute_code
 
 GROQ_COMPLETIONS_URL = "https://api.groq.com/openai/v1/chat/completions"
-GROQ_MODEL = "llama-3.3-70b-versatile"
+GROQ_MODELS = [
+    "openai/gpt-oss-120b",
+    "openai/gpt-oss-20b",
+    "llama-3.1-8b-instant",
+    "llama3-70b-8192",
+    "qwen/qwen3.6-27b",
+    "groq/compound-mini",
+]
 
 
-def _build_coding_question_prompt(skill: str, difficulty: str, count: int = 4) -> str:
-    diff_map = {
-        "EASY":   "beginner — single concept, small inputs, straightforward logic",
-        "MEDIUM": "intermediate — combines 2-3 concepts, moderate input size",
-        "HARD":   "advanced — optimization, edge cases, complex logic, larger inputs",
-    }
-    return f"""You are generating concept-wise JavaScript coding practice questions for the skill: "{skill}".
-Difficulty: {difficulty} ({diff_map.get(difficulty, "intermediate")}).
+def _clean_json_text(text: str) -> str:
+    """Removes markdown fences and finds JSON boundaries."""
+    text = text.strip()
+    if "```json" in text:
+        text = text.split("```json")[1].split("```")[0].strip()
+    elif "```" in text:
+        parts = text.split("```")
+        if len(parts) >= 2:
+            text = parts[1].strip()
+    start = text.find("{")
+    end = text.rfind("}")
+    if start != -1 and end != -1 and end > start:
+        return text[start:end + 1]
+    return text.strip()
 
-TASK: Generate {count} questions, each covering a DISTINCT core concept/sub-topic within "{skill}".
-Each question must target ONE specific concept (e.g., for "React" -> hooks, memoization, state management; for "Arrays" -> sliding window, two pointers, sorting, prefix sums).
 
-STRICT RULES:
-1. Each question = a pure JavaScript function (no I/O, no stdin/stdout).
-2. Self-contained and testable: fn(...inputs) must return a value directly comparable to expected.
-3. test_cases: use ONLY JSON primitives (numbers, strings, booleans, arrays, plain objects). NO class instances.
-4. DO NOT use TreeNode, ListNode or other class-based structures.
-5. starter_code must be a named function definition.
-6. The "concept" field is the specific sub-topic this question tests (e.g., "Sliding Window", "Array Destructuring", "Closure").
-7. Return ONLY valid JSON — no markdown, no explanation.
+def _build_leetcode_prompt(skill: str, difficulty: str, count: int, subfocus: str) -> str:
+    return f"""You are a FAANG software interview problem creator.
+Generate exactly {count} realistic, highly technical LeetCode-style coding problems specifically testing "{skill}" and focusing on "{subfocus}".
+Difficulty Level: {difficulty}.
 
-Return exactly this JSON:
+CRITICAL REQUIREMENTS:
+1. Every problem must be uniquely tailored to the engineering domain of "{skill}". For language/backend skills (Python, Java, C++, TypeScript, SQL, Node.js), focus on algorithmic paradigms, data structures, and edge cases.
+2. Provide a clear problem statement, input/output formats, and constraints.
+3. Every testcase must have valid "input" (a JSON array representing function argument parameters) and "expected" (the exact return value).
+4. Provide starter_code and starter_code_templates for Python and JavaScript.
+5. NO mock or placeholder text. Every problem must be real, solvable, and logically sound.
+
+JSON SCHEMA:
 {{
   "questions": [
     {{
-      "concept": "Specific Sub-concept Name",
-      "title": "Short descriptive problem title",
-      "topics": ["Concept1", "Concept2"],
-      "description": "Clear 2-3 sentence problem statement with constraints.",
+      "title": "Distinct problem title",
+      "concept": "{subfocus}",
+      "topics": ["{skill}", "{subfocus}"],
+      "difficulty": "{difficulty}",
+      "description": "Comprehensive problem statement detailing inputs, transformation, and boundary edge cases.",
+      "constraints": ["1 <= input.length <= 10^5"],
       "examples": [
-        {{"input": "human-readable input", "output": "human-readable output", "explanation": "brief why"}},
-        {{"input": "another example input", "output": "expected output"}}
+        {{"input": "args representation", "output": "result", "explanation": "Detailed step-by-step reason."}}
       ],
-      "function_signature": "function functionName(param1, param2)",
-      "starter_code": "function functionName(param1, param2) {{\\n  // Write your solution here\\n}}",
+      "function_name": "solve",
+      "starter_code": "def solve(*args):\\n    pass",
+      "starter_code_templates": {{
+        "python": "def solve(*args):\\n    pass",
+        "javascript": "function solve(...args) {{\\n  // Solution\\n}}",
+        "typescript": "function solve(...args: any[]): any {{\\n  // Solution\\n}}"
+      }},
+      "hints": ["Consider optimal data structures.", "Handle edge cases."],
       "test_cases": [
-        {{"input": [<actual value(s)>], "expected": <actual value>}},
-        {{"input": [<actual value(s)>], "expected": <actual value>}},
-        {{"input": [<actual value(s)>], "expected": <actual value>}}
+        {{"input": [[2, 7, 11], 9], "expected": [0, 1]}}
       ]
     }}
   ]
 }}""".strip()
 
 
-async def _generate_questions_via_groq(skill: str, difficulty: str, count: int = 4) -> list[dict]:
-    """Call Groq AI to generate real coding questions for a given skill + difficulty."""
+async def _generate_leetcode_batch_via_groq(
+    skill: str, difficulty: str, count: int, subfocus: str
+) -> list[dict]:
+    """Call Groq AI to generate a batch of LeetCode-style questions."""
+    import asyncio
     from app.core.config import settings
     if not settings.GROQ_API_KEY:
-        logger.warning("GROQ_API_KEY not set — cannot generate coding questions.")
         return []
 
-    payload = {
-        "model": GROQ_MODEL,
-        "messages": [
-            {
-                "role": "system",
-                "content": (
-                    "You are an expert software engineering interview coach. "
-                    "You create precise, testable JavaScript coding problems. "
-                    "Always respond with strictly valid JSON only — no markdown, no extra text."
-                ),
-            },
-            {"role": "user", "content": _build_coding_question_prompt(skill, difficulty, count)},
-        ],
-        "temperature": 0.7,
-        "response_format": {"type": "json_object"},
-        "max_tokens": 4000,
-    }
-
+    prompt = _build_leetcode_prompt(skill, difficulty, count, subfocus)
     headers = {
         "Authorization": f"Bearer {settings.GROQ_API_KEY}",
         "Content-Type": "application/json",
     }
 
-    try:
-        async with httpx.AsyncClient(timeout=30.0) as client:
-            res = await client.post(GROQ_COMPLETIONS_URL, json=payload, headers=headers)
-            res.raise_for_status()
-            content = res.json()["choices"][0]["message"]["content"].strip()
-            parsed = json.loads(content)
-            questions = parsed.get("questions", [])
-            logger.info(f"⚡ Groq generated {len(questions)} {difficulty} questions for skill '{skill}'")
-            return questions
-    except Exception as e:
-        logger.error(f"Groq coding question generation failed for skill='{skill}' diff='{difficulty}': {e}")
-        return []
+    for model in GROQ_MODELS:
+        payload = {
+            "model": model,
+            "messages": [
+                {
+                    "role": "system",
+                    "content": (
+                        "You are an expert technical interview designer for LeetCode and FAANG. "
+                        "You produce pristine, rigorous coding challenges with complete test cases. "
+                        "Respond ONLY with valid JSON."
+                    ),
+                },
+                {"role": "user", "content": prompt},
+            ],
+            "temperature": 0.4,
+            "response_format": {"type": "json_object"},
+            "max_tokens": 3000,
+        }
+
+        for attempt in range(2):
+            try:
+                async with httpx.AsyncClient(timeout=35.0) as client:
+                    res = await client.post(GROQ_COMPLETIONS_URL, json=payload, headers=headers)
+                    if res.status_code == 429:
+                        await asyncio.sleep(2.0 * (attempt + 1))
+                        continue
+                    if res.status_code != 200:
+                        logger.warning(f"Groq model '{model}' HTTP {res.status_code}: {res.text[:120]}")
+                        break
+                    content = res.json()["choices"][0]["message"]["content"].strip()
+                    cleaned = _clean_json_text(content)
+                    parsed = json.loads(cleaned)
+                    raw_qs = parsed.get("questions", [])
+                    if raw_qs:
+                        logger.info(f"⚡ Groq model '{model}' generated {len(raw_qs)} {difficulty} LeetCode problems for '{skill}' ({subfocus})")
+                        return raw_qs
+            except Exception as e:
+                logger.warning(f"Groq model '{model}' failed for coding skill '{skill}': {e}")
+                await asyncio.sleep(1.0)
+                continue
+
+    return []
 
 
-async def _ensure_questions_for_skill(skill: str) -> None:
+async def _ensure_leetcode_questions_for_skill(skill: str) -> None:
     """
-    For a given skill, generate and cache EASY + MEDIUM + HARD questions via Groq AI.
-    Skip any difficulty level that already has questions in MongoDB for this skill.
+    Ensures a rich 100 to 120+ question bank of LeetCode-style coding challenges
+    across EASY (35), MEDIUM (55), and HARD (25) exists in MongoDB for this roadmap skill.
     """
-    # Check if ANY active questions exist for this skill in MongoDB
     skill_clean = skill.strip()
-    existing_for_skill = await CodingQuestion.find(
+    existing_count = await CodingQuestion.find(
         {"$or": [
             {"skill_tags": {"$elemMatch": {"$regex": f"^{re.escape(skill_clean)}$", "$options": "i"}}},
             {"topics": {"$elemMatch": {"$regex": f"^{re.escape(skill_clean)}$", "$options": "i"}}},
-            {"concept": {"$regex": f"^{re.escape(skill_clean)}$", "$options": "i"}}
         ], "is_active": True}
     ).count()
 
-    if existing_for_skill >= 1:
-        logger.debug(f"Skipping Groq generation — {existing_for_skill} questions already exist in DB for skill '{skill}'")
+    if existing_count >= 100:
+        logger.debug(f"Skill '{skill}' already has {existing_count} LeetCode questions in DB.")
         return
 
+    import asyncio
     import uuid
-    for difficulty in ["EASY", "MEDIUM", "HARD"]:
 
-        logger.info(f"Generating {difficulty} questions for skill '{skill}'...")
-        raw_questions = await _generate_questions_via_groq(skill, difficulty, count=4)
+    logger.info(f"Generating comprehensive 100-120+ LeetCode problem bank for '{skill}'...")
 
-        for q in raw_questions:
+    # Structured batches across Easy (35), Medium (55), and Hard (25) = ~115+ questions
+    batches = [
+        # EASY (~35 Qs)
+        {"diff": "EASY", "count": 9, "subfocus": "Fundamental syntax, variables, conditionals, and type conversion"},
+        {"diff": "EASY", "count": 9, "subfocus": "Array manipulation, string parsing, and loop operations"},
+        {"diff": "EASY", "count": 9, "subfocus": "Hash lookups, frequency counting, and basic set operations"},
+        {"diff": "EASY", "count": 8, "subfocus": "Math, bitwise operations, and simple matrix traversals"},
+        # MEDIUM (~55 Qs)
+        {"diff": "MEDIUM", "count": 9, "subfocus": "Two pointers, fast-slow pointers, and sliding window algorithms"},
+        {"diff": "MEDIUM", "count": 9, "subfocus": "Interval merging, sorting algorithms, and binary search variants"},
+        {"diff": "MEDIUM", "count": 9, "subfocus": "Hash maps, prefix sums, and subarray pattern matches"},
+        {"diff": "MEDIUM", "count": 9, "subfocus": "Linked lists, stacks, monotonic stacks, and queue operations"},
+        {"diff": "MEDIUM", "count": 9, "subfocus": "Binary trees, BST traversal, BFS/DFS, and lowest common ancestor"},
+        {"diff": "MEDIUM", "count": 10, "subfocus": "Dynamic programming (1D/2D memoization), recursion, and backtracking"},
+        # HARD (~25 Qs)
+        {"diff": "HARD", "count": 8, "subfocus": "Graph algorithms (Dijkstra, topological sort, union-find, strongly connected)"},
+        {"diff": "HARD", "count": 9, "subfocus": "Advanced dynamic programming, state machine transitions, and string edit distance"},
+        {"diff": "HARD", "count": 8, "subfocus": "Complex data structure design (LRU/LFU cache, Trie, Segment tree, sliding window maximum)"},
+    ]
+
+    for b in batches:
+        raw_qs = await _generate_leetcode_batch_via_groq(
+            skill=skill_clean,
+            difficulty=b["diff"],
+            count=b["count"],
+            subfocus=b["subfocus"],
+        )
+
+        for q in raw_qs:
             if not isinstance(q, dict):
                 continue
-            title = q.get("title", "").strip()
+            title = str(q.get("title", "")).strip()
             if not title:
                 continue
 
-            # Skip duplicates by title + skill
-            dup = await CodingQuestion.find_one({"title": title, "skill_tags": skill})
-            if dup:
+            # Prevent duplicate title for this skill
+            exists = await CodingQuestion.find_one({"title": title, "skill_tags": skill_clean})
+            if exists:
                 continue
 
             try:
@@ -477,189 +538,437 @@ async def _ensure_questions_for_skill(skill: str) -> None:
                         explanation=ex.get("explanation") or None,
                     )
                     for ex in q.get("examples", [])
+                    if isinstance(ex, dict) and "input" in ex and "output" in ex
                 ]
                 test_cases = [
                     CodingTestCase(
-                        input=tc.get("input", []),
+                        input=tc.get("input", []) if isinstance(tc.get("input"), list) else [tc.get("input")],
                         expected=tc.get("expected"),
                     )
                     for tc in q.get("test_cases", [])
-                    if isinstance(tc.get("input"), list)
+                    if isinstance(tc, dict) and "expected" in tc
                 ]
 
                 if not test_cases:
-                    logger.warning(f"Skipping '{title}' — no valid test_cases returned by Groq.")
                     continue
 
-                question_id = f"groq_{skill.lower().replace(' ', '_')}_{difficulty.lower()}_{uuid.uuid4().hex[:8]}"
+                templates = q.get("starter_code_templates") or {}
+                if not isinstance(templates, dict) or not templates:
+                    starter_py = q.get("starter_code", f"def solve():\n    pass")
+                    templates = {
+                        "python": starter_py,
+                        "javascript": f"function solve() {{\n  // Solution\n}}",
+                        "typescript": f"function solve(): any {{\n  // Solution\n}}",
+                    }
+
+                question_id = f"lc_{skill_clean.lower().replace(' ', '_')}_{b['diff'].lower()}_{uuid.uuid4().hex[:8]}"
                 doc = CodingQuestion(
                     question_id=question_id,
                     title=title,
-                    difficulty=difficulty,
-                    topics=q.get("topics", [skill]),
-                    skill_tags=[skill],
-                    concept=q.get("concept", "").strip() or skill,
-                    description=q.get("description", ""),
+                    difficulty=b["diff"],
+                    topics=q.get("topics", [skill_clean, b["subfocus"]]),
+                    skill_tags=[skill_clean],
+                    concept=q.get("concept", b["subfocus"]),
+                    description=q.get("description", f"Solve the {title} challenge testing {skill_clean}."),
                     examples=examples,
-                    function_signature=q.get("function_signature", "function solve()"),
-                    starter_code=q.get("starter_code", "function solve() {\n  // Write your solution here\n}"),
+                    constraints=q.get("constraints", ["1 <= input.length <= 10^4"]),
+                    function_signature=q.get("function_signature", f"def solve():"),
+                    starter_code=templates.get("python") or q.get("starter_code", ""),
+                    starter_code_templates=templates,
+                    hints=q.get("hints", ["Break the problem into sub-problems."]),
+                    acceptance_rate=float(q.get("acceptance_rate") or round(65.0 + (10.0 if b['diff'] == 'EASY' else -15.0 if b['diff'] == 'HARD' else 0.0), 1)),
                     test_cases=test_cases,
+                    is_active=True,
                 )
                 await doc.insert()
-                logger.info(f"✅ Saved '{title}' ({difficulty}) for skill '{skill}'")
             except Exception as e:
-                logger.warning(f"Failed to save question '{title}': {e}")
+                logger.warning(f"Failed to insert LeetCode question '{title}': {e}")
+
+        await asyncio.sleep(0.3)
 
 
-@router.get("/arena-problems")
-async def get_arena_problems(
+# ─── Endpoints for LeetCode Practice Arena
+
+@router.get("/leetcode-problems")
+async def get_leetcode_problems(
+    skill: Optional[str] = Query(None),
+    difficulty: Optional[str] = Query("ALL"),
+    concept: Optional[str] = Query(None),
+    search: Optional[str] = Query(None),
+    page: int = Query(1, ge=1),
+    limit: int = Query(25, ge=1, le=100),
     current_user: User = Depends(get_current_user),
 ):
     """
-    Returns real AI-generated coding questions from MongoDB, grouped and prioritized
-    by the student's actual Skill Gap from their Roadmap + recent MCQ weak areas.
-    Questions are generated on-demand via Groq AI and cached in MongoDB.
-    Zero hardcoded/mock data.
+    Returns AI-generated LeetCode coding challenges from MongoDB, ensuring 75-80 questions
+    exist per roadmap skill / concept.
     """
     student_id = str(current_user.id)
 
-    # ── 1. Extract student's real weak skills from StudentRoadmap ──────────────
-    weak_skills: list[dict] = []
+    # 1. Determine active skills and their unlock status from student's Roadmap
     roadmap = await StudentRoadmap.find_one(StudentRoadmap.student_id == student_id)
+    student_skills: List[str] = []
+    skills_meta: dict = {}
+
     if roadmap and roadmap.phases:
-        for phase in roadmap.phases:
-            items = phase.get("items", []) if isinstance(phase, dict) else getattr(phase, "items", [])
-            for item in items:
-                if not isinstance(item, dict):
-                    continue
-                if item.get("type") == "project":
-                    continue
-                skill = item.get("skill", "").strip()
-                gap = item.get("gap", 0)
-                status = item.get("status", "")
-                if skill and (status != "completed" or gap > 0):
-                    weak_skills.append({"skill": skill, "gap": gap, "status": status})
+        for phase_idx, phase in enumerate(roadmap.phases):
+            p_dict = phase if isinstance(phase, dict) else (phase.dict() if hasattr(phase, "dict") else {})
+            items = p_dict.get("items") or p_dict.get("skills") or []
+            for item_idx, it in enumerate(items):
+                s_name = it.get("skill") or it.get("name") or it.get("title") if isinstance(it, dict) else str(it)
+                if s_name and s_name.strip() and "project" not in s_name.lower():
+                    clean_s = s_name.strip()
+                    if clean_s not in student_skills:
+                        student_skills.append(clean_s)
 
-    # ── 2. Augment with MCQ weak skill tags (score < 80%) ─────────────────────
-    recent_results = (
-        await AssessmentResult.find(AssessmentResult.student_id == student_id)
-        .sort(-AssessmentResult.taken_at)
-        .limit(5)
-        .to_list()
-    )
-    existing_skill_names = {s["skill"].lower() for s in weak_skills}
-    for r in recent_results:
-        if r.score_pct < 80:
-            for tag in r.skill_tags:
-                if tag.lower() not in existing_skill_names:
-                    existing_skill_names.add(tag.lower())
-                    weak_skills.append({"skill": tag, "gap": 2, "status": "needs_practice"})
+                    watched_list = roadmap.watched_videos.get(clean_s.lower(), []) if roadmap.watched_videos else []
+                    it_status = it.get("status", "locked") if isinstance(it, dict) else "locked"
+                    it_prog = it.get("progress_pct", 0) if isinstance(it, dict) else 0
 
-    # ── 3. For each weak skill, ensure Groq-generated questions exist in DB ───
-    # Sort by gap descending so highest-gap skills are generated first
-    top_skills = sorted(weak_skills, key=lambda x: x.get("gap", 0), reverse=True)[:6]
+                    is_unl = (
+                        (phase_idx == 0 and item_idx == 0)
+                        or (it_status == "completed")
+                        or (it_prog >= 50)
+                        or (len(watched_list) >= 1)
+                    )
+                    l_reason = None if is_unl else f"Watch video tutorials on your Learning Roadmap for {clean_s} to unlock coding challenges."
+                    skills_meta[clean_s] = {
+                        "is_unlocked": is_unl,
+                        "lock_reason": l_reason,
+                        "progress_pct": it_prog or (100 if it_status == "completed" else len(watched_list) * 33),
+                    }
 
-    for ws in top_skills:
-        await _ensure_questions_for_skill(ws["skill"])
-
-    # ── 4. Fetch all active questions from MongoDB ─────────────────────────────
-    all_questions = await CodingQuestion.find(CodingQuestion.is_active == True).to_list()
-
-    # ── 5. Rank: questions matching the student's weak skill names come first ──
-    weak_skill_names_lower = [s["skill"].lower() for s in weak_skills]
-
-    def rank_question(q: CodingQuestion) -> int:
-        q_tags = [t.lower() for t in q.skill_tags + q.topics]
-        score = 0
-        for ws_lower in weak_skill_names_lower:
-            if any(ws_lower in t or t in ws_lower for t in q_tags):
-                score += 3
-        # Bonus: sort EASY before MEDIUM before HARD within same score band
-        diff_order = {"EASY": 0, "MEDIUM": 1, "HARD": 2}
-        return score * 10 - diff_order.get(q.difficulty, 1)
-
-    all_questions.sort(key=rank_question, reverse=True)
-
-    out_problems = [
-        {
-            "id": q.question_id,
-            "title": q.title,
-            "difficulty": q.difficulty,
-            "concept": getattr(q, "concept", None) or (q.topics[0] if q.topics else q.skill_tags[0] if q.skill_tags else "General"),
-            "topics": q.topics,
-            "skillTags": q.skill_tags,
-            "description": q.description,
-            "examples": [
-                {"input": e.input, "output": e.output, "explanation": e.explanation}
-                for e in q.examples
-            ],
-            "functionSignature": q.function_signature,
-            "starterCode": q.starter_code,
-            "testCases": [
-                {"input": tc.input, "expected": tc.expected}
-                for tc in q.test_cases
-            ],
+    if not student_skills and not skill:
+        return {
+            "skill": "",
+            "has_skill_gap": False,
+            "student_skills": [],
+            "skills_meta": {},
+            "is_locked": False,
+            "lock_reason": None,
+            "total": 0,
+            "page": page,
+            "limit": limit,
+            "total_solved": 0,
+            "concepts": [],
+            "problems": [],
         }
-        for q in all_questions
-    ]
 
-    # 6. Fetch student's solved coding problems from MongoDB
+    target_skill = skill.strip() if skill else student_skills[0]
+    target_meta = skills_meta.get(target_skill, {"is_unlocked": True, "lock_reason": None, "progress_pct": 100})
+    is_skill_locked = not target_meta.get("is_unlocked", True)
+    skill_lock_reason = target_meta.get("lock_reason")
+
+    # 2. Ensure question bank exists for this skill
+    skill_clean = target_skill.strip()
+    existing_count = await CodingQuestion.find(
+        {"$or": [
+            {"skill_tags": {"$elemMatch": {"$regex": f"^{re.escape(skill_clean)}$", "$options": "i"}}},
+            {"topics": {"$elemMatch": {"$regex": f"^{re.escape(skill_clean)}$", "$options": "i"}}},
+        ], "is_active": True}
+    ).count()
+
+    if existing_count == 0:
+        # First batch generation synchronously
+        raw_first = await _generate_leetcode_batch_via_groq(
+            skill=skill_clean,
+            difficulty="EASY",
+            count=8,
+            subfocus="Fundamental syntax and basic operations",
+        )
+        import uuid
+        for q in raw_first:
+            if not isinstance(q, dict):
+                continue
+            title = str(q.get("title", "")).strip()
+            if not title:
+                continue
+            try:
+                examples = [
+                    CodingExample(
+                        input=str(ex.get("input", "")),
+                        output=str(ex.get("output", "")),
+                        explanation=ex.get("explanation") or None,
+                    )
+                    for ex in q.get("examples", [])
+                    if isinstance(ex, dict) and "input" in ex and "output" in ex
+                ]
+                test_cases = [
+                    CodingTestCase(
+                        input=tc.get("input", []) if isinstance(tc.get("input"), list) else [tc.get("input")],
+                        expected=tc.get("expected"),
+                    )
+                    for tc in q.get("test_cases", [])
+                    if isinstance(tc, dict) and "expected" in tc
+                ]
+                if test_cases:
+                    templates = q.get("starter_code_templates") or {
+                        "python": q.get("starter_code", f"def solve():\n    pass"),
+                        "javascript": "function solve() {\n  // Solution\n}",
+                    }
+                    doc = CodingQuestion(
+                        question_id=f"lc_{skill_clean.lower().replace(' ', '_')}_easy_{uuid.uuid4().hex[:8]}",
+                        title=title,
+                        difficulty="EASY",
+                        topics=q.get("topics", [skill_clean, "Fundamentals"]),
+                        skill_tags=[skill_clean],
+                        concept=q.get("concept", "Fundamentals"),
+                        description=q.get("description", f"Solve the {title} challenge testing {skill_clean}."),
+                        examples=examples,
+                        constraints=q.get("constraints", ["1 <= input.length <= 10^4"]),
+                        function_signature="def solve():",
+                        starter_code=templates.get("python", ""),
+                        starter_code_templates=templates,
+                        hints=q.get("hints", ["Break the problem into sub-problems."]),
+                        acceptance_rate=78.0,
+                        test_cases=test_cases,
+                        is_active=True,
+                    )
+                    await doc.insert()
+            except Exception:
+                pass
+
+        # Trigger background task to populate the rest up to 100-120+ questions
+        import asyncio
+        asyncio.create_task(_ensure_leetcode_questions_for_skill(skill_clean))
+    elif existing_count < 100:
+        import asyncio
+        asyncio.create_task(_ensure_leetcode_questions_for_skill(skill_clean))
+
+    # 3. Build query filters
+    query: dict = {"is_active": True}
+    if target_skill:
+        query["$or"] = [
+            {"skill_tags": {"$elemMatch": {"$regex": f"^{re.escape(target_skill)}$", "$options": "i"}}},
+            {"topics": {"$elemMatch": {"$regex": f"^{re.escape(target_skill)}$", "$options": "i"}}},
+        ]
+
+    if difficulty and difficulty.upper() != "ALL":
+        query["difficulty"] = difficulty.upper()
+
+    if concept and concept.strip():
+        query["concept"] = {"$regex": re.escape(concept.strip()), "$options": "i"}
+
+    if search and search.strip():
+        query["$and"] = [
+            {"$or": [
+                {"title": {"$regex": re.escape(search.strip()), "$options": "i"}},
+                {"concept": {"$regex": re.escape(search.strip()), "$options": "i"}},
+                {"topics": {"$elemMatch": {"$regex": re.escape(search.strip()), "$options": "i"}}},
+            ]}
+        ]
+
+    total = await CodingQuestion.find(query).count()
+    skip = (page - 1) * limit
+    questions = await CodingQuestion.find(query).skip(skip).limit(limit).to_list()
+
+    # Solved questions for this user
     solved_docs = await CodingSolvedProblem.find(
         CodingSolvedProblem.student_id == student_id
     ).to_list()
-    solved_ids = [s.question_id for s in solved_docs]
+    solved_ids = {s.question_id for s in solved_docs}
+
+    # Count solved by difficulty for progressive problem unlocking
+    solved_easy = sum(1 for s in solved_docs if "_easy_" in s.question_id)
+    solved_med = sum(1 for s in solved_docs if "_medium_" in s.question_id)
+
+    out = []
+    for q in questions:
+        # Determine problem-level lock status
+        if is_skill_locked:
+            p_unlocked = False
+            p_reason = skill_lock_reason
+        elif q.difficulty == "EASY":
+            p_unlocked = True
+            p_reason = None
+        elif q.difficulty == "MEDIUM":
+            p_unlocked = (solved_easy >= 1 or target_meta.get("progress_pct", 0) >= 30)
+            p_reason = None if p_unlocked else "Solve at least 1 Easy challenge in this skill to unlock Medium challenges."
+        elif q.difficulty == "HARD":
+            p_unlocked = (solved_med >= 1 or target_meta.get("progress_pct", 0) >= 60)
+            p_reason = None if p_unlocked else "Solve at least 1 Medium challenge in this skill to unlock Hard challenges."
+        else:
+            p_unlocked = True
+            p_reason = None
+
+        out.append({
+            "question_id": q.question_id,
+            "title": q.title,
+            "difficulty": q.difficulty,
+            "concept": q.concept or (q.topics[0] if q.topics else q.skill_tags[0] if q.skill_tags else "Core Logic"),
+            "topics": q.topics,
+            "skill_tags": q.skill_tags,
+            "acceptance_rate": getattr(q, "acceptance_rate", 75.0),
+            "is_solved": q.question_id in solved_ids,
+            "is_unlocked": p_unlocked,
+            "lock_reason": p_reason,
+            "examples_count": len(q.examples),
+            "test_cases_count": len(q.test_cases),
+        })
+
+    # Available concepts under target skill
+    all_skill_qs = await CodingQuestion.find(
+        {"$or": [
+            {"skill_tags": {"$elemMatch": {"$regex": f"^{re.escape(target_skill)}$", "$options": "i"}}},
+            {"topics": {"$elemMatch": {"$regex": f"^{re.escape(target_skill)}$", "$options": "i"}}},
+        ], "is_active": True}
+    ).to_list()
+    concepts = sorted(list({q.concept for q in all_skill_qs if q.concept}))
 
     return {
-        "weak_skills": weak_skills,
-        "problems": out_problems,
-        "solved_ids": solved_ids,
+        "skill": target_skill,
+        "has_skill_gap": True,
+        "student_skills": student_skills,
+        "skills_meta": skills_meta,
+        "is_locked": is_skill_locked,
+        "lock_reason": skill_lock_reason,
+        "total": total,
+        "page": page,
+        "limit": limit,
+        "total_solved": len(solved_ids),
+        "concepts": concepts,
+        "problems": out,
     }
 
 
-class SubmitSolvedBody(BaseModel):
+@router.get("/leetcode-problems/{question_id}")
+async def get_leetcode_problem_details(
+    question_id: str,
+    current_user: User = Depends(get_current_user),
+):
+    """Returns complete LeetCode problem specification, starter codes, and public test cases."""
+    q = await CodingQuestion.find_one(CodingQuestion.question_id == question_id)
+    if not q:
+        raise HTTPException(status_code=404, detail="Coding problem not found.")
+
+    student_id = str(current_user.id)
+    solved = await CodingSolvedProblem.find_one(
+        CodingSolvedProblem.student_id == student_id,
+        CodingSolvedProblem.question_id == question_id,
+    )
+
+    return {
+        "question_id": q.question_id,
+        "title": q.title,
+        "difficulty": q.difficulty,
+        "concept": q.concept,
+        "topics": q.topics,
+        "skill_tags": q.skill_tags,
+        "description": q.description,
+        "constraints": getattr(q, "constraints", ["1 <= input.length <= 10^4"]),
+        "examples": [
+            {"input": e.input, "output": e.output, "explanation": e.explanation}
+            for e in q.examples
+        ],
+        "starter_code": q.starter_code,
+        "starter_code_templates": getattr(q, "starter_code_templates", {
+            "python": q.starter_code,
+            "javascript": "function solve() {\n  // Write solution here\n}",
+        }),
+        "hints": getattr(q, "hints", []),
+        "acceptance_rate": getattr(q, "acceptance_rate", 75.0),
+        "is_solved": bool(solved),
+        "public_test_cases": [
+            {"input": tc.input, "expected": tc.expected}
+            for tc in q.test_cases[:3]
+        ],
+    }
+
+
+class RunCodeRequest(BaseModel):
     question_id: str
-    title: str
-    difficulty: str
-    topics: list[str] = []
+    language: str
+    code: str
+    custom_test_cases: Optional[List[dict]] = None
 
 
-@router.post("/arena-problems/submit-solved")
-async def submit_solved_problem(
-    body: SubmitSolvedBody,
+@router.post("/run-code")
+async def run_student_code(
+    body: RunCodeRequest,
     current_user: User = Depends(get_current_user),
 ):
     """
-    Persists solved status for a coding practice problem in MongoDB
-    and logs an activity entry in the student activity stream.
+    Executes student code against public test cases in an isolated subprocess.
+    Returns per-case passed/failed metrics, runtime, and console logs.
+    """
+    q = await CodingQuestion.find_one(CodingQuestion.question_id == body.question_id)
+    if not q:
+        raise HTTPException(status_code=404, detail="Problem not found.")
+
+    test_cases_to_run = body.custom_test_cases or [
+        {"input": tc.input, "expected": tc.expected}
+        for tc in q.test_cases[:3]
+    ]
+
+    exec_result = await execute_code(
+        language=body.language,
+        code=body.code,
+        test_cases=test_cases_to_run,
+        function_name="solve",
+    )
+    return exec_result
+
+
+class SubmitCodeRequest(BaseModel):
+    question_id: str
+    language: str
+    code: str
+
+
+@router.post("/submit-code")
+async def submit_student_code(
+    body: SubmitCodeRequest,
+    current_user: User = Depends(get_current_user),
+):
+    """
+    Evaluates student code against ALL test cases (public + hidden).
+    If accepted: records solve in DB and logs activity.
     """
     student_id = str(current_user.id)
+    q = await CodingQuestion.find_one(CodingQuestion.question_id == body.question_id)
+    if not q:
+        raise HTTPException(status_code=404, detail="Problem not found.")
 
-    existing = await CodingSolvedProblem.find_one(
-        CodingSolvedProblem.student_id == student_id,
-        CodingSolvedProblem.question_id == body.question_id,
+    all_test_cases = [
+        {"input": tc.input, "expected": tc.expected}
+        for tc in q.test_cases
+    ]
+
+    exec_result = await execute_code(
+        language=body.language,
+        code=body.code,
+        test_cases=all_test_cases,
+        function_name="solve",
     )
 
-    if not existing:
-        doc = CodingSolvedProblem(
-            student_id=student_id,
-            question_id=body.question_id,
-            title=body.title,
-            difficulty=body.difficulty,
-            topics=body.topics,
+    if exec_result.get("status") == "ACCEPTED":
+        existing = await CodingSolvedProblem.find_one(
+            CodingSolvedProblem.student_id == student_id,
+            CodingSolvedProblem.question_id == body.question_id,
         )
-        await doc.insert()
-
-        # Log entry to Activity Stream (type: "submission")
-        try:
-            topics_str = ", ".join(body.topics[:2]) if body.topics else "General"
-            await ActivityLog(
+        if not existing:
+            doc = CodingSolvedProblem(
                 student_id=student_id,
-                type="submission",
-                title=f"Solved Coding Challenge: {body.title}",
-                detail=f"{body.difficulty} · {topics_str}",
-            ).insert()
-        except Exception as e:
-            logger.warning(f"Could not log activity for coding challenge solve: {e}")
+                question_id=body.question_id,
+                title=q.title,
+                difficulty=q.difficulty,
+                topics=q.topics,
+            )
+            await doc.insert()
 
-    return {"status": "ok", "question_id": body.question_id}
+            try:
+                await ActivityLog(
+                    student_id=student_id,
+                    type="submission",
+                    title=f"Solved LeetCode Challenge: {q.title}",
+                    detail=f"{q.difficulty} · {q.concept or q.skill_tags[0]}",
+                ).insert()
+            except Exception:
+                pass
+
+        exec_result["already_credited"] = bool(existing)
+        exec_result["message"] = "Accepted! All test cases passed! 🎉"
+
+    return exec_result
+
 
