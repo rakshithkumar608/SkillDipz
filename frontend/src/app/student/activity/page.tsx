@@ -7,7 +7,7 @@ import {
   fetchActivityCalendar,
 } from "@/lib/dashboard";
 import { useAuthStore } from "@/store/authStore";
-import { useDashboardStore } from "@/store/dashboardStore";
+import { useDashboardStore, ActivityItem } from "@/store/dashboardStore";
 import {
   BookOpen,
   Building2,
@@ -239,7 +239,7 @@ function ActivityHeatmap({
   selectedYear: number;
   onYearChange: (year: number) => void;
   activeFilter?: string;
-  activities?: { id: string; type: string; created_at: string }[];
+  activities?: ActivityItem[];
 }) {
   const grid = useMemo(() => buildCalendarGrid(selectedYear), [selectedYear]);
   const monthLabels = useMemo(() => buildMonthLabels(grid), [grid]);
