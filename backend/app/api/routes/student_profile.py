@@ -11,6 +11,7 @@ from fastapi.responses import FileResponse
 from pydantic import BaseModel
 
 from app.api.routes.auth import get_current_user
+from app.core.config import settings
 from app.core.ws_manager import ws_manager
 from app.models.employability_score import EmployabilityScore, ScoreHistory
 from app.models.roadmap import StudentRoadmap
@@ -29,9 +30,8 @@ ALLOWED_RESUME_TYPES = {
     "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
 }
 MAX_RESUME_SIZE = 5 * 1024 * 1024  # 5 MB
-RESUME_DIR = Path("uploads") / "resumes"
-
-PHOTO_DIR = Path("uploads") / "photos"
+RESUME_DIR = settings.UPLOAD_DIR / "resumes"
+PHOTO_DIR = settings.UPLOAD_DIR / "photos"
 ALLOWED_PHOTO_TYPES = {"image/jpeg", "image/png", "image/webp"}
 MAX_PHOTO_SIZE = 2 * 1024 * 1024  # 2 MB
 
@@ -110,14 +110,12 @@ def _build_profile_out(
     comp = score_doc.components
     completeness_pct = round(profile.completeness_score / 10 * 100, 1)
 
-    # ── Score breakdown mapping (spec: coding/conceptual/learning/project/profile) ──
-    coding_val = round(comp.assessment_score * 0.5, 2)
-    conceptual_val = round(comp.assessment_score * 0.5, 2)
+    # ── Score breakdown mapping (coding/conceptual/learning/project/profile) ──
     breakdown = ScoreBreakdownOut(
-        coding=coding_val,
-        conceptual=conceptual_val,
-        learning=comp.activity_consistency,
-        project=comp.project_strength,
+        coding=round(getattr(comp, "practice", 0.0), 1),
+        conceptual=round(getattr(comp, "skill_tests", getattr(comp, "assessment_score", 0.0)), 1),
+        learning=round(getattr(comp, "learning_roadmap", getattr(comp, "activity_consistency", 0.0)), 1),
+        project=round(getattr(comp, "project_strength", 0.0), 1),
         profile=completeness_pct,
     )
 
@@ -239,7 +237,8 @@ async def get_my_profile(current_user: User = Depends(get_current_user)):
     profile.completeness_score = profile.compute_completeness()
     await profile.save()
 
-    score_doc = await EmployabilityScore.get_or_create(student_id)
+    from app.api.routes.students import compute_realtime_score
+    score_doc = await compute_realtime_score(student_id)
     return _build_profile_out(profile, score_doc)
 
 # PUT /students/me/profile

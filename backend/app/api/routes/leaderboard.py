@@ -390,6 +390,12 @@ async def get_my_rank(
 ) -> MyRankOut:
     caller_id = await get_optional_caller_id(request)
     me_id = str(caller_id) if caller_id else ""
+    if me_id:
+        try:
+            from app.api.routes.students import compute_realtime_score
+            await compute_realtime_score(me_id)
+        except Exception:
+            pass
     all_scores = await EmployabilityScore.find().sort(-EmployabilityScore.overall_score).to_list()
     total = max(len(all_scores), 1)
     my_score_doc = await EmployabilityScore.find_one(EmployabilityScore.student_id == me_id) if me_id else None

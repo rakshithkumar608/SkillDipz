@@ -1,4 +1,8 @@
+from pathlib import Path
 from pydantic_settings import BaseSettings, SettingsConfigDict
+
+BACKEND_DIR = Path(__file__).resolve().parent.parent.parent
+DEFAULT_UPLOAD_DIR = BACKEND_DIR / "uploads"
 
 class Settings(BaseSettings):
     PORT: int = 8000
@@ -15,6 +19,7 @@ class Settings(BaseSettings):
     YOUTUBE_API_KEY: str = ""
     GROQ_API_KEY: str = ""
     QUIZ_API_KEY: str = "" 
+    UPLOAD_DIR: Path = DEFAULT_UPLOAD_DIR
 
 
     # Cookie / Session — Student (JWT-backed)

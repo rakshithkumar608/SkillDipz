@@ -56,6 +56,23 @@ export function useWebSocket(userId: string | undefined): WsState {
               last_updated: updatedScore.last_updated ?? current.last_updated,
               is_empty: (updatedScore.overall_score ?? 0) === 0,
             });
+          } else if (updatedScore.overall_score !== undefined) {
+            setScore({
+              student_id: userId,
+              overall_score: updatedScore.overall_score ?? 0,
+              components: updatedScore.components ?? {
+                resume_quality: 0,
+                skill_tests: 0,
+                practice: 0,
+                learning_roadmap: 0,
+                project_strength: 0,
+                activity_consistency: 0,
+              },
+              target_role: null,
+              last_updated: updatedScore.last_updated ?? new Date().toISOString(),
+              history: [],
+              is_empty: (updatedScore.overall_score ?? 0) === 0,
+            });
           }
         }
 

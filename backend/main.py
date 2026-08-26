@@ -44,15 +44,17 @@ from app.api.routes.company_auth import router as company_auth_router
 from app.core.event_bus import register_target_company_handlers
 
 # Ensure upload directories exist before mounting static files
-UPLOAD_DIR = Path("uploads")
+UPLOAD_DIR = settings.UPLOAD_DIR
 (UPLOAD_DIR / "photos").mkdir(parents=True, exist_ok=True)
 (UPLOAD_DIR / "resumes").mkdir(parents=True, exist_ok=True)
+(UPLOAD_DIR / "project_specs").mkdir(parents=True, exist_ok=True)
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     # Ensure upload directories exist at runtime
     (UPLOAD_DIR / "photos").mkdir(parents=True, exist_ok=True)
     (UPLOAD_DIR / "resumes").mkdir(parents=True, exist_ok=True)
+    (UPLOAD_DIR / "project_specs").mkdir(parents=True, exist_ok=True)
     await connect_db()
     await connect_redis()
     register_target_company_handlers()
@@ -126,9 +128,9 @@ app.include_router(arena_admin_router, prefix="/v1")
 # Company Auth (session-based, separate from student JWT auth)
 app.include_router(company_auth_router, prefix="/v1")
 
-# Serve uploaded files (photos, resumes) as static
-# Path must include /v1 because the frontend baseURL already contains /v1
-app.mount("/v1/uploads", StaticFiles(directory="uploads"), name="uploads")
+# Serve uploaded files (photos, resumes, project specs) as static
+app.mount("/v1/uploads", StaticFiles(directory=str(UPLOAD_DIR)), name="uploads_v1")
+app.mount("/uploads", StaticFiles(directory=str(UPLOAD_DIR)), name="uploads")
 
 @app.get("/")
 async def root():

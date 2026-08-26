@@ -13,6 +13,7 @@ from app.core.youtube import fetch_youtube_videos, fetch_skill_videos_structured
 from app.models.employability_score import EmployabilityScore
 from app.models.roadmap import StudentRoadmap
 from app.models.skill_gap import RoleSkillBenchmark, StudentSkillLevel
+from app.models.activity_log import ActivityLog
 from app.models.user import User
 
 
@@ -684,6 +685,24 @@ async def mark_video_watched(
     roadmap.phase_states = _compute_phase_states(roadmap.phases, roadmap.phase_projects)
 
     await roadmap.save()
+
+    # Log to ActivityLog feed (counts towards Activity feed, streak, and real-time score)
+    try:
+        if new_status == "completed":
+            log_title = f"Mastered Roadmap Skill: {skill}"
+            log_detail = f"Completed all lessons for {skill} ({roadmap.progress_pct}% overall roadmap)"
+        else:
+            log_title = f"Studied Skill: {skill}"
+            log_detail = f"Progress: {new_pct}% on {skill}"
+
+        await ActivityLog(
+            student_id=student_id,
+            type="module",
+            title=log_title,
+            detail=log_detail,
+        ).insert()
+    except Exception as e:
+        logger.warning(f"Could not log roadmap activity: {e}")
 
     return {
         "skill": skill,

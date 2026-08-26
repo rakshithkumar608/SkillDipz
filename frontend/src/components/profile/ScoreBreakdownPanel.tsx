@@ -1,35 +1,43 @@
+"use client";
+
 import { ProfileData } from "@/lib/profile";
+import { CircularScoreRing } from "@/components/common/CircularScoreRing";
 
 const SCORE_ROWS = [
   {
     key: "coding",
     label: "Coding Proficiency",
-    weight: "Code tests + CF",
-    color: "bg-sky-400",
+    weight: "Coding arena & solves",
+    gradient: ["#0284c7", "#38bdf8"] as [string, string],
+    textColor: "text-sky-400",
   },
   {
     key: "conceptual",
     label: "Conceptual Knowledge",
-    weight: "MCQ assessments",
-    color: "bg-violet-400",
+    weight: "MCQ skill tests",
+    gradient: ["#7c3aed", "#a78bfa"] as [string, string],
+    textColor: "text-violet-400",
   },
   {
     key: "learning",
     label: "Learning Progress",
-    weight: "Roadmap completion",
-    color: "bg-teal-400",
+    weight: "Roadmap curriculum",
+    gradient: ["#0d9488", "#2dd4bf"] as [string, string],
+    textColor: "text-teal-400",
   },
   {
     key: "project",
     label: "Project Strength",
-    weight: "Submissions",
-    color: "bg-emerald-400",
+    weight: "Submitted projects",
+    gradient: ["#059669", "#34d399"] as [string, string],
+    textColor: "text-emerald-400",
   },
   {
     key: "profile",
     label: "Profile Completeness",
-    weight: "10% weight",
-    color: "bg-amber-400",
+    weight: "Profile credentials",
+    gradient: ["#d97706", "#fbbf24"] as [string, string],
+    textColor: "text-amber-400",
   },
 ] as const;
 
@@ -39,29 +47,37 @@ export function ScoreBreakdownPanel({
   breakdown: ProfileData["score_breakdown"];
 }) {
   return (
-    <div className="space-y-3.5">
-      {SCORE_ROWS.map(({ key, label, weight, color }) => {
-        const val = breakdown[key];
+    <div className="space-y-2.5">
+      {SCORE_ROWS.map(({ key, label, weight, gradient, textColor }) => {
+        const val = breakdown[key] ?? 0;
         return (
-          <div className="space-y-1" key={key}>
-            <div className="flex items-center justify-between">
-              <div>
-                <span className="text-xs font-semibold text-slate-300">
+          <div
+            key={key}
+            className="flex items-center justify-between p-2.5 rounded-xl bg-slate-900/40 border border-slate-800/60 transition-all hover:bg-slate-800/40"
+          >
+            <div className="flex items-center gap-3 min-w-0">
+              <CircularScoreRing
+                value={val}
+                gradientId={`ring-profile-${key}`}
+                colorGradient={gradient}
+                size={42}
+                strokeWidth={3.5}
+                textColor={textColor}
+                showDecimal={true}
+              />
+              <div className="min-w-0">
+                <span className="text-xs font-semibold text-slate-200 block truncate">
                   {label}
                 </span>
-                <span className="ml-2 text-[10px] text-slate-600">
+                <span className="text-[10px] text-slate-400 block truncate">
                   {weight}
                 </span>
               </div>
-              <span className="text-sm font-bold text-white tabular-nums">
-                {val.toFixed(1)}
-              </span>
             </div>
-            <div className="w-full bg-slate-800/60 rounded-full h-1.5">
-              <div
-                className={`h-1.5 rounded-full ${color} transition-all duration-700`}
-                style={{ width: `${Math.min(val, 100)}%` }}
-              />
+            <div className="text-right pl-2 shrink-0">
+              <span className={`text-xs font-bold tabular-nums ${textColor}`}>
+                {val.toFixed(1)}%
+              </span>
             </div>
           </div>
         );

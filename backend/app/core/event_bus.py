@@ -365,6 +365,18 @@ async def _handle_interview_completed(payload: Dict[str, Any]) -> None:
 
     score_display = f"{overall_score:.0f}" if overall_score else "N/A"
     mode_label = "AI Practice" if mode == "ai" else "Company"
+
+    try:
+        from app.models.activity_log import ActivityLog
+        await ActivityLog(
+            student_id=student_id,
+            type="interview",
+            title=f"Completed {mode_label} Mock Interview",
+            detail=f"{company_name} · Score: {score_display}/100",
+        ).insert()
+    except Exception as e:
+        logger.warning(f"Could not log interview activity: {e}")
+
     await send_notification(
         student_id=student_id,
         title=f"Mock Interview Result: {score_display}/100",

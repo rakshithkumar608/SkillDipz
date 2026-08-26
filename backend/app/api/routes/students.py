@@ -9,6 +9,7 @@ from pydantic import BaseModel
 
 
 from app.api.routes.auth import get_current_user
+from app.core.config import settings
 from app.models.user import User
 from app.models.employability_score import EmployabilityScore, ScoreHistory
 from app.models.roadmap import StudentRoadmap
@@ -32,10 +33,14 @@ class ScoreHistoryItem(BaseModel):
 
 class ScoreComponentsOut(BaseModel):
     resume_quality: float
-    assessment_score: float
+    skill_tests: float
+    practice: float
+    learning_roadmap: float
     project_strength: float
-    interview_readiness: float
     activity_consistency: float
+    # Backward compatibility
+    assessment_score: Optional[float] = 0.0
+    interview_readiness: Optional[float] = 0.0
 
 
 class ScoreOut(BaseModel):
@@ -109,31 +114,219 @@ class SkillGapOut(BaseModel):
     overall_match_pct: float
 
 
-#  Score
-@router.get("/me/score", response_model=ScoreOut)
-async def get_my_score(current_user: User = Depends(get_current_user)):
-    student_id = str(current_user.id)
+def _compute_streak(active_dates: set[date]) -> tuple[int, int, Optional[date]]:
+    if not active_dates:
+        return 0, 0, None
+
+    today = datetime.now(timezone.utc).date()
+    sorted_dates = sorted(active_dates, reverse=True)
+    last_active = sorted_dates[0]
+
+    # Current streak: walk backwards from today (or yesterday if not active yet today)
+    current = 0
+    if last_active < today - timedelta(days=1):
+        current = 0
+    else:
+        check = today if today in active_dates else today - timedelta(days=1)
+        while check in active_dates:
+            current += 1
+            check -= timedelta(days=1)
+
+    # Longest streak: find max consecutive day sequence
+    longest = 0
+    run = 1
+    for i in range(1, len(sorted_dates)):
+        if (sorted_dates[i - 1] - sorted_dates[i]).days == 1:
+            run += 1
+        else:
+            longest = max(longest, run)
+            run = 1
+    longest = max(longest, run, current)
+
+    return current, longest, last_active
+
+
+async def sync_student_streak(student_id: str) -> tuple[int, int, Optional[date]]:
+    """Synchronize the StudentStreak document dynamically based on ActivityLog entries."""
+    logs = await ActivityLog.find(ActivityLog.student_id == student_id).to_list()
+    active_dates = {log.created_at.date() for log in logs}
+    current, longest, last_active = _compute_streak(active_dates)
+
+    streak_doc = await StudentStreak.get_or_create(student_id)
+    if (
+        streak_doc.current_streak != current
+        or streak_doc.longest_streak != longest
+        or streak_doc.last_active != last_active
+    ):
+        streak_doc.current_streak = current
+        streak_doc.longest_streak = longest
+        streak_doc.last_active = last_active
+        await streak_doc.save()
+
+    return current, longest, last_active
+
+
+async def compute_realtime_score(student_id: str) -> EmployabilityScore:
+    """
+    Computes all 6 Skill Indices dynamically from actual database records:
+    1. Resume Quality (15%): Profile completeness and resume upload status.
+    2. Skill Tests (20%): Average score percentage of completed skill tests from AssessmentResult.
+    3. Practice (15%): Total solved coding challenges (LeetCode + Codeforces + Daily Assignment tasks).
+    4. Learning Roadmap (20%): Progress percentage from StudentRoadmap.
+    5. Projects (15%): Evaluated project submissions (NLP score) and personal projects.
+    6. Consistency (15%): Dynamic calculation from user's current streak and 14-day activity frequency.
+    """
     doc = await EmployabilityScore.get_or_create(student_id)
     prof = await StudentProfile.find_one(StudentProfile.student_id == student_id)
+    roadmap = await StudentRoadmap.find_one(StudentRoadmap.student_id == student_id)
+
     if prof and prof.target_roles and doc.target_role != prof.target_roles:
         doc.target_role = prof.target_roles
-        await doc.save()
+
+    # 1. Resume Quality (0-100%)
+    resume_up = bool((prof and prof.resume_file_path) or (roadmap and roadmap.resume_uploaded))
+    if prof:
+        completeness_pts = prof.compute_completeness()  # 0 to 10
+        if resume_up:
+            resume_val = min(100.0, max(60.0, float(completeness_pts * 10)))
+        else:
+            resume_val = float(completeness_pts * 10)
+    elif resume_up:
+        resume_val = 70.0
+    else:
+        resume_val = 0.0
+
+    # 2. Skill Tests & Practice (Total Questions in MCQ + Coding vs Solved by Student)
+    from app.models.assessment import (
+        AssessmentTopic,
+        AssessmentResult,
+        CodingQuestion,
+        CodingSolvedProblem,
+        CFSolvedProblem,
+    )
+    from app.models.daily_assignment import DailyAssignment
+
+    # Total MCQ questions across all active topics in database
+    active_topics = await AssessmentTopic.find(AssessmentTopic.is_active == True).to_list()
+    total_mcq_questions = sum(t.question_count for t in active_topics) if active_topics else 0
+
+    # Total MCQ questions correctly solved by this student
+    test_results = await AssessmentResult.find(AssessmentResult.student_id == student_id).to_list()
+    mcq_correct_solved = sum(r.correct_count for r in test_results) if test_results else 0
+
+    # Total Coding questions available in database
+    total_coding_questions = await CodingQuestion.find(CodingQuestion.is_active == True).count()
+
+    # Total Coding problems solved by this student (LeetCode + Codeforces + Daily Tasks)
+    coding_count = await CodingSolvedProblem.find(CodingSolvedProblem.student_id == student_id).count()
+    cf_count = await CFSolvedProblem.find(CFSolvedProblem.student_id == student_id).count()
+    assignment_docs = await DailyAssignment.find(DailyAssignment.student_id == student_id).to_list()
+    assignment_completed_tasks = sum(
+        1 for a in assignment_docs for task in a.tasks if getattr(task, "status", "") == "completed"
+    )
+    total_coding_solved = coding_count + cf_count + assignment_completed_tasks
+
+    # Calculate real percentage solved out of all questions available
+    total_available_questions = total_mcq_questions + total_coding_questions
+    total_solved_questions = mcq_correct_solved + total_coding_solved
+
+    if total_available_questions > 0 and total_solved_questions > 0:
+        skill_tests_val = min(100.0, round((total_solved_questions / total_available_questions) * 100.0, 1))
+    elif total_solved_questions > 0:
+        skill_tests_val = min(100.0, round(total_solved_questions * 5.0, 1))
+    else:
+        skill_tests_val = 0.0
+
+    # 3. Learning Roadmap (0-100%)
+    if roadmap and roadmap.total_skills > 0:
+        roadmap_val = round((roadmap.completed_skills / roadmap.total_skills) * 100.0, 1)
+    elif roadmap and roadmap.progress_pct:
+        roadmap_val = float(roadmap.progress_pct)
+    else:
+        roadmap_val = 0.0
+
+    # 4. Projects (0-100%) — ONLY if submitted in database
+    from app.models.project import StudentProjectSubmission
+    submissions = await StudentProjectSubmission.find(StudentProjectSubmission.student_id == student_id).to_list()
+    if submissions:
+        evaluated_scores = [sub.nlp_score * 100.0 for sub in submissions if sub.nlp_score is not None]
+        if evaluated_scores:
+            projects_val = round(sum(evaluated_scores) / len(evaluated_scores), 1)
+        else:
+            projects_val = 0.0
+    else:
+        projects_val = 0.0  # Zero percentage if no project submitted
+
+    # 5. Consistency (0-100%)
+    current_streak, longest_streak, last_active = await sync_student_streak(student_id)
+    logs = await ActivityLog.find(ActivityLog.student_id == student_id).to_list()
+    active_dates = {log.created_at.date() for log in logs}
+    today = datetime.now(timezone.utc).date()
+    past_14_days_active = sum(1 for d in active_dates if (today - d).days <= 14)
+
+    if active_dates:
+        streak_pts = min(50.0, current_streak * 7.15)
+        freq_pts = min(50.0, (past_14_days_active / 7.0) * 50.0)
+        consistency_val = round(min(100.0, streak_pts + freq_pts), 1)
+    else:
+        consistency_val = 0.0
+
+    # Update doc components
+    doc.components.resume_quality = resume_val
+    doc.components.skill_tests = skill_tests_val
+    doc.components.practice = round((total_coding_solved / max(1, total_coding_questions)) * 100.0, 1) if total_coding_questions > 0 else 0.0
+    doc.components.learning_roadmap = roadmap_val
+    doc.components.project_strength = projects_val
+    doc.components.activity_consistency = consistency_val
+    doc.components.assessment_score = skill_tests_val
+    doc.components.interview_readiness = 0.0
 
     overall = doc.compute_overall()
     if overall != doc.overall_score:
         doc.overall_score = overall
         doc.last_updated = datetime.now(timezone.utc)
+        doc.history.append(ScoreHistory(score=overall))
+        doc.history = doc.history[-7:]
         await doc.save()
+
+        # Broadcast real-time score update to active WebSockets
+        try:
+            await ws_manager.broadcast(
+                student_id,
+                "score_update",
+                {
+                    "overall_score": overall,
+                    "components": doc.components.model_dump(),
+                    "last_updated": doc.last_updated.isoformat(),
+                },
+            )
+        except Exception as e:
+            logger.warning(f"Could not broadcast score update: {e}")
+    else:
+        await doc.save()
+
+    return doc
+
+
+#  Score
+@router.get("/me/score", response_model=ScoreOut)
+async def get_my_score(current_user: User = Depends(get_current_user)):
+    student_id = str(current_user.id)
+    doc = await compute_realtime_score(student_id)
+    prof = await StudentProfile.find_one(StudentProfile.student_id == student_id)
 
     return ScoreOut(
         student_id=student_id,
-        overall_score=overall,
+        overall_score=doc.overall_score,
         components=ScoreComponentsOut(
             resume_quality=doc.components.resume_quality,
-            assessment_score=doc.components.assessment_score,
+            skill_tests=doc.components.skill_tests,
+            practice=doc.components.practice,
+            learning_roadmap=doc.components.learning_roadmap,
             project_strength=doc.components.project_strength,
-            interview_readiness=doc.components.interview_readiness,
             activity_consistency=doc.components.activity_consistency,
+            assessment_score=doc.components.skill_tests,
+            interview_readiness=doc.components.interview_readiness,
         ),
         target_role=doc.target_role or (prof.target_roles if prof else None),
         last_updated=doc.last_updated,
@@ -141,17 +334,21 @@ async def get_my_score(current_user: User = Depends(get_current_user)):
             ScoreHistoryItem(score=h.score, recorded_at=h.recorded_at)
             for h in doc.history[-7:]
         ],
-        is_empty=overall == 0.0,
+        is_empty=doc.overall_score == 0.0,
     )
 
 
 class ScoreUpdatePayload(BaseModel):
     resume_quality: Optional[float] = None
-    assessment_score: Optional[float] = None
+    skill_tests: Optional[float] = None
+    practice: Optional[float] = None
+    learning_roadmap: Optional[float] = None
     project_strength: Optional[float] = None
-    interview_readiness: Optional[float] = None
     activity_consistency: Optional[float] = None
     target_role: Optional[str] = None
+    # Backward compatibility
+    assessment_score: Optional[float] = None
+    interview_readiness: Optional[float] = None
 
 
 @router.patch("/me/score", response_model=ScoreOut)
@@ -168,12 +365,16 @@ async def update_score(
 
     if body.resume_quality is not None:
         doc.components.resume_quality = body.resume_quality
-    if body.assessment_score is not None:
-        doc.components.assessment_score = body.assessment_score
+    if body.skill_tests is not None:
+        doc.components.skill_tests = body.skill_tests
+    elif body.assessment_score is not None:
+        doc.components.skill_tests = body.assessment_score
+    if body.practice is not None:
+        doc.components.practice = body.practice
+    if body.learning_roadmap is not None:
+        doc.components.learning_roadmap = body.learning_roadmap
     if body.project_strength is not None:
         doc.components.project_strength = body.project_strength
-    if body.interview_readiness is not None:
-        doc.components.interview_readiness = body.interview_readiness
     if body.activity_consistency is not None:
         doc.components.activity_consistency = body.activity_consistency
     if body.target_role is not None:
@@ -229,7 +430,7 @@ ALLOWED_RESUME_TYPES = {
     "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
 }
 MAX_RESUME_SIZE = 5 * 1024 * 1024  # 5 MB
-RESUME_DIR = Path("uploads") / "resumes"
+RESUME_DIR = settings.UPLOAD_DIR / "resumes"
 
 
 class ResumeUploadOut(BaseModel):
@@ -556,8 +757,8 @@ async def log_activity(
     current_user: User = Depends(get_current_user),
 ):
     """
-    Generic activity logger — used by the frontend to log coding practice solves.
-    These entries count toward the streak heatmap (same as all other activity types).
+    Generic activity logger — used by frontend modules to record student solves/activities.
+    Syncs streak and recalculates employability score dynamically in real-time.
     """
     student_id = str(current_user.id)
     await ActivityLog(
@@ -566,42 +767,12 @@ async def log_activity(
         title=body.title,
         detail=body.detail,
     ).insert()
+
+    # Sync streak and real-time score
+    await sync_student_streak(student_id)
+    await compute_realtime_score(student_id)
+
     return {"message": "Activity logged."}
-
-
-
-def _compute_streak(active_dates: set[date]) -> tuple[int, int, Optional[date]]:
-    if not active_dates:
-        return 0, 0, None
-
-    today = date.today()
-    sorted_dates = sorted(active_dates, reverse=True)
-    last_active = sorted_dates[0]
-
-    # Current streak: walk backwards from today (or yesterday if not active yet today)
-    current = 0
-    if last_active < today - timedelta(days=1):
-        current = 0
-    else:
-        check = today if today in active_dates else today - timedelta(days=1)
-        while check in active_dates:
-            current += 1
-            check -= timedelta(days=1)
-
-    # Longest streak: find max consecutive day sequence
-    longest = 0
-    run = 1
-    for i in range(1, len(sorted_dates)):
-        if (sorted_dates[i - 1] - sorted_dates[i]).days == 1:
-            run += 1
-        else:
-            longest = max(longest, run)
-            run = 1
-    longest = max(longest, run, current)
-
-    return current, longest, last_active
-
-
 
 
 # Streak
@@ -609,14 +780,7 @@ def _compute_streak(active_dates: set[date]) -> tuple[int, int, Optional[date]]:
 @router.get("/me/streak", response_model=StreakOut)
 async def get_streak(current_user: User = Depends(get_current_user)):
     student_id = str(current_user.id)
-
-    # Fetch all activity dates (only need the date part, not full doc)
-    logs = await ActivityLog.find(
-        ActivityLog.student_id == student_id
-    ).to_list()
-
-    active_dates = {log.created_at.date() for log in logs}
-    current, longest, last_active = _compute_streak(active_dates)
+    current, longest, last_active = await sync_student_streak(student_id)
 
     return StreakOut(
         current_streak=current,
@@ -645,6 +809,18 @@ async def get_activity_calendar(current_user: User = Depends(get_current_user)):
         active_dates.add(d)
 
     current, longest, last_active = _compute_streak(active_dates)
+
+    # Keep StudentStreak document in sync
+    streak_doc = await StudentStreak.get_or_create(student_id)
+    if (
+        streak_doc.current_streak != current
+        or streak_doc.longest_streak != longest
+        or streak_doc.last_active != last_active
+    ):
+        streak_doc.current_streak = current
+        streak_doc.longest_streak = longest
+        streak_doc.last_active = last_active
+        await streak_doc.save()
 
     return CalendarOut(
         dates=counts,

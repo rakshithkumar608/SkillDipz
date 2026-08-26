@@ -14,11 +14,10 @@ import {
 } from "lucide-react";
 
 const SCORE_BREAKDOWN = [
-  { key: "resume_quality", label: "Resume", cls: "text-amber-400" },
-  { key: "assessment_score", label: "Assessments", cls: "text-sky-400" },
-  { key: "project_strength", label: "Projects", cls: "text-purple-400" },
-  { key: "interview_readiness", label: "Interviews", cls: "text-rose-400" },
-  { key: "activity_consistency", label: "Consistency", cls: "text-emerald-400" },
+  { key: "resume_quality", label: "Resume Quality", cls: "text-amber-400" },
+  { key: "assessment_score", label: "Skill Tests & Practice", cls: "text-sky-400" },
+  { key: "project_strength", label: "Projects", cls: "text-teal-400" },
+  { key: "activity_consistency", label: "Consistency", cls: "text-rose-400" },
 ] as const;
 
 interface Props {

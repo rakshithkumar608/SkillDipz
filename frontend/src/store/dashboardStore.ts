@@ -2,10 +2,13 @@ import { create } from "zustand";
 
 export interface ScoreComponents {
   resume_quality: number;
-  assessment_score: number;
+  skill_tests: number;
+  practice: number;
+  learning_roadmap: number;
   project_strength: number;
-  interview_readiness: number;
   activity_consistency: number;
+  assessment_score?: number;
+  interview_readiness?: number;
 }
 
 export interface ScoreHistoryItem {

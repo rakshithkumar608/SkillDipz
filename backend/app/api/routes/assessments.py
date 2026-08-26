@@ -972,14 +972,14 @@ async def submit_assessment(
     except Exception as e:
         logger.warning(f"Could not log assessment activity: {e}")
 
-    # Update EmployabilityScore.assessment_score directly (no separate consumer needed)
+    # Update EmployabilityScore skill_tests directly
     try:
         emp = await EmployabilityScore.get_or_create(student_id)
-        # Weighted rolling average: new = old * 0.7 + new_score * 0.3
-        old_assessment = emp.components.assessment_score
-        emp.components.assessment_score = round(
-            old_assessment * 0.7 + (score_pct / 100 * 100) * 0.3, 2
-        )
+        # Average across all taken assessment results
+        all_results = await AssessmentResult.find(AssessmentResult.student_id == student_id).to_list()
+        avg_tests = round(sum(r.score_pct for r in all_results) / len(all_results), 1) if all_results else score_pct
+        emp.components.skill_tests = avg_tests
+        emp.components.assessment_score = avg_tests
         emp.overall_score = emp.compute_overall()
         emp.last_updated = now
         await emp.save()

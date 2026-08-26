@@ -15,6 +15,7 @@ import {
   uploadResume,
 } from "@/lib/dashboard";
 import { ScoreGauge } from "@/components/student/ScoreGauge";
+import { CircularScoreRing } from "@/components/common/CircularScoreRing";
 import {
   Activity,
   AlertTriangle,
@@ -69,12 +70,57 @@ function ActivityIcon({ type }: { type: string }) {
   }
 }
 
-const SCORE_LABELS: Record<string, { label: string; weight: string }> = {
-  resume_quality:       { label: "Resume Quality",  weight: "20%" },
-  assessment_score:     { label: "Assessments",     weight: "30%" },
-  project_strength:     { label: "Projects",        weight: "15%" },
-  interview_readiness:  { label: "Mock Interviews", weight: "20%" },
-  activity_consistency: { label: "Consistency",     weight: "15%" },
+const SCORE_LABELS: Record<
+  string,
+  {
+    label: string;
+    weight: string;
+    href: string;
+    color: string;
+    gradient: [string, string];
+    hint: string;
+  }
+> = {
+  resume_quality: {
+    label: "Resume Quality",
+    weight: "15%",
+    href: "/student/profile",
+    color: "text-amber-400",
+    gradient: ["#f59e0b", "#fbbf24"],
+    hint: "Profile completeness & verified resume",
+  },
+  skill_tests: {
+    label: "Skill Tests & Practice",
+    weight: "35%",
+    href: "/student/practice",
+    color: "text-sky-400",
+    gradient: ["#0284c7", "#6366f1"],
+    hint: "MCQ assessments & coding arena solves",
+  },
+  learning_roadmap: {
+    label: "Learning Roadmap",
+    weight: "20%",
+    href: "/student/roadmap",
+    color: "text-emerald-400",
+    gradient: ["#059669", "#34d399"],
+    hint: "Curriculum progression & completed skills",
+  },
+  project_strength: {
+    label: "Projects",
+    weight: "15%",
+    href: "/student/projects",
+    color: "text-teal-400",
+    gradient: ["#0d9488", "#2dd4bf"],
+    hint: "Evaluated repo submissions & NLP scores",
+  },
+  activity_consistency: {
+    label: "Consistency",
+    weight: "15%",
+    href: "/student/activity",
+    color: "text-rose-400",
+    gradient: ["#e11d48", "#fb7185"],
+    hint: "Daily activity streak & active frequency",
+  },
 };
 
 // ─── Skeleton 
@@ -394,6 +440,9 @@ export default function OverviewPage() {
               <div className="flex items-center gap-2">
                 <span className="w-2.5 h-2.5 rounded-full bg-emerald-400 shadow-sm shadow-emerald-400/50" />
                 <h2 className="text-sm font-bold text-white tracking-wide">Skill Indices Check</h2>
+                <span className="text-[10px] text-slate-400 bg-slate-800/80 px-2 py-0.5 rounded-full border border-slate-700/50 font-medium">
+                  5 Real-time Metrics
+                </span>
               </div>
               {score?.last_updated && (
                 <span className="text-xs text-slate-400">Updated {timeAgo(score.last_updated)}</span>
@@ -401,36 +450,56 @@ export default function OverviewPage() {
             </div>
 
             {isLoading ? (
-              <div className="space-y-4">
+              <div className="space-y-3">
                 {[...Array(5)].map((_, i) => (
-                  <div key={i}>
-                    <Skeleton className="h-3 w-28 mb-1.5" />
-                    <Skeleton className="h-2.5 w-full" />
+                  <div key={i} className="flex items-center gap-3 p-3 rounded-xl bg-slate-900/40 border border-slate-800/40">
+                    <Skeleton className="w-12 h-12 rounded-full shrink-0" />
+                    <div className="space-y-1.5 flex-1">
+                      <Skeleton className="h-4 w-32" />
+                      <Skeleton className="h-3 w-48" />
+                    </div>
                   </div>
                 ))}
               </div>
             ) : score ? (
-              <div className="space-y-5">
+              <div className="space-y-2.5">
                 {Object.entries(SCORE_LABELS).map(([key, meta]) => {
                   const val = score.components[key as keyof typeof score.components] ?? 0;
                   return (
-                    <div key={key} className="space-y-2">
-                      <div className="flex items-center justify-between text-xs sm:text-sm font-medium">
-                        <div className="flex items-center gap-2">
-                          <span className="text-slate-200 font-semibold">{meta.label}</span>
-                          <span className="text-[10px] text-slate-400 bg-slate-800/90 px-2 py-0.5 rounded-full border border-slate-700/50">
-                            {meta.weight}
-                          </span>
-                        </div>
-                        <span className="text-emerald-400 font-bold tabular-nums">{val.toFixed(1)}%</span>
-                      </div>
-                      <div className="h-2.5 w-full bg-slate-900 rounded-full overflow-hidden border border-slate-800/80">
-                        <div
-                          className="h-full rounded-full bg-emerald-400 shadow-[0_0_12px_rgba(52,211,153,0.6)] transition-all duration-700"
-                          style={{ width: `${Math.max(val, val === 0 ? 0 : 2)}%` }}
+                    <Link
+                      key={key}
+                      href={meta.href}
+                      className="flex items-center justify-between p-3 rounded-xl bg-slate-950/50 hover:bg-slate-900/80 border border-slate-800/60 hover:border-slate-700/80 transition-all duration-200 group"
+                    >
+                      <div className="flex items-center gap-3.5 min-w-0">
+                        <CircularScoreRing
+                          value={val}
+                          gradientId={`ring-overview-${key}`}
+                          colorGradient={meta.gradient}
+                          size={46}
+                          strokeWidth={4}
+                          textColor={meta.color}
+                          showDecimal={true}
                         />
+                        <div className="min-w-0">
+                          <div className="flex items-center gap-2">
+                            <span className="text-xs sm:text-sm font-semibold text-slate-200 group-hover:text-white transition-colors truncate">
+                              {meta.label}
+                            </span>
+                            <span className="text-[10px] text-slate-400 bg-slate-800/90 px-2 py-0.5 rounded-full border border-slate-700/50 font-medium shrink-0">
+                              {meta.weight}
+                            </span>
+                          </div>
+                          <p className="text-[11px] text-slate-400 truncate mt-0.5">
+                            {meta.hint}
+                          </p>
+                        </div>
                       </div>
-                    </div>
+                      <div className="flex items-center gap-1.5 pl-2 shrink-0 text-slate-500 group-hover:text-emerald-400 transition-colors">
+                        <span className="text-xs font-semibold hidden sm:inline">Open</span>
+                        <ChevronRight className="w-4 h-4 group-hover:translate-x-0.5 transition-transform" />
+                      </div>
+                    </Link>
                   );
                 })}
               </div>
@@ -439,7 +508,7 @@ export default function OverviewPage() {
 
           {!isLoading && score?.is_empty && (
             <div className="p-3 bg-emerald-500/5 border border-emerald-500/10 rounded-xl text-xs text-slate-400 text-center">
-              Complete your first assessment or project to begin raising your skill indices.
+              Complete your first skill test, coding challenge, or project to begin raising your skill indices.
             </div>
           )}
         </Card>
@@ -447,9 +516,14 @@ export default function OverviewPage() {
         {/* Right: Real Target Placement Goal & Score Gauge */}
         <Card className="lg:col-span-5 flex flex-col justify-between space-y-6">
           <div className="space-y-4">
-            <div className="flex items-center gap-2">
-              <span className="w-2.5 h-2.5 rounded-full bg-emerald-400 shadow-sm shadow-emerald-400/50" />
-              <h2 className="text-sm font-bold text-white tracking-wide">Target Placement Goal</h2>
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <span className="w-2.5 h-2.5 rounded-full bg-emerald-400 shadow-sm shadow-emerald-400/50" />
+                <h2 className="text-sm font-bold text-white tracking-wide">Target Placement Goal</h2>
+              </div>
+              <span className="text-[10px] font-semibold text-emerald-400 bg-emerald-500/10 border border-emerald-500/20 px-2.5 py-0.5 rounded-full">
+                {score && score.overall_score >= 75 ? "Placement Ready" : "In Progress"}
+              </span>
             </div>
 
             {/* Target Role Box */}
@@ -475,8 +549,11 @@ export default function OverviewPage() {
             </div>
 
             {/* Gauge Center Representation */}
-            <div className="flex justify-center py-2">
+            <div className="flex flex-col items-center justify-center py-1">
               <ScoreGauge score={score?.overall_score ?? 0} isLoading={isLoading} />
+              <p className="text-[11px] text-slate-400 text-center mt-1">
+                Weighted calculation across 5 real-time skill performance indices
+              </p>
             </div>
           </div>
 
@@ -484,17 +561,17 @@ export default function OverviewPage() {
           <div className="flex items-center gap-3 flex-wrap pt-2">
             <Link
               href="/student/skill-gap"
-              className="flex-1 inline-flex items-center justify-center gap-2 px-4 py-2.5 bg-slate-800/80 hover:bg-slate-800 text-slate-200 border border-slate-700/60 text-xs sm:text-sm font-semibold rounded-xl transition-all"
+              className="flex-1 inline-flex items-center justify-center gap-2 px-3.5 py-2.5 bg-slate-800/80 hover:bg-slate-800 text-slate-200 border border-slate-700/60 text-xs font-semibold rounded-xl transition-all"
             >
               <Search className="w-4 h-4 text-sky-400" />
-              View Gap Analysis
+              Gap Analysis
             </Link>
             <Link
-              href="/student/mock-interview"
-              className="flex-1 inline-flex items-center justify-center gap-2 px-4 py-2.5 bg-emerald-400 hover:bg-emerald-300 text-slate-950 font-bold text-xs sm:text-sm rounded-xl transition-all shadow-lg shadow-emerald-400/20"
+              href="/student/practice"
+              className="flex-1 inline-flex items-center justify-center gap-2 px-3.5 py-2.5 bg-emerald-400 hover:bg-emerald-300 text-slate-950 font-bold text-xs rounded-xl transition-all shadow-lg shadow-emerald-400/20"
             >
-              <Mic className="w-4 h-4" />
-              AI Mock Interview
+              <Code2 className="w-4 h-4" />
+              Skill Tests & Practice
             </Link>
           </div>
         </Card>

@@ -7,6 +7,7 @@ from fastapi import APIRouter, Depends, File, HTTPException, Query, UploadFile, 
 
 from app.api.dependencies import get_current_company
 from app.api.routes.auth import get_current_user
+from app.core.config import settings
 from app.models.user import User
 from app.models.project import (
     CompanyProject,
@@ -18,6 +19,7 @@ from app.models.project import (
     ProjectResource,
     StudentProject,
 )
+from app.models.activity_log import ActivityLog
 from app.models.student_profile import StudentProfile
 from app.schemas.project_schema import (
     CreateProjectRequest,
@@ -75,7 +77,7 @@ async def upload_spec_document(
     ext = Path(orig_name).suffix.lower() or ".pdf"
     safe_name = f"spec_{uuid.uuid4().hex[:8]}_{Path(orig_name).stem[:25]}{ext}"
 
-    spec_dir = Path("uploads/project_specs")
+    spec_dir = settings.UPLOAD_DIR / "project_specs"
     spec_dir.mkdir(parents=True, exist_ok=True)
     dest = spec_dir / safe_name
     dest.write_bytes(contents)
@@ -472,6 +474,17 @@ async def submit_project(
         )
     except Exception as e:
         logger.warning(f"Company notification failed: {e}")
+
+    # Log to ActivityLog feed (counts towards Activity feed, streak, and real-time score)
+    try:
+        await ActivityLog(
+            student_id=student_id,
+            type="project",
+            title=f"Submitted Project: {project.title}",
+            detail=f"Submitted for {project.company_name} · NLP Evaluation queued",
+        ).insert()
+    except Exception as e:
+        logger.warning(f"Could not log project activity: {e}")
 
     # Dispatch event for async NLP evaluation
     await event_bus.publish("project.submitted", {

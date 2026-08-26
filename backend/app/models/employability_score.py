@@ -10,10 +10,14 @@ class ScoreHistory(BaseModel):
 
 class ScoreComponents(BaseModel):
     resume_quality: float = 0.0
-    assessment_score: float = 0.0
-    project_strength: float =  0.0
-    interview_readiness: float = 0.0
+    skill_tests: float = 0.0
+    practice: float = 0.0
+    learning_roadmap: float = 0.0
+    project_strength: float = 0.0
     activity_consistency: float = 0.0
+    # Backward compatibility aliases
+    assessment_score: Optional[float] = 0.0
+    interview_readiness: Optional[float] = 0.0
 
 class EmployabilityScore(Document):
     student_id: str
@@ -36,11 +40,13 @@ class EmployabilityScore(Document):
 
     def compute_overall(self) -> float:
         c = self.components
+        # Resolve skill_tests from assessment_score if skill_tests is 0 but assessment_score is set
+        st = c.skill_tests if c.skill_tests > 0 else (c.assessment_score or 0.0)
         return round(
-            c.resume_quality * 0.20 +
-            c.assessment_score * 0.30 +
+            c.resume_quality * 0.15 +
+            st * 0.35 +
+            c.learning_roadmap * 0.20 +
             c.project_strength * 0.15 +
-            c.interview_readiness * 0.20 +
             c.activity_consistency * 0.15,
-            2
+            1
         )

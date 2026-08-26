@@ -334,9 +334,15 @@ export default function ProfilePage() {
         <Card className="lg:col-span-5 p-5">
           <SectionHeader icon={Zap} title="Score Breakdown" accent="violet" />
           {loading ? (
-            <div className="space-y-3">
+            <div className="space-y-2.5">
               {[...Array(5)].map((_, i) => (
-                <Skeleton key={i} className="h-8 w-full" />
+                <div key={i} className="flex items-center gap-3 p-2.5 rounded-xl bg-slate-900/40 border border-slate-800/60">
+                  <Skeleton className="w-10 h-10 rounded-full shrink-0" />
+                  <div className="space-y-1 flex-1">
+                    <Skeleton className="h-3.5 w-28" />
+                    <Skeleton className="h-2.5 w-40" />
+                  </div>
+                </div>
               ))}
             </div>
           ) : profile ? (
