@@ -90,6 +90,13 @@ const HEAT_COLORS_MAP: Record<string, string[]> = {
     "bg-teal-600 border border-teal-400/60 text-white shadow-sm shadow-teal-600/30",
     "bg-teal-400 border border-teal-300 text-slate-950 shadow-md shadow-teal-400/50 font-bold",
   ],
+  daily: [
+    "bg-slate-800/60 border border-slate-700/30",
+    "bg-amber-950/80 border border-amber-800/40 text-amber-300",
+    "bg-amber-800/90 border border-amber-600/50 text-amber-200",
+    "bg-amber-600 border border-amber-400/60 text-white shadow-sm shadow-amber-600/30",
+    "bg-amber-400 border border-amber-300 text-slate-950 shadow-md shadow-amber-400/50 font-bold",
+  ],
   resume: [
     "bg-slate-800/60 border border-slate-700/30",
     "bg-sky-950/80 border border-sky-800/40 text-sky-300",
@@ -130,7 +137,18 @@ function heatLevel(count: number): number {
 }
 
 function toDateKey(d: Date): string {
-  return d.toISOString().slice(0, 10);
+  const year = d.getFullYear();
+  const month = String(d.getMonth() + 1).padStart(2, "0");
+  const day = String(d.getDate()).padStart(2, "0");
+  return `${year}-${month}-${day}`;
+}
+
+function toLocalDateKey(d: Date | string): string {
+  const dateObj = typeof d === "string" ? new Date(d) : d;
+  const year = dateObj.getFullYear();
+  const month = String(dateObj.getMonth() + 1).padStart(2, "0");
+  const day = String(dateObj.getDate()).padStart(2, "0");
+  return `${year}-${month}-${day}`;
 }
 
 function buildCalendarGrid(targetYear: number) {
@@ -233,12 +251,28 @@ function ActivityHeatmap({
     }
     const catCounts: Record<string, number> = {};
     activities.forEach((act) => {
-      if (activeFilter === "project") {
+      if (activeFilter === "daily") {
+        if (!act.title?.toLowerCase().includes("daily")) return;
+      } else if (activeFilter === "project") {
         if (act.type !== "project" && act.type !== "module") return;
+      } else if (activeFilter === "submission") {
+        if (
+          act.type !== "submission" ||
+          act.title?.toLowerCase().includes("resume") ||
+          act.title?.toLowerCase().includes("parsed")
+        ) return;
+      } else if (activeFilter === "resume") {
+        if (
+          act.type !== "resume" &&
+          !act.title?.toLowerCase().includes("resume") &&
+          !act.title?.toLowerCase().includes("parsed")
+        ) return;
+      } else if (activeFilter === "assessment") {
+        if (act.type !== "assessment") return;
       } else if (act.type !== activeFilter) {
         return;
       }
-      const dKey = act.created_at.split("T")[0];
+      const dKey = toLocalDateKey(act.created_at);
       catCounts[dKey] = (catCounts[dKey] ?? 0) + 1;
     });
     return catCounts;
@@ -427,13 +461,13 @@ function ActivityIcon({ type }: { type: string }) {
 }
 
 function TypeBadge({ type, title }: { type: string; title?: string }) {
-  if (title?.startsWith("Daily Task")) {
+  if (title?.toLowerCase().includes("daily")) {
     return (
       <span
         className="inline-flex items-center px-2.5 py-0.5 rounded-full text-[10px]
           font-extrabold tracking-wide bg-amber-500/20 text-amber-300 border border-amber-500/40 shadow-sm shadow-amber-500/10"
       >
-        ⚡ Daily Task
+        ⚡ Daily Assessment
       </span>
     );
   }
@@ -603,7 +637,7 @@ export default function ActivityPage() {
   const displayed = useMemo(() => {
     if (filter === "all") return activity;
     if (filter === "daily") {
-      return activity.filter((a) => a.title.startsWith("Daily Task"));
+      return activity.filter((a) => a.title?.toLowerCase().includes("daily"));
     }
     if (filter === "submission") {
       return activity.filter(
@@ -657,7 +691,7 @@ export default function ActivityPage() {
     [activity],
   );
   const dailyTaskCount = useMemo(
-    () => activity.filter((a) => a.title.startsWith("Daily Task")).length,
+    () => activity.filter((a) => a.title?.toLowerCase().includes("daily")).length,
     [activity],
   );
 

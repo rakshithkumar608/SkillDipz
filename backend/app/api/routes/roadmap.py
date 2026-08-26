@@ -12,6 +12,7 @@ from app.core.groq_service import get_or_generate_benchmarks
 from app.core.youtube import fetch_youtube_videos, fetch_skill_videos_structured
 from app.models.employability_score import EmployabilityScore
 from app.models.roadmap import StudentRoadmap
+from app.models.student_profile import StudentProfile
 from app.models.skill_gap import RoleSkillBenchmark, StudentSkillLevel
 from app.models.activity_log import ActivityLog
 from app.models.user import User

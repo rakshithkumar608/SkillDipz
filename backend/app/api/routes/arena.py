@@ -962,6 +962,22 @@ async def complete_session(
     session.completed_at = datetime.now(timezone.utc)
     await session.save()
 
+    # Log to ActivityLog so it appears on My Activity feed & heatmap
+    try:
+        from app.models.activity_log import ActivityLog
+        from app.api.routes.students import sync_student_streak, compute_realtime_score
+        game_label = GAME_TYPE_LABELS.get(session.game_type, session.game_type)
+        await ActivityLog(
+            student_id=student_id,
+            type="assessment",
+            title=f"Skill Game: {game_label}",
+            detail=f"Completed {game_label} · {round(accuracy * 100, 1)}% accuracy · +{total_xp} XP ({correct_count}/{total_q} correct)",
+        ).insert()
+        await sync_student_streak(student_id)
+        await compute_realtime_score(student_id)
+    except Exception as e:
+        logger.warning(f"Could not log arena session activity: {e}")
+
     from beanie import PydanticObjectId
     questions = []
     for qid in session.question_ids:
@@ -1093,6 +1109,21 @@ async def complete_daily_arena(
         accuracy=accuracy,
         total_time_ms=total_time_ms,
     ).insert()
+
+    # Log to ActivityLog so it appears on My Activity feed & heatmap
+    try:
+        from app.models.activity_log import ActivityLog
+        from app.api.routes.students import sync_student_streak, compute_realtime_score
+        await ActivityLog(
+            student_id=student_id,
+            type="assessment",
+            title=f"Daily Assessment: Arena Challenge",
+            detail=f"Completed Daily Arena ({total_q} games) · {round(accuracy * 100, 1)}% accuracy · +{total_xp} XP",
+        ).insert()
+        await sync_student_streak(student_id)
+        await compute_realtime_score(student_id)
+    except Exception as e:
+        logger.warning(f"Could not log daily arena activity: {e}")
 
     from beanie import PydanticObjectId
     questions = []

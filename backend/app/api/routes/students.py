@@ -146,10 +146,87 @@ def _compute_streak(active_dates: set[date]) -> tuple[int, int, Optional[date]]:
     return current, longest, last_active
 
 
-async def sync_student_streak(student_id: str) -> tuple[int, int, Optional[date]]:
-    """Synchronize the StudentStreak document dynamically based on ActivityLog entries."""
+async def _get_all_student_active_dates(student_id: str) -> set[date]:
+    active_dates: set[date] = set()
+
+    # 1. ActivityLog
     logs = await ActivityLog.find(ActivityLog.student_id == student_id).to_list()
-    active_dates = {log.created_at.date() for log in logs}
+    for log in logs:
+        if log.created_at:
+            active_dates.add(log.created_at.date())
+
+    # 2. Assessment Results
+    try:
+        from app.models.assessment import AssessmentResult
+        results = await AssessmentResult.find(AssessmentResult.student_id == student_id).to_list()
+        for r in results:
+            if r.taken_at:
+                active_dates.add(r.taken_at.date())
+    except Exception:
+        pass
+
+    # 3. Daily Assignments
+    try:
+        from app.models.daily_assignment import DailyAssignment
+        assignments = await DailyAssignment.find(DailyAssignment.student_id == student_id).to_list()
+        for a in assignments:
+            if any(t.status == "completed" for t in a.tasks):
+                try:
+                    active_dates.add(date.fromisoformat(a.date))
+                except Exception:
+                    pass
+            for t in a.tasks:
+                if t.status == "completed" and t.completed_at:
+                    active_dates.add(t.completed_at.date())
+    except Exception:
+        pass
+
+    # 4. Arena Attempts & Sessions
+    try:
+        from app.models.arena import ArenaAttempt, ArenaSession
+        attempts = await ArenaAttempt.find(ArenaAttempt.student_id == student_id).to_list()
+        for att in attempts:
+            if att.date_str:
+                try:
+                    active_dates.add(date.fromisoformat(att.date_str))
+                except Exception:
+                    pass
+        sessions = await ArenaSession.find(
+            ArenaSession.student_id == student_id,
+            ArenaSession.status == "completed",
+        ).to_list()
+        for s in sessions:
+            if s.completed_at:
+                active_dates.add(s.completed_at.date())
+    except Exception:
+        pass
+
+    # 5. Coding Solved Problems
+    try:
+        from app.models.coding_question import CodingSolvedProblem
+        solved = await CodingSolvedProblem.find(CodingSolvedProblem.student_id == student_id).to_list()
+        for sp in solved:
+            if sp.solved_at:
+                active_dates.add(sp.solved_at.date())
+    except Exception:
+        pass
+
+    # 6. Project Submissions
+    try:
+        from app.models.project_submission import StudentProjectSubmission
+        subs = await StudentProjectSubmission.find(StudentProjectSubmission.student_id == student_id).to_list()
+        for sub in subs:
+            if sub.submitted_at:
+                active_dates.add(sub.submitted_at.date())
+    except Exception:
+        pass
+
+    return active_dates
+
+
+async def sync_student_streak(student_id: str) -> tuple[int, int, Optional[date]]:
+    """Synchronize the StudentStreak document dynamically based on all real student activities."""
+    active_dates = await _get_all_student_active_dates(student_id)
     current, longest, last_active = _compute_streak(active_dates)
 
     streak_doc = await StudentStreak.get_or_create(student_id)
@@ -790,23 +867,27 @@ async def get_streak(current_user: User = Depends(get_current_user)):
 
 @router.get("/me/activity/calendar", response_model=CalendarOut)
 async def get_activity_calendar(current_user: User = Depends(get_current_user)):
-
     student_id = str(current_user.id)
     cutoff = datetime.now(timezone.utc) - timedelta(days=365)
 
+    active_dates = await _get_all_student_active_dates(student_id)
+
+    # Aggregate counts per date
+    counts: dict[str, int] = {}
     logs = await ActivityLog.find(
         ActivityLog.student_id == student_id,
         ActivityLog.created_at >= cutoff,
     ).to_list()
-
-    # Aggregate counts per date
-    counts: dict[str, int] = {}
-    active_dates: set[date] = set()
     for log in logs:
         d = log.created_at.date()
         key = str(d)
         counts[key] = counts.get(key, 0) + 1
-        active_dates.add(d)
+
+    # Ensure every active date has at least count 1
+    for d in active_dates:
+        key = str(d)
+        if key not in counts:
+            counts[key] = 1
 
     current, longest, last_active = _compute_streak(active_dates)
 

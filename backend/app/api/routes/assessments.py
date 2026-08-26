@@ -4,6 +4,7 @@ import logging
 import json
 import html
 import httpx
+import re
 from typing import List, Optional
 from datetime import datetime, timezone, timedelta
 from fastapi import APIRouter, Depends, HTTPException, Query, UploadFile, File
@@ -616,10 +617,11 @@ async def get_available_assessments(
                         last = result_map.get(set_topic_id)
                         attempts = attempt_counts.get(set_topic_id, 0)
                         prev_set_attempted = attempts > 0
+                        is_completed_100 = (last is not None and last.score_pct == 100.0)
 
                         can_retake = True
                         cooldown_until = None
-                        if last:
+                        if last and not is_completed_100:
                             retake_at = last.next_retake_allowed_at
                             if retake_at.tzinfo is None:
                                 retake_at = retake_at.replace(tzinfo=timezone.utc)
@@ -637,6 +639,7 @@ async def get_available_assessments(
                             "time_limit_mins": s_def["mins"],
                             "last_score_pct": last.score_pct if last else None,
                             "last_taken_at": last.taken_at.isoformat() if last else None,
+                            "is_completed": is_completed_100,
                             "can_retake": can_retake,
                             "cooldown_until": cooldown_until,
                             "attempt_count": attempts,
@@ -946,6 +949,9 @@ async def submit_assessment(
     await session.save()
 
     # Persist permanent result
+    is_completed_100 = (score_pct == 100.0)
+    next_retake = now if is_completed_100 else (now + timedelta(hours=24))
+
     result = AssessmentResult(
         student_id=student_id,
         topic_id=session.topic_id,
@@ -957,34 +963,33 @@ async def submit_assessment(
         total_questions=total,
         skills_verified=list(skills_verified),
         skill_tags=list({q.skill_tag for q in session.questions}),
-        next_retake_allowed_at=now + timedelta(hours=24),
+        next_retake_allowed_at=next_retake,
     )
     await result.insert()
 
-    # Log to activity feed (counts toward streak heatmap)
+    # Log to ActivityLog feed (counts toward streak heatmap)
     try:
+        from app.models.activity_log import ActivityLog
+        from app.api.routes.students import sync_student_streak, compute_realtime_score
+        
+        if is_completed_100:
+            log_title = f"Completed 100%: {session.topic_title}"
+            log_detail = f"Perfect 100% Score · All {total}/{total} questions correct · Mastered skills: {', '.join(list(skills_verified)[:4])}"
+        else:
+            log_title = f"Attempted: {session.topic_title}"
+            log_detail = f"Scored {score_pct}% ({correct}/{total} correct) · 100% needed to pass · Next retake in 24h"
+
         await ActivityLog(
             student_id=student_id,
             type="assessment",
-            title=f"Completed: {session.topic_title}",
-            detail=f"{score_pct}% · {correct}/{total} correct · Skills: {', '.join(list(skills_verified)[:4])}",
+            title=log_title,
+            detail=log_detail,
         ).insert()
+
+        await sync_student_streak(student_id)
+        await compute_realtime_score(student_id)
     except Exception as e:
         logger.warning(f"Could not log assessment activity: {e}")
-
-    # Update EmployabilityScore skill_tests directly
-    try:
-        emp = await EmployabilityScore.get_or_create(student_id)
-        # Average across all taken assessment results
-        all_results = await AssessmentResult.find(AssessmentResult.student_id == student_id).to_list()
-        avg_tests = round(sum(r.score_pct for r in all_results) / len(all_results), 1) if all_results else score_pct
-        emp.components.skill_tests = avg_tests
-        emp.components.assessment_score = avg_tests
-        emp.overall_score = emp.compute_overall()
-        emp.last_updated = now
-        await emp.save()
-    except Exception as e:
-        logger.warning(f"Could not update employability score: {e}")
 
     # Publish event for other consumers (notifications, activity log etc.)
     await event_bus.publish("assessment.completed", {

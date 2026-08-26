@@ -149,6 +149,10 @@ async def get_daily_assignment(
     if not assignment:
         raise HTTPException(status_code=404, detail=f"No assignment found for {target_date}")
 
+    streak_doc = await StudentStreak.get_or_create(student_id)
+    assignment.streak = streak_doc.current_streak
+    assignment.streak_tier = streak_doc.streak_tier
+
     redis = get_redis()
     platform_count = await _get_platform_completed_today(redis)
 
@@ -219,6 +223,12 @@ async def complete_task(
     streak_doc.longest_streak = longest_s
     streak_doc.last_active = last_act or date.today()
     await streak_doc.save()
+
+    try:
+        from app.api.routes.students import compute_realtime_score
+        await compute_realtime_score(student_id)
+    except Exception:
+        pass
 
     all_done = all(t.status == "completed" for t in assignment.tasks)
     if all_done:

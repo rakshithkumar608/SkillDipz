@@ -18,6 +18,7 @@ export interface AssessmentTopic {
   time_limit_mins: number;
   last_score_pct: number | null;
   last_taken_at: string | null;
+  is_completed?: boolean;
   can_retake: boolean;
   cooldown_until: string | null;
   attempt_count: number;
