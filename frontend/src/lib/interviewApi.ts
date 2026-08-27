@@ -259,6 +259,7 @@ export async function fetchMentors(params?: {
   company?: string;
   expertise?: string;
   search?: string;
+  weakness_tags?: string;
 }): Promise<{ mentors: any[]; total: number }> {
   const { data } = await api.get("/mentorship/mentors", { params });
   return data;

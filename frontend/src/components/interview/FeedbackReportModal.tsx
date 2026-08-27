@@ -19,6 +19,7 @@ import {
   Play,
   Bookmark,
   MessageSquare,
+  ArrowRight,
 } from "lucide-react";
 import {
   DetailedRubric,
@@ -28,6 +29,17 @@ import {
   InterviewTimestampFeedbackItem,
   TimestampCategory,
 } from "@/lib/interviewApi";
+import {
+  analyzePerformanceForMentorship,
+  MentorRecommendationResult,
+} from "@/lib/mentorRecommendation";
+
+export interface MentorFilterContext {
+  weaknessLabels: string[];
+  searchTags: string[];
+  reason: string;
+  summary: string;
+}
 
 interface FeedbackReportModalProps {
   isOpen: boolean;
@@ -42,7 +54,7 @@ interface FeedbackReportModalProps {
   recordedBlob?: Blob | null;
   transcript?: string | null;
   conversation?: { role: string; content: string }[];
-  onBookMentor?: () => void;
+  onBookMentor?: (filterContext?: MentorFilterContext) => void;
 }
 
 const CATEGORY_STYLES: Record<TimestampCategory, { bg: string; text: string; border: string }> = {
@@ -136,6 +148,13 @@ export default function FeedbackReportModal({
 
   const displayScore = teamFeedback ? teamFeedback.overall_score : initialOverallScore;
 
+  // Real Performance Weakness Analysis
+  const mentorRecommendation: MentorRecommendationResult = analyzePerformanceForMentorship(
+    teamFeedback ? teamFeedback.scores : null,
+    rubric,
+    displayScore
+  );
+
   const handleJumpToTimestamp = (sec: number) => {
     setActiveTab("recording");
     setTimeout(() => {
@@ -144,6 +163,22 @@ export default function FeedbackReportModal({
         videoRef.current.play().catch(() => {});
       }
     }, 150);
+  };
+
+  const handleTriggerMentorFind = () => {
+    onClose();
+    if (onBookMentor) {
+      if (mentorRecommendation.isRecommended) {
+        onBookMentor({
+          weaknessLabels: mentorRecommendation.weaknesses.map((w) => w.label),
+          searchTags: mentorRecommendation.searchTags,
+          reason: mentorRecommendation.reason,
+          summary: mentorRecommendation.filterSummary,
+        });
+      } else {
+        onBookMentor(undefined);
+      }
+    }
   };
 
   const getScoreBadge = (s: number) => {
@@ -165,7 +200,7 @@ export default function FeedbackReportModal({
         className="relative w-full max-w-4xl bg-[#0b0f19] border border-slate-800 rounded-3xl shadow-2xl overflow-hidden my-8"
       >
         {/* Header Ribbon */}
-        <div className="relative p-6 sm:p-8 bg-gradient-to-r from-slate-900 via-indigo-950/40 to-slate-900 border-b border-slate-800">
+        <div className="relative p-6 sm:p-8 bg-linear-to-r from-slate-900 via-indigo-950/40 to-slate-900 border-b border-slate-800">
           <button
             onClick={onClose}
             className="absolute top-6 right-6 p-2 rounded-xl bg-slate-800/80 text-slate-400 hover:text-white hover:bg-slate-700 transition"
@@ -201,7 +236,7 @@ export default function FeedbackReportModal({
 
             {/* Overall Score Dial */}
             <div className="flex items-center gap-4 bg-slate-900/90 border border-slate-700/60 rounded-2xl p-4 shrink-0 shadow-lg">
-              <div className="w-16 h-16 rounded-xl bg-gradient-to-br from-indigo-500 to-purple-600 flex flex-col items-center justify-center text-white shadow-lg">
+              <div className="w-16 h-16 rounded-xl bg-linear-to-br from-indigo-500 to-purple-600 flex flex-col items-center justify-center text-white shadow-lg">
                 <span className="text-2xl font-black">{Math.round(displayScore)}</span>
                 <span className="text-[10px] uppercase font-bold text-indigo-200 tracking-wider">/ 100</span>
               </div>
@@ -267,6 +302,57 @@ export default function FeedbackReportModal({
           ) : activeTab === "rubric" ? (
             /* Tab 1: Rubric & Real Scores */
             <div className="space-y-6">
+              {/* ─── REAL MENTOR RECOMMENDATION CONNECTION ───────────────────── */}
+              {mentorRecommendation.isRecommended && (
+                <div className="p-6 rounded-3xl bg-linear-to-r from-purple-950/40 via-indigo-950/40 to-slate-900 border border-purple-500/30 shadow-xl space-y-4">
+                  <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+                    <div className="space-y-1.5">
+                      <div className="flex items-center gap-2">
+                        <span className="px-2.5 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-wider bg-purple-500/20 text-purple-300 border border-purple-500/30 flex items-center gap-1">
+                          <Sparkles className="w-3 h-3 text-purple-400" />
+                          Personalized Recommendation
+                        </span>
+                        <span className="text-xs text-slate-400">
+                          Based on performance analysis
+                        </span>
+                      </div>
+                      <h3 className="text-lg sm:text-xl font-black text-white flex items-center gap-2">
+                        <Users className="w-5 h-5 text-purple-400" />
+                        1-to-1 Mentoring Recommended
+                      </h3>
+                      <p className="text-xs sm:text-sm text-slate-200 font-medium leading-relaxed">
+                        {mentorRecommendation.reason}
+                      </p>
+                    </div>
+
+                    <button
+                      onClick={handleTriggerMentorFind}
+                      className="px-5 py-3 rounded-2xl bg-linear-to-r from-purple-600 to-indigo-600 hover:from-purple-500 hover:to-indigo-500 text-white font-bold text-xs sm:text-sm flex items-center justify-center gap-2 shadow-lg shadow-purple-500/25 shrink-0 transition"
+                    >
+                      <Users className="w-4 h-4" />
+                      <span>Find a Mentor</span>
+                      <ArrowRight className="w-3.5 h-3.5" />
+                    </button>
+                  </div>
+
+                  {/* Weakness Score Badges */}
+                  <div className="flex flex-wrap items-center gap-2 pt-2 border-t border-purple-500/15">
+                    <span className="text-[11px] text-slate-400 font-medium">Areas needing focus:</span>
+                    {mentorRecommendation.weaknesses.map((w) => (
+                      <span
+                        key={w.key}
+                        className="px-2.5 py-1 rounded-xl text-xs font-bold bg-purple-500/15 text-purple-200 border border-purple-500/30 flex items-center gap-1.5"
+                      >
+                        <span>{w.label}</span>
+                        <span className="px-1.5 py-0.2 rounded-md bg-purple-900/60 text-purple-300 text-[10px] font-mono">
+                          {Math.round(w.score)}%
+                        </span>
+                      </span>
+                    ))}
+                  </div>
+                </div>
+              )}
+
               {/* If Feedback is Pending */}
               {isPending && !teamFeedback && !rubric ? (
                 <div className="p-8 rounded-2xl bg-amber-500/10 border border-amber-500/20 text-center space-y-3">
@@ -536,13 +622,11 @@ export default function FeedbackReportModal({
           <div className="flex items-center gap-3 w-full sm:w-auto">
             {onBookMentor && (
               <button
-                onClick={() => {
-                  onClose();
-                  onBookMentor();
-                }}
-                className="flex-1 sm:flex-none px-4 py-2.5 rounded-xl bg-gradient-to-r from-purple-600 to-indigo-600 hover:from-purple-500 hover:to-indigo-500 text-white font-semibold text-sm flex items-center justify-center gap-2 shadow-lg shadow-purple-500/20 transition"
+                onClick={handleTriggerMentorFind}
+                className="flex-1 sm:flex-none px-4 py-2.5 rounded-xl bg-linear-to-r from-purple-600 to-indigo-600 hover:from-purple-500 hover:to-indigo-500 text-white font-semibold text-sm flex items-center justify-center gap-2 shadow-lg shadow-purple-500/20 transition"
               >
-                <Users className="w-4 h-4" /> Book 1-on-1 Mentor Follow-up
+                <Users className="w-4 h-4" />
+                {mentorRecommendation.isRecommended ? "Find a Mentor" : "Book 1-on-1 Mentor Follow-up"}
               </button>
             )}
             <button

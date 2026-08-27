@@ -205,14 +205,31 @@ export default function MentorDirectoryPage() {
           </div>
         ) : filteredMentors.length === 0 ? (
           /* Empty State */
-          <div className="p-16 rounded-3xl bg-slate-900/40 border border-slate-800 text-center space-y-3 max-w-2xl mx-auto shadow-2xl">
+          <div className="p-16 rounded-3xl bg-slate-900/40 border border-slate-800 text-center space-y-4 max-w-2xl mx-auto shadow-2xl">
             <div className="w-14 h-14 rounded-2xl bg-indigo-500/10 border border-indigo-500/20 flex items-center justify-center mx-auto text-indigo-400">
               <Users className="w-7 h-7" />
             </div>
-            <h3 className="text-base font-bold text-white">No mentors available yet.</h3>
+            <h3 className="text-base font-bold text-white">
+              {searchQuery || selectedCompany !== "All"
+                ? "No mentors are currently available for this area."
+                : "No mentors available yet."}
+            </h3>
             <p className="text-xs text-slate-400 leading-relaxed">
-              Active mentors will appear here as soon as they complete their profile and publish open interview availability slots.
+              {searchQuery || selectedCompany !== "All"
+                ? "None of the currently registered active mentors match this area or search filter. Try clearing filters to view all active mentors."
+                : "Active mentors will appear here as soon as they complete their profile and publish open interview availability slots."}
             </p>
+            {(searchQuery || selectedCompany !== "All") && (
+              <button
+                onClick={() => {
+                  setSearchQuery("");
+                  setSelectedCompany("All");
+                }}
+                className="px-4 py-2 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-bold transition"
+              >
+                View All Active Mentors
+              </button>
+            )}
           </div>
         ) : (
           /* Real Mentors Grid */
