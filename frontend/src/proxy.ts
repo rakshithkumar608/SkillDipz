@@ -41,12 +41,13 @@ export function proxy(req: NextRequest) {
   const role = req.cookies.get("sd_role")?.value;
   const isLoggedIn = !!role;
 
-  // Not logged in — block protected company, student, and mentor routes
+  // Not logged in — block protected company, student, mentor, and interviewer routes
   if (!isLoggedIn) {
     if (
       pathname.startsWith("/student") ||
       pathname.startsWith("/company") ||
-      pathname.startsWith("/mentor")
+      pathname.startsWith("/mentor") ||
+      pathname.startsWith("/interviewer")
     ) {
       return NextResponse.redirect(new URL("/login", req.url));
     }
@@ -54,9 +55,10 @@ export function proxy(req: NextRequest) {
   }
 
   // Role based security guard:
-  // STUDENT cannot access /company/* or /mentor/*
-  // COMPANY cannot access /student/* or /mentor/*
-  // MENTOR cannot access /student/* or /company/*
+  // STUDENT cannot access /company/*, /mentor/*, /interviewer/*
+  // COMPANY cannot access /student/*, /mentor/*, /interviewer/*
+  // MENTOR cannot access /student/*, /company/*
+  // INTERVIEWER can access /interviewer/*
   if (pathname.startsWith("/student") && role !== "STUDENT") {
     return NextResponse.redirect(new URL("/login", req.url));
   }
@@ -66,6 +68,12 @@ export function proxy(req: NextRequest) {
   if (
     pathname.startsWith("/mentor") &&
     role !== "MENTOR" &&
+    role !== "ADMIN"
+  ) {
+    return NextResponse.redirect(new URL("/login", req.url));
+  }
+  if (
+    pathname.startsWith("/interviewer") &&
     role !== "INTERVIEWER" &&
     role !== "ADMIN"
   ) {
@@ -78,7 +86,8 @@ export function proxy(req: NextRequest) {
 function getRedirectPath(role: string): string {
   if (role === "STUDENT") return "/student/overview";
   if (role === "COMPANY") return "/company/dashboard";
-  if (role === "MENTOR" || role === "INTERVIEWER") return "/mentor/dashboard";
+  if (role === "MENTOR") return "/mentor/dashboard";
+  if (role === "INTERVIEWER") return "/interviewer/dashboard";
   return "/onboarding";
 }
 

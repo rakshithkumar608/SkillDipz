@@ -82,16 +82,38 @@ async def get_current_admin(
     return {"admin_id": str(current_user.id), "user": current_user}
 
 
+async def get_current_interviewer(
+    current_user: User = Depends(get_current_user),
+) -> dict:
+    """
+    Dependency that validates the bearer token and checks that the user is an interviewer or admin.
+    """
+    role_upper = (current_user.role or "").upper()
+    if role_upper not in ("INTERVIEWER", "ADMIN"):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Interviewer privileges required",
+        )
+    return {
+        "interviewer_id": str(current_user.id),
+        "user_id": str(current_user.id),
+        "user": current_user,
+        "email": current_user.email,
+        "full_name": current_user.full_name,
+    }
+
+
 async def get_current_mentor(
     current_user: User = Depends(get_current_user),
 ) -> dict:
     """
     Dependency that validates the bearer token and checks that the user is a mentor or interviewer.
     """
-    role_lower = (current_user.role or "").lower()
-    if role_lower not in ("mentor", "interviewer", "admin"):
+    role_upper = (current_user.role or "").upper()
+    if role_upper not in ("MENTOR", "INTERVIEWER", "ADMIN"):
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Mentor or Interviewer privileges required",
         )
     return {"mentor_id": str(current_user.id), "user": current_user}
+

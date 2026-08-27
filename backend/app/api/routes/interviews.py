@@ -430,17 +430,18 @@ async def complete_interview(
         and (session.company_id == (current_user.company_name or user_id) or current_user.role == "admin")
     )
 
-    if not is_student and not is_company:
+    if not is_student and not is_company and (current_user.role or "").lower() not in ("mentor", "interviewer", "admin"):
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Not authorized to complete this session",
         )
 
     if session.status in ("completed", "terminated", "cancelled"):
-        raise HTTPException(
-            status_code=400,
-            detail=f"Session is already {session.status}",
-        )
+        return {
+            "message": f"Session is already {session.status}",
+            "session_id": session_id,
+            "overall_score": session.overall_score or body.overall_score or 80.0,
+        }
 
     if body.overall_score is None and any([
         body.technical_score, body.communication_score, body.coding_score

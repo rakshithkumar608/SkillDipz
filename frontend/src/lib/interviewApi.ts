@@ -443,3 +443,163 @@ export async function getCompanyInterviews(): Promise<{
   const { data } = await api.get("/companies/me/interviews");
   return data;
 }
+
+export async function evaluateCompanyInterview(
+  sessionId: string,
+  payload: {
+    overall_score: number;
+    feedback: string;
+    rubric?: DetailedRubric;
+  }
+): Promise<{
+  message: string;
+  session_id: string;
+  overall_score: number;
+  rubric?: DetailedRubric;
+}> {
+  const { data } = await api.post(`/companies/me/interviews/${sessionId}/evaluate`, payload);
+  return data;
+}
+
+// ─── Real Interviewer Account & Evaluation Endpoints ─────────────────────────
+
+export interface AssignedInterviewSession {
+  session_id: string;
+  student_id: string;
+  student_name: string;
+  student_college: string;
+  student_email: string;
+  interview_type: string;
+  mode: string;
+  company_name: string;
+  duration_mins: number;
+  status: string;
+  review_status: "unassigned" | "assigned" | "review_in_progress" | "reviewed";
+  recording_url?: string | null;
+  recording_duration_sec?: number | null;
+  recording_file_size?: number | null;
+  assigned_at?: string | null;
+  reviewed_at?: string | null;
+  overall_score?: number | null;
+  interviewer_feedback?: string | null;
+  rubric?: DetailedRubric | null;
+  transcript?: string | null;
+  tab_switch_count: number;
+  fullscreen_exit_count: number;
+  created_at: string;
+}
+
+export async function fetchInterviewerInterviews(): Promise<{
+  assigned: AssignedInterviewSession[];
+  pending: AssignedInterviewSession[];
+  completed: AssignedInterviewSession[];
+  total: number;
+  interviewer: { id: string; name?: string; email?: string };
+}> {
+  const { data } = await api.get("/interviewer/interviews");
+  return data;
+}
+
+export async function fetchInterviewerSessionDetail(sessionId: string): Promise<{
+  session: InterviewSession;
+  candidate: {
+    name: string;
+    email: string;
+    college: string;
+    phone?: string;
+    target_roles?: string[];
+  };
+}> {
+  const { data } = await api.get(`/interviewer/interviews/${sessionId}`);
+  return data;
+}
+
+export async function submitInterviewerReview(
+  sessionId: string,
+  payload: {
+    overall_score: number;
+    feedback: string;
+    rubric?: DetailedRubric;
+  }
+): Promise<{
+  message: string;
+  session_id: string;
+  review_status: string;
+  overall_score: number;
+  reviewed_at: string;
+}> {
+  const { data } = await api.post(`/interviewer/interviews/${sessionId}/review`, payload);
+  return data;
+}
+
+// ─── Admin Interviewer Management & Assignment Endpoints ─────────────────────
+
+export async function fetchAdminInterviewers(): Promise<{
+  interviewers: Array<{
+    id: string;
+    full_name: string;
+    email: string;
+    role: string;
+    created_at?: string;
+  }>;
+  total: number;
+}> {
+  const { data } = await api.get("/admin/interviewers");
+  return data;
+}
+
+export async function createAdminInterviewer(payload: {
+  full_name: string;
+  email: string;
+  password: string;
+}): Promise<{
+  message: string;
+  interviewer_id: string;
+  email: string;
+  full_name: string;
+}> {
+  const { data } = await api.post("/admin/interviewers", payload);
+  return data;
+}
+
+export async function fetchAdminAssignableInterviews(): Promise<{
+  interviews: Array<{
+    session_id: string;
+    student_id: string;
+    student_name: string;
+    student_email: string;
+    student_college: string;
+    interview_type: string;
+    mode: string;
+    duration_mins: number;
+    status: string;
+    review_status: string;
+    assigned_interviewer_id?: string;
+    assigned_interviewer_name?: string;
+    assigned_at?: string;
+    recording_url?: string;
+    created_at: string;
+  }>;
+  total: number;
+}> {
+  const { data } = await api.get("/admin/interviews/assignable");
+  return data;
+}
+
+export async function assignInterviewToInterviewer(
+  sessionId: string,
+  interviewerId: string
+): Promise<{
+  message: string;
+  session_id: string;
+  assigned_interviewer_id: string;
+  assigned_interviewer_name: string;
+  review_status: string;
+  assigned_at: string;
+}> {
+  const { data } = await api.post(`/admin/interviews/${sessionId}/assign`, {
+    interviewer_id: interviewerId,
+  });
+  return data;
+}
+
