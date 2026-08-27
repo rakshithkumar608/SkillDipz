@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useState, useRef } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import {
   Award,
@@ -15,13 +15,18 @@ import {
   ShieldCheck,
   Loader2,
   Clock,
-  Briefcase,
   UserCheck,
+  Play,
+  Bookmark,
+  MessageSquare,
 } from "lucide-react";
 import {
   DetailedRubric,
   fetchInterviewFeedback,
+  fetchInterviewTimestampFeedbacks,
   InterviewFeedbackData,
+  InterviewTimestampFeedbackItem,
+  TimestampCategory,
 } from "@/lib/interviewApi";
 
 interface FeedbackReportModalProps {
@@ -39,6 +44,17 @@ interface FeedbackReportModalProps {
   conversation?: { role: string; content: string }[];
   onBookMentor?: () => void;
 }
+
+const CATEGORY_STYLES: Record<TimestampCategory, { bg: string; text: string; border: string }> = {
+  Communication: { bg: "bg-sky-500/15", text: "text-sky-300", border: "border-sky-500/30" },
+  Technical: { bg: "bg-indigo-500/15", text: "text-indigo-300", border: "border-indigo-500/30" },
+  Confidence: { bg: "bg-purple-500/15", text: "text-purple-300", border: "border-purple-500/30" },
+  "Problem Solving": { bg: "bg-emerald-500/15", text: "text-emerald-300", border: "border-emerald-500/30" },
+  "Answer Quality": { bg: "bg-amber-500/15", text: "text-amber-300", border: "border-amber-500/30" },
+  "Body Language": { bg: "bg-rose-500/15", text: "text-rose-300", border: "border-rose-500/30" },
+  Positive: { bg: "bg-teal-500/15", text: "text-teal-300", border: "border-teal-500/30" },
+  Improvement: { bg: "bg-orange-500/15", text: "text-orange-300", border: "border-orange-500/30" },
+};
 
 export default function FeedbackReportModal({
   isOpen,
@@ -59,34 +75,50 @@ export default function FeedbackReportModal({
   const [playbackRate, setPlaybackRate] = useState<number>(1);
   const [loadingFeedback, setLoadingFeedback] = useState(false);
   const [teamFeedback, setTeamFeedback] = useState<InterviewFeedbackData | null>(null);
+  const [timestampNotes, setTimestampNotes] = useState<InterviewTimestampFeedbackItem[]>([]);
   const [isPending, setIsPending] = useState(false);
   const [serverRecordingUrl, setServerRecordingUrl] = useState<string | null>(null);
+  const [currentTimeSec, setCurrentTimeSec] = useState<number>(0);
+
+  const videoRef = useRef<HTMLVideoElement>(null);
 
   useEffect(() => {
     if (isOpen && sessionId) {
       setLoadingFeedback(true);
-      fetchInterviewFeedback(sessionId)
-        .then((res) => {
-          if (res.status === "SUBMITTED" && res.feedback) {
-            setTeamFeedback(res.feedback);
+      Promise.all([
+        fetchInterviewFeedback(sessionId).catch(() => ({
+          status: "PENDING" as const,
+          message: "Unable to load feedback",
+          feedback: undefined,
+          recording_url: null,
+        })),
+        fetchInterviewTimestampFeedbacks(sessionId).catch(() => ({
+          interview_id: sessionId,
+          total: 0,
+          timestamps: [],
+        })),
+      ])
+        .then(([fbRes, tsRes]) => {
+          if (fbRes.status === "SUBMITTED" && fbRes.feedback) {
+            setTeamFeedback(fbRes.feedback);
             setIsPending(false);
           } else {
             setIsPending(true);
             setTeamFeedback(null);
           }
-          if (res.recording_url) {
-            setServerRecordingUrl(res.recording_url);
+          if (fbRes.recording_url) {
+            setServerRecordingUrl(fbRes.recording_url);
           }
-        })
-        .catch((err) => {
-          console.warn("Could not load team feedback:", err);
-          setIsPending(false);
+          if (tsRes && tsRes.timestamps) {
+            setTimestampNotes(tsRes.timestamps);
+          }
         })
         .finally(() => {
           setLoadingFeedback(false);
         });
     } else {
       setTeamFeedback(null);
+      setTimestampNotes([]);
       setIsPending(false);
     }
   }, [isOpen, sessionId]);
@@ -102,8 +134,17 @@ export default function FeedbackReportModal({
     ? URL.createObjectURL(recordedBlob)
     : null;
 
-  // Derive score to display
   const displayScore = teamFeedback ? teamFeedback.overall_score : initialOverallScore;
+
+  const handleJumpToTimestamp = (sec: number) => {
+    setActiveTab("recording");
+    setTimeout(() => {
+      if (videoRef.current) {
+        videoRef.current.currentTime = Math.max(0, sec);
+        videoRef.current.play().catch(() => {});
+      }
+    }, 150);
+  };
 
   const getScoreBadge = (s: number) => {
     if (s >= 85) return { text: "Top 1% Ready", color: "bg-amber-500/20 text-amber-300 border-amber-500/30" };
@@ -195,7 +236,12 @@ export default function FeedbackReportModal({
                     : "text-slate-400 hover:text-slate-200 hover:bg-slate-800/50"
                 }`}
               >
-                <Video className="w-4 h-4 inline mr-1.5" /> Video Recording Playback
+                <Video className="w-4 h-4 inline mr-1.5" /> Video Recording & Timestamps
+                {timestampNotes.length > 0 && (
+                  <span className="ml-1.5 px-1.5 py-0.5 rounded-full bg-purple-500/30 text-purple-300 text-[10px] font-bold">
+                    {timestampNotes.length}
+                  </span>
+                )}
               </button>
             )}
             <button
@@ -311,6 +357,42 @@ export default function FeedbackReportModal({
                       </p>
                     </div>
                   )}
+
+                  {/* Timestamp Highlights Preview */}
+                  {timestampNotes.length > 0 && (
+                    <div className="space-y-3 pt-2">
+                      <h4 className="text-xs font-bold text-white uppercase tracking-wider flex items-center gap-2">
+                        <Bookmark className="w-4 h-4 text-purple-400" />
+                        Timestamped Video Review Notes ({timestampNotes.length})
+                      </h4>
+                      <div className="space-y-2">
+                        {timestampNotes.map((note) => {
+                          const style = CATEGORY_STYLES[note.category] || CATEGORY_STYLES.Technical;
+                          return (
+                            <div
+                              key={note.feedback_id}
+                              onClick={() => handleJumpToTimestamp(note.timestamp_seconds)}
+                              className="p-3.5 rounded-2xl bg-slate-950/80 border border-slate-800 hover:border-purple-500/40 cursor-pointer flex items-center justify-between gap-3 group transition"
+                            >
+                              <div className="flex items-center gap-3">
+                                <span className="px-2.5 py-1 rounded-xl bg-purple-600/20 border border-purple-500/30 text-purple-300 font-mono font-bold text-xs flex items-center gap-1 group-hover:bg-purple-600 group-hover:text-white transition">
+                                  <Play className="w-3 h-3 fill-current" />
+                                  {note.formatted_timestamp}
+                                </span>
+                                <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold border ${style.bg} ${style.text} ${style.border}`}>
+                                  {note.category}
+                                </span>
+                                <span className="text-xs text-slate-200 font-medium">{note.comment}</span>
+                              </div>
+                              <span className="text-[10px] text-purple-400 font-semibold opacity-0 group-hover:opacity-100 transition shrink-0">
+                                Jump to video ➔
+                              </span>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  )}
                 </div>
               ) : (
                 /* Fallback Rubric View for AI Practices */
@@ -325,13 +407,15 @@ export default function FeedbackReportModal({
               )}
             </div>
           ) : activeTab === "recording" && videoSrc ? (
-            /* Tab 2: Recording Playback */
-            <div className="space-y-4">
+            /* Tab 2: Recording Playback with Interactive Timestamps */
+            <div className="space-y-6">
               <div className="relative rounded-2xl overflow-hidden bg-black border border-slate-800 shadow-2xl aspect-video max-h-[420px] flex items-center justify-center">
                 <video
+                  ref={videoRef}
                   src={videoSrc}
                   controls
                   className="w-full h-full object-contain"
+                  onTimeUpdate={(e) => setCurrentTimeSec((e.target as HTMLVideoElement).currentTime)}
                 />
               </div>
 
@@ -345,7 +429,10 @@ export default function FeedbackReportModal({
                   {[1, 1.25, 1.5, 2].map((rate) => (
                     <button
                       key={rate}
-                      onClick={() => setPlaybackRate(rate)}
+                      onClick={() => {
+                        setPlaybackRate(rate);
+                        if (videoRef.current) videoRef.current.playbackRate = rate;
+                      }}
                       className={`px-2 py-1 rounded-md text-xs font-semibold ${
                         playbackRate === rate
                           ? "bg-purple-500 text-white"
@@ -356,6 +443,54 @@ export default function FeedbackReportModal({
                     </button>
                   ))}
                 </div>
+              </div>
+
+              {/* Timestamp Feedbacks List */}
+              <div className="space-y-3">
+                <h4 className="text-xs font-bold text-white uppercase tracking-wider flex items-center gap-2">
+                  <Bookmark className="w-4 h-4 text-purple-400" />
+                  Reviewer Timestamped Feedback & Notes ({timestampNotes.length})
+                </h4>
+
+                {timestampNotes.length === 0 ? (
+                  <div className="p-6 rounded-2xl bg-slate-900/40 border border-slate-800 text-center text-xs text-slate-400">
+                    No specific timestamp notes added by the reviewer yet.
+                  </div>
+                ) : (
+                  <div className="space-y-2">
+                    {timestampNotes.map((note) => {
+                      const style = CATEGORY_STYLES[note.category] || CATEGORY_STYLES.Technical;
+                      const isCurrent = Math.abs(currentTimeSec - note.timestamp_seconds) < 3;
+                      return (
+                        <div
+                          key={note.feedback_id}
+                          onClick={() => handleJumpToTimestamp(note.timestamp_seconds)}
+                          className={`p-3.5 rounded-2xl border cursor-pointer flex items-center justify-between gap-3 transition ${
+                            isCurrent
+                              ? "bg-purple-950/40 border-purple-500/60 shadow-lg shadow-purple-500/10"
+                              : "bg-slate-950/80 border-slate-800 hover:border-purple-500/40"
+                          }`}
+                        >
+                          <div className="flex items-center gap-3">
+                            <span className="px-2.5 py-1 rounded-xl bg-purple-600/20 border border-purple-500/30 text-purple-300 font-mono font-bold text-xs flex items-center gap-1.5 hover:bg-purple-600 hover:text-white transition shrink-0">
+                              <Play className="w-3 h-3 fill-current" />
+                              {note.formatted_timestamp}
+                            </span>
+                            <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold border shrink-0 ${style.bg} ${style.text} ${style.border}`}>
+                              {note.category}
+                            </span>
+                            <span className="text-xs text-slate-200 font-medium leading-relaxed">
+                              {note.comment}
+                            </span>
+                          </div>
+                          <span className="text-[10px] text-purple-400 font-bold shrink-0">
+                            Jump ➔
+                          </span>
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
               </div>
             </div>
           ) : (

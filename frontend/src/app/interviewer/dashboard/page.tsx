@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState, useCallback } from "react";
+import { useEffect, useState, useCallback, useRef } from "react";
 import { useRouter } from "next/navigation";
 import Image from "next/image";
 import Link from "next/link";
@@ -11,7 +11,12 @@ import {
   DetailedRubric,
   fetchInterviewerInterviews,
   submitInterviewTeamFeedback,
+  addInterviewTimestampFeedback,
+  fetchInterviewTimestampFeedbacks,
+  deleteInterviewTimestampFeedback,
   type FeedbackScores,
+  type InterviewTimestampFeedbackItem,
+  type TimestampCategory,
 } from "@/lib/interviewApi";
 import {
   Users,
@@ -39,6 +44,10 @@ import {
   GraduationCap,
   Mail,
   UserCheck,
+  Bookmark,
+  Plus,
+  Trash2,
+  Check,
 } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
 import { toast } from "sonner";
@@ -81,6 +90,31 @@ export default function InterviewerDashboardPage() {
   const [detailedFeedback, setDetailedFeedback] = useState("");
   const [submittingReview, setSubmittingReview] = useState(false);
 
+  // Timestamped Feedback State
+  const [timestamps, setTimestamps] = useState<InterviewTimestampFeedbackItem[]>([]);
+  const [currentVideoTime, setCurrentVideoTime] = useState<number>(0);
+  const [showTimestampForm, setShowTimestampForm] = useState(false);
+  const [newCategory, setNewCategory] = useState<TimestampCategory>("Technical");
+  const [newComment, setNewComment] = useState("");
+  const [submittingTimestamp, setSubmittingTimestamp] = useState(false);
+  const videoPlayerRef = useRef<HTMLVideoElement>(null);
+
+  const formatSec = (s: number) => {
+    const total = Math.max(0, Math.floor(s));
+    const mins = Math.floor(total / 60);
+    const secs = total % 60;
+    return `${mins.toString().padStart(2, "0")}:${secs.toString().padStart(2, "0")}`;
+  };
+
+  const loadTimestamps = useCallback(async (sessionId: string) => {
+    try {
+      const res = await fetchInterviewTimestampFeedbacks(sessionId);
+      setTimestamps(res.timestamps || []);
+    } catch {
+      setTimestamps([]);
+    }
+  }, []);
+
   const loadInterviews = useCallback(async () => {
     setLoading(true);
     try {
@@ -115,6 +149,10 @@ export default function InterviewerDashboardPage() {
     setStrengths(session.rubric?.key_strengths?.join(", ") || "");
     setImprovements(session.rubric?.improvement_areas?.join(", ") || "");
     setRecommendations(session.rubric?.actionable_recommendations?.join(", ") || "");
+    setShowTimestampForm(false);
+    setNewComment("");
+    loadTimestamps(session.session_id);
+
     if (session.rubric) {
       setRubricScores({
         communication: session.rubric.communication_clarity ?? 85,
@@ -133,6 +171,52 @@ export default function InterviewerDashboardPage() {
         answer_quality: 85,
         professionalism: 90,
       });
+    }
+  };
+
+  const handleAddTimestampFeedback = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!evaluatingSession) return;
+    if (!newComment.trim()) {
+      toast.error("Please enter feedback comment for this timestamp.");
+      return;
+    }
+
+    const captureSec = videoPlayerRef.current ? videoPlayerRef.current.currentTime : currentVideoTime;
+
+    try {
+      setSubmittingTimestamp(true);
+      await addInterviewTimestampFeedback(evaluatingSession.session_id, {
+        timestamp_seconds: captureSec,
+        category: newCategory,
+        comment: newComment.trim(),
+      });
+      toast.success(`Timestamp feedback added at ${formatSec(captureSec)}!`);
+      setNewComment("");
+      setShowTimestampForm(false);
+      loadTimestamps(evaluatingSession.session_id);
+    } catch (err: any) {
+      toast.error(err?.response?.data?.detail || "Failed to add timestamp feedback.");
+    } finally {
+      setSubmittingTimestamp(false);
+    }
+  };
+
+  const handleDeleteTimestamp = async (feedbackId: string) => {
+    if (!evaluatingSession) return;
+    try {
+      await deleteInterviewTimestampFeedback(evaluatingSession.session_id, feedbackId);
+      toast.success("Timestamp note deleted.");
+      loadTimestamps(evaluatingSession.session_id);
+    } catch {
+      toast.error("Failed to delete timestamp note.");
+    }
+  };
+
+  const handleSeekToTimestamp = (sec: number) => {
+    if (videoPlayerRef.current) {
+      videoPlayerRef.current.currentTime = Math.max(0, sec);
+      videoPlayerRef.current.play().catch(() => {});
     }
   };
 
@@ -481,18 +565,161 @@ export default function InterviewerDashboardPage() {
               <form onSubmit={handleSubmitEvaluation} className="p-6 sm:p-8 space-y-6">
                 {/* Video Playback Section */}
                 {activeVideoUrl ? (
-                  <div className="space-y-2">
-                    <label className="text-xs font-bold text-slate-300 uppercase tracking-wider flex items-center gap-1.5">
-                      <Film className="w-4 h-4 text-purple-400" /> Candidate Session Recording
-                    </label>
+                  <div className="space-y-3">
+                    <div className="flex items-center justify-between">
+                      <label className="text-xs font-bold text-slate-300 uppercase tracking-wider flex items-center gap-1.5">
+                        <Film className="w-4 h-4 text-purple-400" /> Candidate Session Recording
+                      </label>
+                      <span className="px-2.5 py-0.5 rounded-lg bg-purple-500/20 text-purple-300 text-xs font-mono font-bold">
+                        Playback Time: {formatSec(currentVideoTime)}
+                      </span>
+                    </div>
+
                     <div className="relative rounded-2xl overflow-hidden bg-black border border-slate-800 aspect-video max-h-90 flex items-center justify-center shadow-xl">
                       <video
+                        ref={videoPlayerRef}
                         src={activeVideoUrl}
                         controls
                         playsInline
                         className="w-full h-full object-contain"
+                        onTimeUpdate={(e) => setCurrentVideoTime((e.target as HTMLVideoElement).currentTime)}
                       />
                     </div>
+
+                    <div className="flex items-center justify-between p-3 rounded-xl bg-slate-950 border border-slate-800 text-xs">
+                      <span className="text-slate-400">
+                        Capture exact timestamps to give targeted feedback.
+                      </span>
+
+                      <button
+                        type="button"
+                        onClick={() => {
+                          if (videoPlayerRef.current) {
+                            videoPlayerRef.current.pause();
+                          }
+                          setShowTimestampForm(true);
+                        }}
+                        className="px-3 py-1.5 rounded-lg bg-indigo-600 hover:bg-indigo-500 text-white font-bold text-xs flex items-center gap-1.5 shadow-md shadow-indigo-500/20 transition"
+                      >
+                        <Plus className="w-3.5 h-3.5" />
+                        <span>Add Feedback at {formatSec(currentVideoTime)}</span>
+                      </button>
+                    </div>
+
+                    {/* Add Timestamp Feedback Form */}
+                    {showTimestampForm && (
+                      <div className="p-4 rounded-2xl bg-indigo-950/40 border border-indigo-500/30 space-y-3">
+                        <div className="flex items-center justify-between">
+                          <span className="text-xs font-bold text-indigo-300 flex items-center gap-1.5">
+                            <Bookmark className="w-4 h-4 text-indigo-400" />
+                            Add Timestamp Note at <span className="font-mono text-white font-black">{formatSec(currentVideoTime)}</span>
+                          </span>
+                          <button
+                            type="button"
+                            onClick={() => setShowTimestampForm(false)}
+                            className="text-slate-400 hover:text-white"
+                          >
+                            <X className="w-4 h-4" />
+                          </button>
+                        </div>
+
+                        <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                          <div>
+                            <label className="text-[10px] font-bold text-slate-400 uppercase block mb-1">
+                              Category
+                            </label>
+                            <select
+                              value={newCategory}
+                              onChange={(e) => setNewCategory(e.target.value as TimestampCategory)}
+                              className="w-full px-3 py-2 rounded-xl bg-slate-950 border border-slate-800 text-white text-xs font-semibold"
+                            >
+                              <option value="Communication">Communication</option>
+                              <option value="Technical">Technical</option>
+                              <option value="Confidence">Confidence</option>
+                              <option value="Problem Solving">Problem Solving</option>
+                              <option value="Answer Quality">Answer Quality</option>
+                              <option value="Body Language">Body Language</option>
+                              <option value="Positive">Positive</option>
+                              <option value="Improvement">Improvement</option>
+                            </select>
+                          </div>
+
+                          <div className="sm:col-span-2">
+                            <label className="text-[10px] font-bold text-slate-400 uppercase block mb-1">
+                              Feedback Comment
+                            </label>
+                            <input
+                              type="text"
+                              value={newComment}
+                              onChange={(e) => setNewComment(e.target.value)}
+                              placeholder="e.g. Long pause before answering or Strong technical explanation"
+                              className="w-full px-3 py-2 rounded-xl bg-slate-950 border border-slate-800 text-white text-xs"
+                            />
+                          </div>
+                        </div>
+
+                        <div className="flex justify-end gap-2">
+                          <button
+                            type="button"
+                            onClick={() => setShowTimestampForm(false)}
+                            className="px-3 py-1 rounded-lg bg-slate-800 text-slate-300 text-xs"
+                          >
+                            Cancel
+                          </button>
+                          <button
+                            type="button"
+                            disabled={submittingTimestamp}
+                            onClick={handleAddTimestampFeedback}
+                            className="px-4 py-1 rounded-lg bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-bold flex items-center gap-1.5 disabled:opacity-50"
+                          >
+                            {submittingTimestamp ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Check className="w-3.5 h-3.5" />}
+                            <span>Save Timestamp Note</span>
+                          </button>
+                        </div>
+                      </div>
+                    )}
+
+                    {/* Timestamped Notes Timeline List */}
+                    {timestamps.length > 0 && (
+                      <div className="p-4 rounded-2xl bg-slate-950/80 border border-slate-800 space-y-2">
+                        <h4 className="text-xs font-bold text-slate-300 uppercase tracking-wider flex items-center gap-1.5">
+                          <Bookmark className="w-3.5 h-3.5 text-purple-400" />
+                          Timestamped Review Notes ({timestamps.length})
+                        </h4>
+
+                        <div className="space-y-1.5 max-h-48 overflow-y-auto">
+                          {timestamps.map((ts) => (
+                            <div
+                              key={ts.feedback_id}
+                              className="p-2.5 rounded-xl bg-slate-900/90 border border-slate-800 flex items-center justify-between gap-3 text-xs group"
+                            >
+                              <div
+                                onClick={() => handleSeekToTimestamp(ts.timestamp_seconds)}
+                                className="flex items-center gap-2.5 cursor-pointer flex-1"
+                              >
+                                <span className="px-2 py-0.5 rounded-lg bg-purple-600/20 text-purple-300 border border-purple-500/30 font-mono font-bold flex items-center gap-1 group-hover:bg-purple-600 group-hover:text-white transition">
+                                  <Play className="w-2.5 h-2.5 fill-current" />
+                                  {ts.formatted_timestamp}
+                                </span>
+                                <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-indigo-500/15 text-indigo-300 border border-indigo-500/30">
+                                  {ts.category}
+                                </span>
+                                <span className="text-slate-200 font-medium">{ts.comment}</span>
+                              </div>
+
+                              <button
+                                type="button"
+                                onClick={() => handleDeleteTimestamp(ts.feedback_id)}
+                                className="text-slate-500 hover:text-rose-400 p-1 transition"
+                                title="Delete note"
+                              >
+                                <Trash2 className="w-3.5 h-3.5" />
+                              </button>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    )}
                   </div>
                 ) : (
                   <div className="p-4 rounded-2xl bg-slate-950 border border-slate-800 text-xs text-slate-400 flex items-center gap-2">

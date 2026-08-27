@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useEffect, useState, useCallback } from "react";
+import React, { useEffect, useState, useCallback, useRef } from "react";
 import { useRouter } from "next/navigation";
 import { useAuthStore } from "@/store/authStore";
 import { useCompanyAuthStore } from "@/store/companyAuthStore";
@@ -8,9 +8,14 @@ import {
   getCompanyInterviews,
   evaluateCompanyInterview,
   submitInterviewTeamFeedback,
+  addInterviewTimestampFeedback,
+  fetchInterviewTimestampFeedbacks,
+  deleteInterviewTimestampFeedback,
   type CompanyInterviewSession,
   type DetailedRubric,
   type FeedbackScores,
+  type InterviewTimestampFeedbackItem,
+  type TimestampCategory,
 } from "@/lib/interviewApi";
 import {
   Calendar,
@@ -35,6 +40,10 @@ import {
   FileVideo,
   Sliders,
   Check,
+  Bookmark,
+  Plus,
+  Trash2,
+  MessageSquare,
 } from "lucide-react";
 import Link from "next/link";
 import { motion, AnimatePresence } from "framer-motion";
@@ -110,12 +119,41 @@ export default function CompanyInterviewsPage() {
   const [detailedFeedback, setDetailedFeedback] = useState("");
   const [savingEvaluation, setSavingEvaluation] = useState(false);
 
+  // Timestamped Feedback State
+  const [timestamps, setTimestamps] = useState<InterviewTimestampFeedbackItem[]>([]);
+  const [currentVideoTime, setCurrentVideoTime] = useState<number>(0);
+  const [showTimestampForm, setShowTimestampForm] = useState(false);
+  const [newCategory, setNewCategory] = useState<TimestampCategory>("Technical");
+  const [newComment, setNewComment] = useState("");
+  const [submittingTimestamp, setSubmittingTimestamp] = useState(false);
+  const videoPlayerRef = useRef<HTMLVideoElement>(null);
+
+  const formatSec = (s: number) => {
+    const total = Math.max(0, Math.floor(s));
+    const mins = Math.floor(total / 60);
+    const secs = total % 60;
+    return `${mins.toString().padStart(2, "0")}:${secs.toString().padStart(2, "0")}`;
+  };
+
+  const loadTimestamps = useCallback(async (sessionId: string) => {
+    try {
+      const res = await fetchInterviewTimestampFeedbacks(sessionId);
+      setTimestamps(res.timestamps || []);
+    } catch {
+      setTimestamps([]);
+    }
+  }, []);
+
   const handleOpenVideoModal = (session: CompanyInterviewSession) => {
     setSelectedVideoSession(session);
     setDetailedFeedback(session.feedback || "");
     setStrengths(session.rubric?.key_strengths?.join(", ") || "");
     setImprovements(session.rubric?.improvement_areas?.join(", ") || "");
     setRecommendations(session.rubric?.actionable_recommendations?.join(", ") || "");
+    setShowTimestampForm(false);
+    setNewComment("");
+    loadTimestamps(session.session_id);
+
     if (session.rubric) {
       setRubricScores({
         communication: session.rubric.communication_clarity ?? 85,
@@ -134,6 +172,52 @@ export default function CompanyInterviewsPage() {
         answer_quality: 85,
         professionalism: 90,
       });
+    }
+  };
+
+  const handleAddTimestampFeedback = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!selectedVideoSession) return;
+    if (!newComment.trim()) {
+      toast.error("Please enter feedback comment for this timestamp.");
+      return;
+    }
+
+    const captureSec = videoPlayerRef.current ? videoPlayerRef.current.currentTime : currentVideoTime;
+
+    try {
+      setSubmittingTimestamp(true);
+      await addInterviewTimestampFeedback(selectedVideoSession.session_id, {
+        timestamp_seconds: captureSec,
+        category: newCategory,
+        comment: newComment.trim(),
+      });
+      toast.success(`Timestamp feedback added at ${formatSec(captureSec)}!`);
+      setNewComment("");
+      setShowTimestampForm(false);
+      loadTimestamps(selectedVideoSession.session_id);
+    } catch (err: any) {
+      toast.error(err?.response?.data?.detail || "Failed to add timestamp feedback.");
+    } finally {
+      setSubmittingTimestamp(false);
+    }
+  };
+
+  const handleDeleteTimestamp = async (feedbackId: string) => {
+    if (!selectedVideoSession) return;
+    try {
+      await deleteInterviewTimestampFeedback(selectedVideoSession.session_id, feedbackId);
+      toast.success("Timestamp note deleted.");
+      loadTimestamps(selectedVideoSession.session_id);
+    } catch {
+      toast.error("Failed to delete timestamp note.");
+    }
+  };
+
+  const handleSeekToTimestamp = (sec: number) => {
+    if (videoPlayerRef.current) {
+      videoPlayerRef.current.currentTime = Math.max(0, sec);
+      videoPlayerRef.current.play().catch(() => {});
     }
   };
 
@@ -528,11 +612,13 @@ export default function CompanyInterviewsPage() {
                 <div className="space-y-3">
                   <div className="relative rounded-2xl overflow-hidden bg-black border border-slate-800 shadow-2xl aspect-video max-h-[420px] flex items-center justify-center">
                     <video
+                      ref={videoPlayerRef}
                       src={activeVideoUrl}
                       controls
                       autoPlay
                       playsInline
                       className="w-full h-full object-contain"
+                      onTimeUpdate={(e) => setCurrentVideoTime((e.target as HTMLVideoElement).currentTime)}
                     />
                   </div>
 
@@ -542,29 +628,161 @@ export default function CompanyInterviewsPage() {
                       <span className="flex items-center gap-1 text-purple-400 font-semibold">
                         <FileVideo className="w-4 h-4" /> Proctored Video Capture
                       </span>
+                      <span className="px-2 py-0.5 rounded-md bg-purple-500/20 text-purple-300 font-mono font-bold">
+                        Time: {formatSec(currentVideoTime)}
+                      </span>
                       {selectedVideoSession.recording_duration_sec && (
                         <span className="text-slate-400">
                           Duration: <strong className="text-white">{Math.round(selectedVideoSession.recording_duration_sec)}s</strong>
                         </span>
                       )}
-                      {selectedVideoSession.recording_file_size && (
-                        <span className="text-slate-400">
-                          Size: <strong className="text-white">{(selectedVideoSession.recording_file_size / (1024 * 1024)).toFixed(2)} MB</strong>
-                        </span>
-                      )}
                     </div>
 
-                    <a
-                      href={activeVideoUrl}
-                      download={`candidate_${selectedVideoSession.student_name}_interview.webm`}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      className="px-3 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-sky-400 text-xs font-semibold flex items-center gap-1.5 border border-white/10 transition"
-                    >
-                      <ExternalLink className="w-3.5 h-3.5" />
-                      <span>Open Raw Video</span>
-                    </a>
+                    <div className="flex items-center gap-2">
+                      <button
+                        type="button"
+                        onClick={() => {
+                          if (videoPlayerRef.current) {
+                            videoPlayerRef.current.pause();
+                          }
+                          setShowTimestampForm(true);
+                        }}
+                        className="px-3 py-1.5 rounded-lg bg-indigo-600 hover:bg-indigo-500 text-white font-bold text-xs flex items-center gap-1.5 shadow-md shadow-indigo-500/20 transition"
+                      >
+                        <Plus className="w-3.5 h-3.5" />
+                        <span>Add Feedback at {formatSec(currentVideoTime)}</span>
+                      </button>
+
+                      <a
+                        href={activeVideoUrl}
+                        download={`candidate_${selectedVideoSession.student_name}_interview.webm`}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="px-3 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-sky-400 text-xs font-semibold flex items-center gap-1.5 border border-white/10 transition"
+                      >
+                        <ExternalLink className="w-3.5 h-3.5" />
+                        <span>Open Raw Video</span>
+                      </a>
+                    </div>
                   </div>
+
+                  {/* Add Timestamp Feedback Form */}
+                  {showTimestampForm && (
+                    <form
+                      onSubmit={handleAddTimestampFeedback}
+                      className="p-4 rounded-2xl bg-indigo-950/40 border border-indigo-500/30 space-y-3"
+                    >
+                      <div className="flex items-center justify-between">
+                        <span className="text-xs font-bold text-indigo-300 flex items-center gap-1.5">
+                          <Bookmark className="w-4 h-4 text-indigo-400" />
+                          Add Timestamped Note at <span className="font-mono text-white font-black">{formatSec(currentVideoTime)}</span>
+                        </span>
+                        <button
+                          type="button"
+                          onClick={() => setShowTimestampForm(false)}
+                          className="text-slate-400 hover:text-white"
+                        >
+                          <X className="w-4 h-4" />
+                        </button>
+                      </div>
+
+                      <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                        <div>
+                          <label className="text-[10px] font-bold text-slate-400 uppercase block mb-1">
+                            Category
+                          </label>
+                          <select
+                            value={newCategory}
+                            onChange={(e) => setNewCategory(e.target.value as TimestampCategory)}
+                            className="w-full px-3 py-2 rounded-xl bg-slate-950 border border-white/10 text-white text-xs font-semibold"
+                          >
+                            <option value="Communication">Communication</option>
+                            <option value="Technical">Technical</option>
+                            <option value="Confidence">Confidence</option>
+                            <option value="Problem Solving">Problem Solving</option>
+                            <option value="Answer Quality">Answer Quality</option>
+                            <option value="Body Language">Body Language</option>
+                            <option value="Positive">Positive</option>
+                            <option value="Improvement">Improvement</option>
+                          </select>
+                        </div>
+
+                        <div className="sm:col-span-2">
+                          <label className="text-[10px] font-bold text-slate-400 uppercase block mb-1">
+                            Feedback Comment
+                          </label>
+                          <input
+                            type="text"
+                            required
+                            value={newComment}
+                            onChange={(e) => setNewComment(e.target.value)}
+                            placeholder="e.g. Strong technical explanation or Long pause before answering"
+                            className="w-full px-3 py-2 rounded-xl bg-slate-950 border border-white/10 text-white text-xs"
+                          />
+                        </div>
+                      </div>
+
+                      <div className="flex justify-end gap-2">
+                        <button
+                          type="button"
+                          onClick={() => setShowTimestampForm(false)}
+                          className="px-3 py-1 rounded-lg bg-slate-800 text-slate-300 text-xs"
+                        >
+                          Cancel
+                        </button>
+                        <button
+                          type="submit"
+                          disabled={submittingTimestamp}
+                          className="px-4 py-1 rounded-lg bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-bold flex items-center gap-1.5 disabled:opacity-50"
+                        >
+                          {submittingTimestamp ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Check className="w-3.5 h-3.5" />}
+                          <span>Save Timestamp Note</span>
+                        </button>
+                      </div>
+                    </form>
+                  )}
+
+                  {/* Timestamped Notes Timeline List */}
+                  {timestamps.length > 0 && (
+                    <div className="p-4 rounded-2xl bg-slate-950/80 border border-white/5 space-y-2">
+                      <h4 className="text-xs font-bold text-slate-300 uppercase tracking-wider flex items-center gap-1.5">
+                        <Bookmark className="w-3.5 h-3.5 text-purple-400" />
+                        Timestamped Review Notes ({timestamps.length})
+                      </h4>
+
+                      <div className="space-y-1.5 max-h-48 overflow-y-auto">
+                        {timestamps.map((ts) => (
+                          <div
+                            key={ts.feedback_id}
+                            className="p-2.5 rounded-xl bg-slate-900/90 border border-white/5 flex items-center justify-between gap-3 text-xs group"
+                          >
+                            <div
+                              onClick={() => handleSeekToTimestamp(ts.timestamp_seconds)}
+                              className="flex items-center gap-2.5 cursor-pointer flex-1"
+                            >
+                              <span className="px-2 py-0.5 rounded-lg bg-purple-600/20 text-purple-300 border border-purple-500/30 font-mono font-bold flex items-center gap-1 group-hover:bg-purple-600 group-hover:text-white transition">
+                                <Play className="w-2.5 h-2.5 fill-current" />
+                                {ts.formatted_timestamp}
+                              </span>
+                              <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-indigo-500/15 text-indigo-300 border border-indigo-500/30">
+                                {ts.category}
+                              </span>
+                              <span className="text-slate-200 font-medium">{ts.comment}</span>
+                            </div>
+
+                            <button
+                              type="button"
+                              onClick={() => handleDeleteTimestamp(ts.feedback_id)}
+                              className="text-slate-500 hover:text-rose-400 p-1 transition"
+                              title="Delete note"
+                            >
+                              <Trash2 className="w-3.5 h-3.5" />
+                            </button>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  )}
                 </div>
 
                 {/* Candidate Assessment & Rubric / Grading Form */}
