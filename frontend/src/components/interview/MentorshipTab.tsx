@@ -18,6 +18,8 @@ import {
   ChevronRight,
   Loader2,
   ShieldCheck,
+  X,
+  Tag,
 } from "lucide-react";
 import {
   MentorProfile,
@@ -27,14 +29,25 @@ import {
 } from "@/lib/interviewApi";
 import MentorBookingModal from "./MentorBookingModal";
 
+export interface WeaknessFilterState {
+  labels: string[];
+  tags: string[];
+  reason?: string;
+  summary?: string;
+}
+
 interface MentorshipTabProps {
   onJoinMeeting: (meetingUrl: string, bookingId: string) => void;
   onViewReport: (booking: MentorshipBooking) => void;
+  weaknessFilter?: WeaknessFilterState | null;
+  onClearWeaknessFilter?: () => void;
 }
 
 export default function MentorshipTab({
   onJoinMeeting,
   onViewReport,
+  weaknessFilter,
+  onClearWeaknessFilter,
 }: MentorshipTabProps) {
   const [mentors, setMentors] = useState<MentorProfile[]>([]);
   const [myBookings, setMyBookings] = useState<MentorshipBooking[]>([]);
@@ -45,6 +58,16 @@ export default function MentorshipTab({
   const [bookingModalOpen, setBookingModalOpen] = useState(false);
   const [activeSubTab, setActiveSubTab] = useState<"directory" | "bookings">("directory");
   const [bookingSubFilter, setBookingSubFilter] = useState<"all" | "upcoming" | "past" | "cancelled">("upcoming");
+  const [activeWeaknessFilter, setActiveWeaknessFilter] = useState<WeaknessFilterState | null>(
+    weaknessFilter || null
+  );
+
+  useEffect(() => {
+    if (weaknessFilter) {
+      setActiveWeaknessFilter(weaknessFilter);
+      setActiveSubTab("directory");
+    }
+  }, [weaknessFilter]);
 
   const loadData = async () => {
     setLoading(true);
@@ -66,22 +89,56 @@ export default function MentorshipTab({
     loadData();
   }, []);
 
+  const handleClearWeaknessFilter = () => {
+    setActiveWeaknessFilter(null);
+    if (onClearWeaknessFilter) {
+      onClearWeaknessFilter();
+    }
+  };
+
   const companies = ["All", "Google", "Amazon", "Razorpay", "Flipkart", "Microsoft"];
+
+  // Real Weakness Match Filter (No fake mentors)
+  const isMatchForWeakness = (mentor: MentorProfile) => {
+    if (!activeWeaknessFilter || !activeWeaknessFilter.tags || activeWeaknessFilter.tags.length === 0) {
+      return true;
+    }
+    const mentorTags = [
+      ...(mentor.expertise || []),
+      ...(mentor.skills || []),
+      ...(mentor.mentoring_topics || []),
+      ...(mentor.expertise_tags || []),
+    ].map((t) => t.toLowerCase());
+
+    return activeWeaknessFilter.tags.some((reqTag) => {
+      const reqLower = reqTag.toLowerCase();
+      return mentorTags.some((mTag) => mTag.includes(reqLower) || reqLower.includes(mTag));
+    });
+  };
 
   const filteredMentors = mentors.filter((m) => {
     const mentorName = m.full_name || m.name || "";
     const mentorCompany = m.company || "";
     const mentorTitle = m.current_role || m.headline || m.title || "";
-    const mentorTags = m.expertise || m.skills || m.expertise_tags || [];
+    const mentorTags = [
+      ...(m.expertise || []),
+      ...(m.skills || []),
+      ...(m.mentoring_topics || []),
+      ...(m.expertise_tags || []),
+    ];
 
     const matchesCompany = selectedCompany === "All" || mentorCompany.toLowerCase() === selectedCompany.toLowerCase();
-    const query = searchQuery.toLowerCase();
+    const query = searchQuery.toLowerCase().trim();
     const matchesSearch =
+      !query ||
       mentorName.toLowerCase().includes(query) ||
       mentorCompany.toLowerCase().includes(query) ||
       mentorTitle.toLowerCase().includes(query) ||
       mentorTags.some((t: string) => t.toLowerCase().includes(query));
-    return matchesCompany && matchesSearch;
+
+    const matchesWeakness = isMatchForWeakness(m);
+
+    return matchesCompany && matchesSearch && matchesWeakness;
   });
 
   const handleOpenBooking = (mentor: MentorProfile) => {
@@ -137,6 +194,33 @@ export default function MentorshipTab({
         </div>
       </div>
 
+      {/* Real Weakness Recommendation Filter Banner */}
+      {activeWeaknessFilter && activeSubTab === "directory" && (
+        <div className="p-4 sm:p-5 rounded-2xl bg-linear-to-r from-purple-950/60 via-indigo-950/40 to-slate-900 border border-purple-500/30 shadow-xl flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+          <div className="space-y-1">
+            <div className="flex items-center gap-2">
+              <span className="px-2.5 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-wider bg-purple-500/20 text-purple-300 border border-purple-500/30 flex items-center gap-1">
+                <Sparkles className="w-3 h-3 text-purple-400" />
+                Targeted Mentorship Filter
+              </span>
+              <span className="text-xs font-bold text-white">
+                Focus Areas: {activeWeaknessFilter.labels.join(" & ")}
+              </span>
+            </div>
+            <p className="text-xs text-slate-300 leading-relaxed">
+              {activeWeaknessFilter.reason || "Showing verified active mentors specializing in your areas for improvement."}
+            </p>
+          </div>
+
+          <button
+            onClick={handleClearWeaknessFilter}
+            className="px-3.5 py-2 rounded-xl bg-slate-800/90 hover:bg-slate-700 text-slate-300 hover:text-white text-xs font-semibold border border-slate-700 transition shrink-0 flex items-center gap-1.5 self-start sm:self-auto"
+          >
+            <X className="w-3.5 h-3.5" /> Clear Filter & View All
+          </button>
+        </div>
+      )}
+
       {loading ? (
         <div className="py-20 flex flex-col items-center justify-center gap-3">
           <Loader2 className="w-8 h-8 text-indigo-400 animate-spin" />
@@ -178,12 +262,33 @@ export default function MentorshipTab({
 
           {/* Mentors Grid or Empty State */}
           {filteredMentors.length === 0 ? (
-            <div className="p-16 rounded-3xl bg-slate-900/40 border border-slate-800 text-center space-y-3 max-w-2xl mx-auto shadow-2xl">
+            <div className="p-16 rounded-3xl bg-slate-900/40 border border-slate-800 text-center space-y-4 max-w-2xl mx-auto shadow-2xl">
               <Users className="w-12 h-12 text-slate-600 mx-auto" />
-              <h3 className="text-base font-bold text-white">No mentors available yet.</h3>
-              <p className="text-xs text-slate-400 max-w-md mx-auto leading-relaxed">
-                Active mentors will appear here as soon as they register, complete their profile, and publish open interview availability slots.
-              </p>
+              {activeWeaknessFilter ? (
+                <>
+                  <h3 className="text-base font-bold text-white">
+                    No mentors are currently available for this area.
+                  </h3>
+                  <p className="text-xs text-slate-400 max-w-md mx-auto leading-relaxed">
+                    None of the currently registered active mentors have open slots for{" "}
+                    <span className="text-purple-300 font-semibold">{activeWeaknessFilter.labels.join(" or ")}</span>.
+                    You can browse all active mentors or check back shortly.
+                  </p>
+                  <button
+                    onClick={handleClearWeaknessFilter}
+                    className="px-4 py-2 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-bold inline-flex items-center gap-1.5 shadow-md shadow-indigo-500/20 transition"
+                  >
+                    View All Active Mentors
+                  </button>
+                </>
+              ) : (
+                <>
+                  <h3 className="text-base font-bold text-white">No mentors available yet.</h3>
+                  <p className="text-xs text-slate-400 max-w-md mx-auto leading-relaxed">
+                    Active mentors will appear here as soon as they register, complete their profile, and publish open interview availability slots.
+                  </p>
+                </>
+              )}
             </div>
           ) : (
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
@@ -431,7 +536,7 @@ export default function MentorshipTab({
                         {isConfirmed && booking.meeting_url && (
                           <button
                             onClick={() => onJoinMeeting(booking.meeting_url!, booking.booking_id)}
-                            className="px-4 py-2.5 rounded-xl bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 text-white text-xs font-bold flex items-center gap-1.5 shadow-lg shadow-emerald-500/20 transition"
+                            className="px-4 py-2.5 rounded-xl bg-linear-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 text-white text-xs font-bold flex items-center gap-1.5 shadow-lg shadow-emerald-500/20 transition"
                           >
                             <Video className="w-4 h-4" /> Enter Live Meeting Room
                           </button>

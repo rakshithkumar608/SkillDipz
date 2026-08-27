@@ -70,6 +70,12 @@ export default function MockInterviewPage() {
 
   // Detailed Report Modal State
   const [reportModalOpen, setReportModalOpen] = useState(false);
+  const [mentorWeaknessFilter, setMentorWeaknessFilter] = useState<{
+    labels: string[];
+    tags: string[];
+    reason?: string;
+    summary?: string;
+  } | null>(null);
   const [selectedReportData, setSelectedReportData] = useState<{
     sessionId?: string;
     overallScore: number;
@@ -254,7 +260,7 @@ export default function MockInterviewPage() {
         {/* Quick Launch CTA */}
         <button
           onClick={() => setShowAISetup(true)}
-          className="px-6 py-3.5 rounded-2xl bg-gradient-to-r from-violet-600 via-indigo-600 to-sky-600 hover:from-violet-500 hover:to-sky-500 text-white font-bold text-sm shadow-xl shadow-indigo-500/25 flex items-center justify-center gap-2.5 transition shrink-0"
+          className="px-6 py-3.5 rounded-2xl bg-linear-to-r from-violet-600 via-indigo-600 to-sky-600 hover:from-violet-500 hover:to-sky-500 text-white font-bold text-sm shadow-xl shadow-indigo-500/25 flex items-center justify-center gap-2.5 transition shrink-0"
         >
           <Play className="w-4 h-4 fill-current" /> Launch AI Mock Practice
         </button>
@@ -404,6 +410,8 @@ export default function MockInterviewPage() {
             }
           }}
           onViewReport={handleViewMentorReport}
+          weaknessFilter={mentorWeaknessFilter}
+          onClearWeaknessFilter={() => setMentorWeaknessFilter(null)}
         />
       )}
 
@@ -586,7 +594,17 @@ export default function MockInterviewPage() {
           recordedBlob={selectedReportData.recordedBlob}
           transcript={selectedReportData.transcript}
           conversation={selectedReportData.conversation}
-          onBookMentor={() => {
+          onBookMentor={(filterContext) => {
+            if (filterContext) {
+              setMentorWeaknessFilter({
+                labels: filterContext.weaknessLabels,
+                tags: filterContext.searchTags,
+                reason: filterContext.reason,
+                summary: filterContext.summary,
+              });
+            } else {
+              setMentorWeaknessFilter(null);
+            }
             setActiveTab("mentorship");
           }}
         />

@@ -444,28 +444,52 @@ async def list_mentors(
     company: Optional[str] = Query(None),
     expertise: Optional[str] = Query(None),
     search: Optional[str] = Query(None),
+    weakness_tags: Optional[str] = Query(None),
 ):
     """
     List only ACTIVE mentors from MongoDB.
     Mentors with status INCOMPLETE or INACTIVE are never returned.
     """
-    query: dict = {"profile_status": "ACTIVE"}
+    and_conditions: list = [{"profile_status": "ACTIVE"}]
+
     if company and company.lower() != "all":
-        query["company"] = {"$regex": company, "$options": "i"}
+        and_conditions.append({"company": {"$regex": company, "$options": "i"}})
+
     if expertise:
-        query["$or"] = [
-            {"expertise": {"$in": [expertise]}},
-            {"skills": {"$in": [expertise]}},
-        ]
+        and_conditions.append({
+            "$or": [
+                {"expertise": {"$regex": expertise, "$options": "i"}},
+                {"skills": {"$regex": expertise, "$options": "i"}},
+                {"mentoring_topics": {"$regex": expertise, "$options": "i"}},
+            ]
+        })
+
+    if weakness_tags:
+        tags = [t.strip() for t in weakness_tags.split(",") if t.strip()]
+        if tags:
+            tag_or = []
+            for tag in tags:
+                tag_or.extend([
+                    {"expertise": {"$regex": tag, "$options": "i"}},
+                    {"skills": {"$regex": tag, "$options": "i"}},
+                    {"mentoring_topics": {"$regex": tag, "$options": "i"}},
+                ])
+            and_conditions.append({"$or": tag_or})
+
     if search:
-        query["$or"] = [
-            {"full_name": {"$regex": search, "$options": "i"}},
-            {"company": {"$regex": search, "$options": "i"}},
-            {"headline": {"$regex": search, "$options": "i"}},
-            {"current_role": {"$regex": search, "$options": "i"}},
-            {"expertise": {"$elemMatch": {"$regex": search, "$options": "i"}}},
-            {"skills": {"$elemMatch": {"$regex": search, "$options": "i"}}},
-        ]
+        and_conditions.append({
+            "$or": [
+                {"full_name": {"$regex": search, "$options": "i"}},
+                {"company": {"$regex": search, "$options": "i"}},
+                {"headline": {"$regex": search, "$options": "i"}},
+                {"current_role": {"$regex": search, "$options": "i"}},
+                {"expertise": {"$elemMatch": {"$regex": search, "$options": "i"}}},
+                {"skills": {"$elemMatch": {"$regex": search, "$options": "i"}}},
+                {"mentoring_topics": {"$elemMatch": {"$regex": search, "$options": "i"}}},
+            ]
+        })
+
+    query = {"$and": and_conditions} if len(and_conditions) > 1 else and_conditions[0]
 
     mentors = await MentorProfile.find(query).sort(-MentorProfile.rating).to_list(50)
     if not mentors:
