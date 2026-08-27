@@ -19,6 +19,7 @@ from app.api.dependencies import get_current_student, get_current_company
 from app.api.routes.auth import get_current_user
 from app.models.user import User
 from app.models.interview import InterviewSession, InterviewViolation, ProctoringReport, DetailedRubric
+from app.models.interview_feedback import InterviewFeedback, FeedbackScores
 from app.models.employability_score import EmployabilityScore, ScoreHistory
 from app.models.target_company import CompanyProfile
 from app.models.student_profile import StudentProfile
@@ -565,6 +566,163 @@ async def submit_rubric_feedback(
         "overall_score": session.overall_score,
         "rubric": session.rubric,
     }
+
+
+# ─── REAL TEAM FEEDBACK SYSTEM ───────────────────────────────────────────────
+
+class SubmitTeamFeedbackRequest(BaseModel):
+    scores: FeedbackScores
+    strengths: str
+    improvements: str
+    recommendations: str
+    detailed_feedback: str
+
+
+@router.post("/{session_id}/feedback")
+async def submit_team_feedback(
+    session_id: str,
+    body: SubmitTeamFeedbackRequest,
+    current_user: User = Depends(get_current_user),
+):
+    session = await InterviewSession.find_one(InterviewSession.session_id == session_id)
+    if not session:
+        raise HTTPException(status_code=404, detail="Interview session not found")
+
+    reviewer_id = str(current_user.id)
+    reviewer_name = current_user.full_name or current_user.company_name or "Interviewer"
+    reviewer_role = (current_user.role or "INTERVIEWER").upper()
+
+    # Calculate overall score directly from the 6 entered scores
+    calculated_overall = round(
+        (
+            body.scores.communication
+            + body.scores.technical_knowledge
+            + body.scores.confidence
+            + body.scores.problem_solving
+            + body.scores.answer_quality
+            + body.scores.professionalism
+        )
+        / 6.0,
+        1,
+    )
+
+    now = datetime.now(timezone.utc)
+
+    # Upsert InterviewFeedback document in MongoDB
+    feedback_doc = await InterviewFeedback.find_one(InterviewFeedback.interview_id == session_id)
+    if feedback_doc:
+        feedback_doc.reviewer_id = reviewer_id
+        feedback_doc.reviewer_name = reviewer_name
+        feedback_doc.reviewer_role = reviewer_role
+        feedback_doc.scores = body.scores
+        feedback_doc.overall_score = calculated_overall
+        feedback_doc.strengths = body.strengths
+        feedback_doc.improvements = body.improvements
+        feedback_doc.recommendations = body.recommendations
+        feedback_doc.detailed_feedback = body.detailed_feedback
+        feedback_doc.status = "SUBMITTED"
+        feedback_doc.updated_at = now
+        feedback_doc.submitted_at = now
+        await feedback_doc.save()
+    else:
+        feedback_doc = InterviewFeedback(
+            interview_id=session_id,
+            student_id=session.student_id,
+            reviewer_id=reviewer_id,
+            reviewer_name=reviewer_name,
+            reviewer_role=reviewer_role,
+            scores=body.scores,
+            overall_score=calculated_overall,
+            strengths=body.strengths,
+            improvements=body.improvements,
+            recommendations=body.recommendations,
+            detailed_feedback=body.detailed_feedback,
+            status="SUBMITTED",
+            created_at=now,
+            updated_at=now,
+            submitted_at=now,
+        )
+        await feedback_doc.insert()
+
+    # Sync primary interview session
+    session.overall_score = calculated_overall
+    session.feedback = body.detailed_feedback
+    session.communication_score = body.scores.communication
+    session.technical_score = body.scores.technical_knowledge
+    session.coding_score = body.scores.problem_solving
+    session.review_status = "reviewed"
+    session.status = "completed"
+    session.reviewed_at = now
+    await session.save()
+
+    # Broadcast event
+    await event_bus.publish("interview.feedback_submitted", {
+        "session_id": session_id,
+        "student_id": session.student_id,
+        "reviewer_id": reviewer_id,
+        "overall_score": calculated_overall,
+        "submitted_at": now.isoformat(),
+    })
+
+    return {
+        "message": "Official interview feedback submitted successfully",
+        "feedback_id": feedback_doc.feedback_id,
+        "session_id": session_id,
+        "overall_score": calculated_overall,
+        "status": feedback_doc.status,
+        "submitted_at": feedback_doc.submitted_at.isoformat(),
+    }
+
+
+@router.get("/{session_id}/feedback")
+async def get_interview_feedback(
+    session_id: str,
+    current_user: User = Depends(get_current_user),
+):
+    session = await InterviewSession.find_one(InterviewSession.session_id == session_id)
+    if not session:
+        raise HTTPException(status_code=404, detail="Interview session not found")
+
+    user_id = str(current_user.id)
+    user_role = (current_user.role or "").upper()
+
+    # If student, check ownership
+    if user_role == "STUDENT" and session.student_id != user_id:
+        raise HTTPException(status_code=403, detail="You are not authorized to view this feedback.")
+
+    feedback_doc = await InterviewFeedback.find_one(InterviewFeedback.interview_id == session_id)
+
+    if not feedback_doc or feedback_doc.status != "SUBMITTED":
+        return {
+            "status": "PENDING",
+            "message": "Your interviewer hasn't submitted feedback yet.",
+            "session_id": session_id,
+            "recording_url": session.recording_url,
+        }
+
+    return {
+        "status": "SUBMITTED",
+        "feedback": {
+            "feedback_id": feedback_doc.feedback_id,
+            "interview_id": feedback_doc.interview_id,
+            "student_id": feedback_doc.student_id,
+            "reviewer_id": feedback_doc.reviewer_id,
+            "reviewer_name": feedback_doc.reviewer_name,
+            "reviewer_role": feedback_doc.reviewer_role,
+            "scores": feedback_doc.scores.model_dump(),
+            "overall_score": feedback_doc.overall_score,
+            "strengths": feedback_doc.strengths,
+            "improvements": feedback_doc.improvements,
+            "recommendations": feedback_doc.recommendations,
+            "detailed_feedback": feedback_doc.detailed_feedback,
+            "status": feedback_doc.status,
+            "created_at": feedback_doc.created_at.isoformat(),
+            "updated_at": feedback_doc.updated_at.isoformat(),
+            "submitted_at": feedback_doc.submitted_at.isoformat() if feedback_doc.submitted_at else None,
+        },
+        "recording_url": session.recording_url,
+    }
+
 
 
 # MODE B — AI PRACTICE INTERVIEW (GROQ DRIVEN) 

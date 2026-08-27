@@ -7,8 +7,10 @@ import { useCompanyAuthStore } from "@/store/companyAuthStore";
 import {
   getCompanyInterviews,
   evaluateCompanyInterview,
+  submitInterviewTeamFeedback,
   type CompanyInterviewSession,
   type DetailedRubric,
+  type FeedbackScores,
 } from "@/lib/interviewApi";
 import {
   Calendar,
@@ -94,36 +96,43 @@ export default function CompanyInterviewsPage() {
   const [selectedVideoSession, setSelectedVideoSession] = useState<CompanyInterviewSession | null>(null);
   const [playbackRate, setPlaybackRate] = useState<number>(1);
   const [showGrading, setShowGrading] = useState(false);
-  const [evalScore, setEvalScore] = useState<number>(85);
-  const [evalFeedback, setEvalFeedback] = useState("");
-  const [rubricScores, setRubricScores] = useState({
-    dsa: 85,
-    architecture: 80,
-    behavioral: 85,
-    codeQuality: 80,
+  const [rubricScores, setRubricScores] = useState<FeedbackScores>({
     communication: 85,
+    technical_knowledge: 80,
+    confidence: 85,
+    problem_solving: 80,
+    answer_quality: 85,
+    professionalism: 90,
   });
+  const [strengths, setStrengths] = useState("");
+  const [improvements, setImprovements] = useState("");
+  const [recommendations, setRecommendations] = useState("");
+  const [detailedFeedback, setDetailedFeedback] = useState("");
   const [savingEvaluation, setSavingEvaluation] = useState(false);
 
   const handleOpenVideoModal = (session: CompanyInterviewSession) => {
     setSelectedVideoSession(session);
-    setEvalScore(session.overall_score || 85);
-    setEvalFeedback(session.feedback || "");
+    setDetailedFeedback(session.feedback || "");
+    setStrengths(session.rubric?.key_strengths?.join(", ") || "");
+    setImprovements(session.rubric?.improvement_areas?.join(", ") || "");
+    setRecommendations(session.rubric?.actionable_recommendations?.join(", ") || "");
     if (session.rubric) {
       setRubricScores({
-        dsa: session.rubric.dsa_problem_solving ?? 85,
-        architecture: session.rubric.system_architecture ?? 80,
-        behavioral: session.rubric.behavioral_culture_fit ?? 85,
-        codeQuality: session.rubric.code_quality ?? 80,
         communication: session.rubric.communication_clarity ?? 85,
+        technical_knowledge: session.rubric.system_architecture ?? 80,
+        confidence: 85,
+        problem_solving: session.rubric.dsa_problem_solving ?? 80,
+        answer_quality: session.rubric.code_quality ?? 85,
+        professionalism: session.rubric.behavioral_culture_fit ?? 90,
       });
     } else {
       setRubricScores({
-        dsa: 85,
-        architecture: 80,
-        behavioral: 85,
-        codeQuality: 80,
         communication: 85,
+        technical_knowledge: 80,
+        confidence: 85,
+        problem_solving: 80,
+        answer_quality: 85,
+        professionalism: 90,
       });
     }
   };
@@ -580,21 +589,20 @@ export default function CompanyInterviewsPage() {
                       onSubmit={async (e) => {
                         e.preventDefault();
                         if (!selectedVideoSession) return;
+                        if (!detailedFeedback.trim()) {
+                          toast.error("Please provide detailed assessment feedback for the candidate.");
+                          return;
+                        }
                         try {
                           setSavingEvaluation(true);
-                          const computedRubric: DetailedRubric = {
-                            dsa_problem_solving: rubricScores.dsa,
-                            system_architecture: rubricScores.architecture,
-                            behavioral_culture_fit: rubricScores.behavioral,
-                            code_quality: rubricScores.codeQuality,
-                            communication_clarity: rubricScores.communication,
-                          };
-                          await evaluateCompanyInterview(selectedVideoSession.session_id, {
-                            overall_score: evalScore,
-                            feedback: evalFeedback,
-                            rubric: computedRubric,
+                          await submitInterviewTeamFeedback(selectedVideoSession.session_id, {
+                            scores: rubricScores,
+                            strengths: strengths.trim(),
+                            improvements: improvements.trim(),
+                            recommendations: recommendations.trim(),
+                            detailed_feedback: detailedFeedback.trim(),
                           });
-                          toast.success("Candidate evaluation and rubric saved successfully!");
+                          toast.success("Candidate team evaluation saved successfully!");
                           setShowGrading(false);
                           loadInterviews();
                         } catch (err: any) {
@@ -605,71 +613,12 @@ export default function CompanyInterviewsPage() {
                       }}
                       className="space-y-4 pt-2"
                     >
-                      <div className="space-y-3">
+                      {/* 6 Competency Factor Sliders */}
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 bg-slate-950/80 p-4 rounded-2xl border border-white/5">
                         <div className="space-y-1">
                           <div className="flex justify-between text-xs">
-                            <span className="font-semibold text-slate-300">1. DSA & Problem Solving</span>
-                            <span className="font-black text-sky-400">{rubricScores.dsa}%</span>
-                          </div>
-                          <input
-                            type="range"
-                            min={0}
-                            max={100}
-                            value={rubricScores.dsa}
-                            onChange={(e) => setRubricScores({ ...rubricScores, dsa: Number(e.target.value) })}
-                            className="w-full accent-sky-500 cursor-pointer"
-                          />
-                        </div>
-
-                        <div className="space-y-1">
-                          <div className="flex justify-between text-xs">
-                            <span className="font-semibold text-slate-300">2. System Architecture & Design</span>
-                            <span className="font-black text-purple-400">{rubricScores.architecture}%</span>
-                          </div>
-                          <input
-                            type="range"
-                            min={0}
-                            max={100}
-                            value={rubricScores.architecture}
-                            onChange={(e) => setRubricScores({ ...rubricScores, architecture: Number(e.target.value) })}
-                            className="w-full accent-purple-500 cursor-pointer"
-                          />
-                        </div>
-
-                        <div className="space-y-1">
-                          <div className="flex justify-between text-xs">
-                            <span className="font-semibold text-slate-300">3. Behavioral & Culture Fit</span>
-                            <span className="font-black text-emerald-400">{rubricScores.behavioral}%</span>
-                          </div>
-                          <input
-                            type="range"
-                            min={0}
-                            max={100}
-                            value={rubricScores.behavioral}
-                            onChange={(e) => setRubricScores({ ...rubricScores, behavioral: Number(e.target.value) })}
-                            className="w-full accent-emerald-500 cursor-pointer"
-                          />
-                        </div>
-
-                        <div className="space-y-1">
-                          <div className="flex justify-between text-xs">
-                            <span className="font-semibold text-slate-300">4. Code Quality & Standards</span>
-                            <span className="font-black text-amber-400">{rubricScores.codeQuality}%</span>
-                          </div>
-                          <input
-                            type="range"
-                            min={0}
-                            max={100}
-                            value={rubricScores.codeQuality}
-                            onChange={(e) => setRubricScores({ ...rubricScores, codeQuality: Number(e.target.value) })}
-                            className="w-full accent-amber-500 cursor-pointer"
-                          />
-                        </div>
-
-                        <div className="space-y-1">
-                          <div className="flex justify-between text-xs">
-                            <span className="font-semibold text-slate-300">5. Communication Clarity</span>
-                            <span className="font-black text-rose-400">{rubricScores.communication}%</span>
+                            <span className="font-semibold text-slate-300">1. Communication</span>
+                            <span className="font-black text-sky-400">{rubricScores.communication}%</span>
                           </div>
                           <input
                             type="range"
@@ -677,35 +626,160 @@ export default function CompanyInterviewsPage() {
                             max={100}
                             value={rubricScores.communication}
                             onChange={(e) => setRubricScores({ ...rubricScores, communication: Number(e.target.value) })}
+                            className="w-full accent-sky-500 cursor-pointer"
+                          />
+                        </div>
+
+                        <div className="space-y-1">
+                          <div className="flex justify-between text-xs">
+                            <span className="font-semibold text-slate-300">2. Technical Knowledge</span>
+                            <span className="font-black text-indigo-400">{rubricScores.technical_knowledge}%</span>
+                          </div>
+                          <input
+                            type="range"
+                            min={0}
+                            max={100}
+                            value={rubricScores.technical_knowledge}
+                            onChange={(e) => setRubricScores({ ...rubricScores, technical_knowledge: Number(e.target.value) })}
+                            className="w-full accent-indigo-500 cursor-pointer"
+                          />
+                        </div>
+
+                        <div className="space-y-1">
+                          <div className="flex justify-between text-xs">
+                            <span className="font-semibold text-slate-300">3. Confidence</span>
+                            <span className="font-black text-purple-400">{rubricScores.confidence}%</span>
+                          </div>
+                          <input
+                            type="range"
+                            min={0}
+                            max={100}
+                            value={rubricScores.confidence}
+                            onChange={(e) => setRubricScores({ ...rubricScores, confidence: Number(e.target.value) })}
+                            className="w-full accent-purple-500 cursor-pointer"
+                          />
+                        </div>
+
+                        <div className="space-y-1">
+                          <div className="flex justify-between text-xs">
+                            <span className="font-semibold text-slate-300">4. Problem Solving</span>
+                            <span className="font-black text-emerald-400">{rubricScores.problem_solving}%</span>
+                          </div>
+                          <input
+                            type="range"
+                            min={0}
+                            max={100}
+                            value={rubricScores.problem_solving}
+                            onChange={(e) => setRubricScores({ ...rubricScores, problem_solving: Number(e.target.value) })}
+                            className="w-full accent-emerald-500 cursor-pointer"
+                          />
+                        </div>
+
+                        <div className="space-y-1">
+                          <div className="flex justify-between text-xs">
+                            <span className="font-semibold text-slate-300">5. Answer Quality</span>
+                            <span className="font-black text-amber-400">{rubricScores.answer_quality}%</span>
+                          </div>
+                          <input
+                            type="range"
+                            min={0}
+                            max={100}
+                            value={rubricScores.answer_quality}
+                            onChange={(e) => setRubricScores({ ...rubricScores, answer_quality: Number(e.target.value) })}
+                            className="w-full accent-amber-500 cursor-pointer"
+                          />
+                        </div>
+
+                        <div className="space-y-1">
+                          <div className="flex justify-between text-xs">
+                            <span className="font-semibold text-slate-300">6. Professionalism</span>
+                            <span className="font-black text-rose-400">{rubricScores.professionalism}%</span>
+                          </div>
+                          <input
+                            type="range"
+                            min={0}
+                            max={100}
+                            value={rubricScores.professionalism}
+                            onChange={(e) => setRubricScores({ ...rubricScores, professionalism: Number(e.target.value) })}
                             className="w-full accent-rose-500 cursor-pointer"
                           />
                         </div>
                       </div>
 
-                      <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                      {/* Calculated Overall Score Preview */}
+                      <div className="p-3.5 rounded-xl bg-indigo-950/30 border border-indigo-500/20 flex items-center justify-between">
+                        <span className="text-xs font-bold text-indigo-300 flex items-center gap-1.5">
+                          <Award className="w-4 h-4 text-indigo-400" />
+                          Auto-Calculated Overall Score:
+                        </span>
+                        <span className="text-base font-black text-white">
+                          {Math.round(
+                            (rubricScores.communication +
+                              rubricScores.technical_knowledge +
+                              rubricScores.confidence +
+                              rubricScores.problem_solving +
+                              rubricScores.answer_quality +
+                              rubricScores.professionalism) /
+                              6
+                          )}
+                          %
+                        </span>
+                      </div>
+
+                      {/* Strengths & Improvements */}
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-xs">
                         <div>
-                          <label className="text-[11px] font-bold text-slate-400 uppercase block mb-1">
-                            Overall Score (%)
+                          <label className="text-[11px] font-bold text-emerald-400 uppercase block mb-1">
+                            Key Strengths Observed
                           </label>
-                          <input
-                            type="number"
-                            min={0}
-                            max={100}
-                            value={evalScore}
-                            onChange={(e) => setEvalScore(Number(e.target.value))}
-                            className="w-full px-3 py-2 rounded-xl bg-slate-950 border border-white/10 text-white font-bold text-xs"
+                          <textarea
+                            rows={2}
+                            value={strengths}
+                            onChange={(e) => setStrengths(e.target.value)}
+                            placeholder="e.g. Excellent domain knowledge in distributed architectures."
+                            className="w-full p-2.5 rounded-xl bg-slate-950 border border-white/10 text-white placeholder-slate-500 text-xs"
                           />
                         </div>
-                        <div className="sm:col-span-2">
-                          <label className="text-[11px] font-bold text-slate-400 uppercase block mb-1">
-                            Evaluator Written Feedback
+                        <div>
+                          <label className="text-[11px] font-bold text-amber-400 uppercase block mb-1">
+                            Areas to Improve
                           </label>
-                          <input
-                            type="text"
-                            value={evalFeedback}
-                            onChange={(e) => setEvalFeedback(e.target.value)}
-                            placeholder="Enter notes on candidate performance..."
-                            className="w-full px-3 py-2 rounded-xl bg-slate-950 border border-white/10 text-white text-xs"
+                          <textarea
+                            rows={2}
+                            value={improvements}
+                            onChange={(e) => setImprovements(e.target.value)}
+                            placeholder="e.g. Practice structured thinking for edge cases."
+                            className="w-full p-2.5 rounded-xl bg-slate-950 border border-white/10 text-white placeholder-slate-500 text-xs"
+                          />
+                        </div>
+                      </div>
+
+                      {/* Recommendations & Detailed Feedback */}
+                      <div className="space-y-3 text-xs">
+                        <div>
+                          <label className="text-[11px] font-bold text-indigo-400 uppercase block mb-1">
+                            Actionable Recommendations
+                          </label>
+                          <textarea
+                            rows={2}
+                            value={recommendations}
+                            onChange={(e) => setRecommendations(e.target.value)}
+                            placeholder="e.g. Recommended next steps or specific courses to prepare."
+                            className="w-full p-2.5 rounded-xl bg-slate-950 border border-white/10 text-white placeholder-slate-500 text-xs"
+                          />
+                        </div>
+
+                        <div>
+                          <label className="text-[11px] font-bold text-slate-300 uppercase block mb-1">
+                            Detailed Interviewer Feedback *
+                          </label>
+                          <textarea
+                            rows={3}
+                            required
+                            value={detailedFeedback}
+                            onChange={(e) => setDetailedFeedback(e.target.value)}
+                            placeholder="Comprehensive assessment of candidate answers and overall performance..."
+                            className="w-full p-2.5 rounded-xl bg-slate-950 border border-white/10 text-white placeholder-slate-500 text-xs"
                           />
                         </div>
                       </div>
@@ -728,7 +802,7 @@ export default function CompanyInterviewsPage() {
                           ) : (
                             <Check className="w-3.5 h-3.5" />
                           )}
-                          <span>Save Evaluation</span>
+                          <span>Submit Official Feedback</span>
                         </button>
                       </div>
                     </form>
@@ -736,33 +810,39 @@ export default function CompanyInterviewsPage() {
                     <>
                       <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
                         <div className="p-3 rounded-xl bg-slate-950/80 border border-white/5">
-                          <span className="text-[10px] text-slate-400 block font-semibold">DSA & Problem Solving</span>
+                          <span className="text-[10px] text-slate-400 block font-semibold">1. Communication</span>
                           <span className="text-base font-black text-sky-400">
-                            {Math.round(selectedVideoSession.rubric?.dsa_problem_solving ?? rubricScores.dsa)}%
-                          </span>
-                        </div>
-                        <div className="p-3 rounded-xl bg-slate-950/80 border border-white/5">
-                          <span className="text-[10px] text-slate-400 block font-semibold">System Architecture</span>
-                          <span className="text-base font-black text-purple-400">
-                            {Math.round(selectedVideoSession.rubric?.system_architecture ?? rubricScores.architecture)}%
-                          </span>
-                        </div>
-                        <div className="p-3 rounded-xl bg-slate-950/80 border border-white/5">
-                          <span className="text-[10px] text-slate-400 block font-semibold">Behavioral & Culture Fit</span>
-                          <span className="text-base font-black text-emerald-400">
-                            {Math.round(selectedVideoSession.rubric?.behavioral_culture_fit ?? rubricScores.behavioral)}%
-                          </span>
-                        </div>
-                        <div className="p-3 rounded-xl bg-slate-950/80 border border-white/5">
-                          <span className="text-[10px] text-slate-400 block font-semibold">Code Quality</span>
-                          <span className="text-base font-black text-amber-400">
-                            {Math.round(selectedVideoSession.rubric?.code_quality ?? rubricScores.codeQuality)}%
-                          </span>
-                        </div>
-                        <div className="p-3 rounded-xl bg-slate-950/80 border border-white/5">
-                          <span className="text-[10px] text-slate-400 block font-semibold">Communication Clarity</span>
-                          <span className="text-base font-black text-rose-400">
                             {Math.round(selectedVideoSession.rubric?.communication_clarity ?? rubricScores.communication)}%
+                          </span>
+                        </div>
+                        <div className="p-3 rounded-xl bg-slate-950/80 border border-white/5">
+                          <span className="text-[10px] text-slate-400 block font-semibold">2. Technical Knowledge</span>
+                          <span className="text-base font-black text-indigo-400">
+                            {Math.round(selectedVideoSession.rubric?.system_architecture ?? rubricScores.technical_knowledge)}%
+                          </span>
+                        </div>
+                        <div className="p-3 rounded-xl bg-slate-950/80 border border-white/5">
+                          <span className="text-[10px] text-slate-400 block font-semibold">3. Confidence</span>
+                          <span className="text-base font-black text-purple-400">
+                            {Math.round(rubricScores.confidence)}%
+                          </span>
+                        </div>
+                        <div className="p-3 rounded-xl bg-slate-950/80 border border-white/5">
+                          <span className="text-[10px] text-slate-400 block font-semibold">4. Problem Solving</span>
+                          <span className="text-base font-black text-emerald-400">
+                            {Math.round(selectedVideoSession.rubric?.dsa_problem_solving ?? rubricScores.problem_solving)}%
+                          </span>
+                        </div>
+                        <div className="p-3 rounded-xl bg-slate-950/80 border border-white/5">
+                          <span className="text-[10px] text-slate-400 block font-semibold">5. Answer Quality</span>
+                          <span className="text-base font-black text-amber-400">
+                            {Math.round(selectedVideoSession.rubric?.code_quality ?? rubricScores.answer_quality)}%
+                          </span>
+                        </div>
+                        <div className="p-3 rounded-xl bg-slate-950/80 border border-white/5">
+                          <span className="text-[10px] text-slate-400 block font-semibold">6. Professionalism</span>
+                          <span className="text-base font-black text-rose-400">
+                            {Math.round(selectedVideoSession.rubric?.behavioral_culture_fit ?? rubricScores.professionalism)}%
                           </span>
                         </div>
                       </div>

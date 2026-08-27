@@ -87,13 +87,18 @@ export interface MentorProfile {
   mentor_id: string;
   user_id: string;
   full_name: string;
+  name?: string;
   email: string;
   profile_photo?: string | null;
+  avatar_url?: string | null;
   headline?: string;
+  title?: string;
   bio: string;
   expertise: string[];
   skills: string[];
+  expertise_tags?: string[];
   experience_years: number;
+  years_experience?: number;
   current_role: string;
   company: string;
   education?: string;
@@ -602,4 +607,66 @@ export async function assignInterviewToInterviewer(
   });
   return data;
 }
+
+// ─── REAL TEAM & COMPANY CANDIDATE FEEDBACK SYSTEM ──────────────────────────
+
+export interface FeedbackScores {
+  communication: number;
+  technical_knowledge: number;
+  confidence: number;
+  problem_solving: number;
+  answer_quality: number;
+  professionalism: number;
+}
+
+export interface InterviewFeedbackData {
+  feedback_id: string;
+  interview_id: string;
+  student_id: string;
+  reviewer_id: string;
+  reviewer_name: string;
+  reviewer_role: string;
+  scores: FeedbackScores;
+  overall_score: number;
+  strengths: string;
+  improvements: string;
+  recommendations: string;
+  detailed_feedback: string;
+  status: "PENDING" | "SUBMITTED";
+  created_at: string;
+  updated_at: string;
+  submitted_at?: string | null;
+}
+
+export async function submitInterviewTeamFeedback(
+  sessionId: string,
+  payload: {
+    scores: FeedbackScores;
+    strengths: string;
+    improvements: string;
+    recommendations: string;
+    detailed_feedback: string;
+  }
+): Promise<{
+  message: string;
+  feedback_id: string;
+  session_id: string;
+  overall_score: number;
+  status: string;
+  submitted_at: string;
+}> {
+  const { data } = await api.post(`/interviews/${sessionId}/feedback`, payload);
+  return data;
+}
+
+export async function fetchInterviewFeedback(sessionId: string): Promise<{
+  status: "PENDING" | "SUBMITTED";
+  message?: string;
+  feedback?: InterviewFeedbackData;
+  recording_url?: string | null;
+}> {
+  const { data } = await api.get(`/interviews/${sessionId}/feedback`);
+  return data;
+}
+
 

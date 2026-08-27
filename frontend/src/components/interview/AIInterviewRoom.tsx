@@ -61,6 +61,7 @@ export default function AIInterviewRoom({
 
   const {
     isRecording,
+    recordingDuration,
     formattedDuration: recDuration,
     startRecording,
     stopRecording,
