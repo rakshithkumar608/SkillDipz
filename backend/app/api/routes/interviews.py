@@ -19,7 +19,7 @@ from app.api.dependencies import get_current_student, get_current_company
 from app.api.routes.auth import get_current_user
 from app.models.user import User
 from app.models.interview import InterviewSession, InterviewViolation, ProctoringReport, DetailedRubric
-from app.models.interview_feedback import InterviewFeedback, FeedbackScores
+from app.models.interview_feedback import InterviewFeedback, FeedbackScores, InterviewTimestampFeedback
 from app.models.employability_score import EmployabilityScore, ScoreHistory
 from app.models.target_company import CompanyProfile
 from app.models.student_profile import StudentProfile
@@ -722,6 +722,148 @@ async def get_interview_feedback(
         },
         "recording_url": session.recording_url,
     }
+
+
+# ─── REAL VIDEO REVIEW & TIMESTAMPED FEEDBACK SYSTEM ─────────────────────────
+
+class CreateTimestampFeedbackRequest(BaseModel):
+    timestamp_seconds: float = Field(..., ge=0)
+    category: Literal[
+        "Communication",
+        "Technical",
+        "Confidence",
+        "Problem Solving",
+        "Answer Quality",
+        "Body Language",
+        "Positive",
+        "Improvement",
+    ]
+    comment: str = Field(..., min_length=1)
+
+
+def _format_time_sec(sec: float) -> str:
+    s = max(0, int(sec))
+    mins = s // 60
+    secs = s % 60
+    return f"{mins:02d}:{secs:02d}"
+
+
+@router.post("/{session_id}/timestamps")
+async def add_timestamp_feedback(
+    session_id: str,
+    body: CreateTimestampFeedbackRequest,
+    current_user: User = Depends(get_current_user),
+):
+    session = await InterviewSession.find_one(InterviewSession.session_id == session_id)
+    if not session:
+        raise HTTPException(status_code=404, detail="Interview session not found")
+
+    user_id = str(current_user.id)
+    user_role = (current_user.role or "INTERVIEWER").upper()
+
+    # Validate timestamp is within recording duration if known
+    if session.recording_duration_sec and session.recording_duration_sec > 0:
+        if body.timestamp_seconds > session.recording_duration_sec + 5:
+            raise HTTPException(
+                status_code=400,
+                detail=f"Timestamp cannot exceed recording duration ({session.recording_duration_sec}s)."
+            )
+
+    formatted_time = _format_time_sec(body.timestamp_seconds)
+    reviewer_name = current_user.full_name or current_user.company_name or "Interviewer"
+
+    timestamp_doc = InterviewTimestampFeedback(
+        interview_id=session_id,
+        student_id=session.student_id,
+        reviewer_id=user_id,
+        reviewer_name=reviewer_name,
+        reviewer_role=user_role,
+        timestamp_seconds=round(body.timestamp_seconds, 2),
+        formatted_timestamp=formatted_time,
+        category=body.category,
+        comment=body.comment.strip(),
+        created_at=datetime.now(timezone.utc),
+    )
+    await timestamp_doc.insert()
+
+    return {
+        "message": "Timestamp feedback added successfully",
+        "feedback_id": timestamp_doc.feedback_id,
+        "interview_id": timestamp_doc.interview_id,
+        "timestamp_seconds": timestamp_doc.timestamp_seconds,
+        "formatted_timestamp": timestamp_doc.formatted_timestamp,
+        "category": timestamp_doc.category,
+        "comment": timestamp_doc.comment,
+        "reviewer_name": timestamp_doc.reviewer_name,
+        "created_at": timestamp_doc.created_at.isoformat(),
+    }
+
+
+@router.get("/{session_id}/timestamps")
+async def get_interview_timestamps(
+    session_id: str,
+    current_user: User = Depends(get_current_user),
+):
+    session = await InterviewSession.find_one(InterviewSession.session_id == session_id)
+    if not session:
+        raise HTTPException(status_code=404, detail="Interview session not found")
+
+    user_id = str(current_user.id)
+    user_role = (current_user.role or "").upper()
+
+    # If student, check ownership
+    if user_role == "STUDENT" and session.student_id != user_id:
+        raise HTTPException(status_code=403, detail="You are not authorized to view this feedback.")
+
+    items = await InterviewTimestampFeedback.find(
+        InterviewTimestampFeedback.interview_id == session_id
+    ).sort("timestamp_seconds").to_list()
+
+    return {
+        "interview_id": session_id,
+        "total": len(items),
+        "timestamps": [
+            {
+                "feedback_id": item.feedback_id,
+                "interview_id": item.interview_id,
+                "student_id": item.student_id,
+                "reviewer_id": item.reviewer_id,
+                "reviewer_name": item.reviewer_name,
+                "reviewer_role": item.reviewer_role,
+                "timestamp_seconds": item.timestamp_seconds,
+                "formatted_timestamp": item.formatted_timestamp,
+                "category": item.category,
+                "comment": item.comment,
+                "created_at": item.created_at.isoformat(),
+            }
+            for item in items
+        ],
+    }
+
+
+@router.delete("/{session_id}/timestamps/{feedback_id}")
+async def delete_interview_timestamp(
+    session_id: str,
+    feedback_id: str,
+    current_user: User = Depends(get_current_user),
+):
+    item = await InterviewTimestampFeedback.find_one(
+        InterviewTimestampFeedback.feedback_id == feedback_id,
+        InterviewTimestampFeedback.interview_id == session_id,
+    )
+    if not item:
+        raise HTTPException(status_code=404, detail="Timestamp feedback not found")
+
+    user_id = str(current_user.id)
+    user_role = (current_user.role or "").upper()
+
+    # Reviewer who created it or Admin can delete
+    if item.reviewer_id != user_id and user_role != "ADMIN":
+        raise HTTPException(status_code=403, detail="Not authorized to delete this feedback note")
+
+    await item.delete()
+    return {"message": "Timestamp feedback deleted successfully", "feedback_id": feedback_id}
+
 
 
 

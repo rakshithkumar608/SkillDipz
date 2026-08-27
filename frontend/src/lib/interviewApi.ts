@@ -669,4 +669,72 @@ export async function fetchInterviewFeedback(sessionId: string): Promise<{
   return data;
 }
 
+// ─── REAL VIDEO REVIEW & TIMESTAMPED FEEDBACK ───────────────────────────────
+
+export type TimestampCategory =
+  | "Communication"
+  | "Technical"
+  | "Confidence"
+  | "Problem Solving"
+  | "Answer Quality"
+  | "Body Language"
+  | "Positive"
+  | "Improvement";
+
+export interface InterviewTimestampFeedbackItem {
+  feedback_id: string;
+  interview_id: string;
+  student_id: string;
+  reviewer_id: string;
+  reviewer_name: string;
+  reviewer_role: string;
+  timestamp_seconds: number;
+  formatted_timestamp: string;
+  category: TimestampCategory;
+  comment: string;
+  created_at: string;
+}
+
+export async function addInterviewTimestampFeedback(
+  sessionId: string,
+  payload: {
+    timestamp_seconds: number;
+    category: TimestampCategory;
+    comment: string;
+  }
+): Promise<{
+  message: string;
+  feedback_id: string;
+  interview_id: string;
+  timestamp_seconds: number;
+  formatted_timestamp: string;
+  category: TimestampCategory;
+  comment: string;
+  reviewer_name: string;
+  created_at: string;
+}> {
+  const { data } = await api.post(`/interviews/${sessionId}/timestamps`, payload);
+  return data;
+}
+
+export async function fetchInterviewTimestampFeedbacks(
+  sessionId: string
+): Promise<{
+  interview_id: string;
+  total: number;
+  timestamps: InterviewTimestampFeedbackItem[];
+}> {
+  const { data } = await api.get(`/interviews/${sessionId}/timestamps`);
+  return data;
+}
+
+export async function deleteInterviewTimestampFeedback(
+  sessionId: string,
+  feedbackId: string
+): Promise<{ message: string; feedback_id: string }> {
+  const { data } = await api.delete(`/interviews/${sessionId}/timestamps/${feedbackId}`);
+  return data;
+}
+
+
 
