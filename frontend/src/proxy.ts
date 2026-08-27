@@ -9,6 +9,7 @@ const PUBLIC_ROUTES = [
   "/company/auth",
   "/mentor/login",
   "/mentor/register",
+  "/mentors",
   "/admin",
 ];
 

@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import Image from "next/image";
 import Link from "next/link";
 import { useAuthStore } from "@/store/authStore";
+import { logout } from "@/lib/auth";
 import {
   fetchMyMentorProfile,
   saveMentorProfile,
@@ -173,6 +174,17 @@ export default function MentorDashboardPage() {
   useEffect(() => {
     loadMentorData();
   }, []);
+
+  const handleLogout = async () => {
+    try {
+      await logout();
+      toast.success("Signed out successfully.");
+    } catch (err) {
+      console.warn("Logout error:", err);
+    } finally {
+      window.location.href = "/mentor/login";
+    }
+  };
 
   const handleSaveProfile = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -386,14 +398,12 @@ export default function MentorDashboardPage() {
 
             {/* Sign Out */}
             <button
-              onClick={() => {
-                clearAuth();
-                router.push("/mentor/login");
-              }}
-              className="p-2 rounded-xl bg-slate-900 border border-slate-800 hover:bg-slate-800 text-slate-400 hover:text-white transition"
+              onClick={handleLogout}
+              className="px-3 py-1.5 rounded-xl bg-slate-900 border border-slate-800 hover:bg-red-500/10 hover:border-red-500/30 text-slate-300 hover:text-red-400 text-xs font-semibold flex items-center gap-1.5 transition"
               title="Sign Out"
             >
-              <LogOut className="w-4 h-4" />
+              <LogOut className="w-3.5 h-3.5" />
+              <span>Sign Out</span>
             </button>
           </div>
         </div>

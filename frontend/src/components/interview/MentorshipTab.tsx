@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import Link from "next/link";
 import { motion, AnimatePresence } from "framer-motion";
 import {
   Users,
@@ -170,76 +171,156 @@ export default function MentorshipTab({
 
           {/* Mentors Grid or Empty State */}
           {filteredMentors.length === 0 ? (
-            <div className="p-12 rounded-2xl bg-slate-900/40 border border-slate-800 text-center space-y-3">
-              <Users className="w-10 h-10 text-slate-600 mx-auto" />
-              <p className="text-sm font-semibold text-slate-300">No verified mentors available right now.</p>
-              <p className="text-xs text-slate-500 max-w-md mx-auto leading-relaxed">
-                Mentors will appear here as soon as they register, complete their engineering profile, and publish availability slots.
+            <div className="p-16 rounded-3xl bg-slate-900/40 border border-slate-800 text-center space-y-3 max-w-2xl mx-auto shadow-2xl">
+              <Users className="w-12 h-12 text-slate-600 mx-auto" />
+              <h3 className="text-base font-bold text-white">No mentors available yet.</h3>
+              <p className="text-xs text-slate-400 max-w-md mx-auto leading-relaxed">
+                Active mentors will appear here as soon as they register, complete their profile, and publish open interview availability slots.
               </p>
             </div>
           ) : (
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5">
-              {filteredMentors.map((mentor) => (
-                <motion.div
-                  key={mentor.mentor_id}
-                  whileHover={{ y: -3 }}
-                  className="bg-[#0b0f19]/90 border border-slate-800/80 hover:border-indigo-500/40 rounded-2xl p-5 shadow-xl transition-all flex flex-col justify-between gap-5 relative overflow-hidden group"
-                >
-                  <div className="space-y-4">
-                    {/* Avatar & Title Row */}
-                    <div className="flex items-start gap-3.5">
-                      <img
-                        src={mentor.avatar_url || "https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=150"}
-                        alt={mentor.name}
-                        className="w-14 h-14 rounded-2xl object-cover border-2 border-indigo-500/20 shrink-0"
-                      />
-                      <div className="min-w-0 flex-1">
-                        <div className="flex items-center justify-between gap-1">
-                          <h3 className="font-bold text-white text-sm truncate">{mentor.name}</h3>
-                          <div className="flex items-center gap-1 text-amber-400 text-xs font-bold shrink-0">
-                            <Star className="w-3.5 h-3.5 fill-amber-400" />
-                            <span>{mentor.rating.toFixed(2)}</span>
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+              {filteredMentors.map((mentor) => {
+                const name = mentor.name || mentor.full_name || "Mentor";
+                const photo = mentor.avatar_url || mentor.profile_photo;
+                const headline = mentor.headline || "";
+                const currentRole = mentor.title || mentor.current_role || "Engineering Mentor";
+                const company = mentor.company || "";
+                const expYears = mentor.years_experience ?? mentor.experience_years ?? 0;
+                const expertiseList: string[] = mentor.expertise_tags || mentor.expertise || [];
+                const skillsList: string[] = mentor.skills || [];
+                const topicsList: string[] = mentor.mentoring_topics || [];
+                const openSlotsCount = mentor.available_slots_count || 0;
+
+                return (
+                  <motion.div
+                    key={mentor.mentor_id}
+                    whileHover={{ y: -4 }}
+                    className="bg-slate-900/80 border border-slate-800 hover:border-indigo-500/40 rounded-3xl p-6 shadow-xl backdrop-blur-xl flex flex-col justify-between gap-5 transition-all relative overflow-hidden group"
+                  >
+                    <div className="space-y-4">
+                      {/* Header: Photo + Name + Role + Company */}
+                      <div className="flex items-start gap-4">
+                        <div className="relative shrink-0">
+                          {photo ? (
+                            <img
+                              src={photo}
+                              alt={name}
+                              className="w-14 h-14 rounded-2xl object-cover border-2 border-indigo-500/30 shadow-md"
+                            />
+                          ) : (
+                            <div className="w-14 h-14 rounded-2xl bg-gradient-to-tr from-indigo-600 to-violet-600 flex items-center justify-center text-white font-black text-xl border border-indigo-400/30 shadow-md">
+                              {name.charAt(0).toUpperCase()}
+                            </div>
+                          )}
+                          <span className="absolute -bottom-1 -right-1 w-3.5 h-3.5 rounded-full bg-emerald-500 border-2 border-slate-900" />
+                        </div>
+
+                        <div className="min-w-0 flex-1 space-y-0.5">
+                          <div className="flex items-center justify-between gap-1">
+                            <Link
+                              href={`/mentors/${mentor.mentor_id}`}
+                              className="font-bold text-white text-base hover:text-indigo-400 transition truncate"
+                            >
+                              {name}
+                            </Link>
+                            <div className="flex items-center gap-1 text-amber-400 text-xs font-bold shrink-0">
+                              <Star className="w-3.5 h-3.5 fill-amber-400" />
+                              <span>{mentor.rating ? mentor.rating.toFixed(1) : "5.0"}</span>
+                            </div>
+                          </div>
+
+                          <p className="text-xs text-indigo-300 font-semibold truncate">
+                            {currentRole}
+                          </p>
+                          {company && (
+                            <p className="text-[11px] text-slate-400 flex items-center gap-1">
+                              <Building2 className="w-3 h-3 text-slate-500" /> {company}
+                            </p>
+                          )}
+                        </div>
+                      </div>
+
+                      {/* Headline */}
+                      {headline && (
+                        <p className="text-xs text-slate-300 italic border-l-2 border-indigo-500/40 pl-3 leading-relaxed line-clamp-2">
+                          "{headline}"
+                        </p>
+                      )}
+
+                      {/* Experience pill */}
+                      <div className="flex items-center gap-3 text-xs text-slate-400 pt-1 border-t border-slate-800/80">
+                        <span className="font-semibold text-slate-300">{expYears} yrs experience</span>
+                        <span className="text-slate-700">·</span>
+                        <span>{mentor.sessions_completed || 0} rounds conducted</span>
+                      </div>
+
+                      {/* Expertise Domain Chips */}
+                      {expertiseList.length > 0 && (
+                        <div className="space-y-1.5">
+                          <span className="text-[10px] font-bold text-slate-400 uppercase">Expertise</span>
+                          <div className="flex flex-wrap gap-1.5">
+                            {expertiseList.slice(0, 3).map((tag, idx) => (
+                              <span
+                                key={idx}
+                                className="px-2.5 py-1 rounded-lg text-[10px] font-semibold bg-indigo-500/10 text-indigo-300 border border-indigo-500/20"
+                              >
+                                {tag}
+                              </span>
+                            ))}
                           </div>
                         </div>
-                        <p className="text-xs text-indigo-400 font-semibold mt-0.5">{mentor.company}</p>
-                        <p className="text-[11px] text-slate-400 truncate">{mentor.title}</p>
-                      </div>
+                      )}
+
+                      {/* Skills Stack */}
+                      {skillsList.length > 0 && (
+                        <div className="space-y-1.5">
+                          <span className="text-[10px] font-bold text-slate-400 uppercase">Skills</span>
+                          <div className="flex flex-wrap gap-1.5">
+                            {skillsList.slice(0, 4).map((skill, idx) => (
+                              <span
+                                key={idx}
+                                className="px-2 py-0.5 rounded-md text-[10px] font-medium bg-slate-950 border border-slate-800 text-slate-300"
+                              >
+                                {skill}
+                              </span>
+                            ))}
+                          </div>
+                        </div>
+                      )}
+
+                      {/* Mentoring Topics */}
+                      {topicsList.length > 0 && (
+                        <div className="space-y-1">
+                          <span className="text-[10px] font-bold text-slate-400 uppercase">Topics</span>
+                          <p className="text-[11px] text-slate-400 line-clamp-1">
+                            {topicsList.join(" · ")}
+                          </p>
+                        </div>
+                      )}
                     </div>
 
-                    {/* Bio */}
-                    <p className="text-xs text-slate-300 line-clamp-2 leading-relaxed">
-                      {mentor.bio}
-                    </p>
+                    {/* Actions / CTA */}
+                    <div className="pt-4 border-t border-slate-800/80 flex items-center justify-between gap-2">
+                      <Link
+                        href={`/mentors/${mentor.mentor_id}`}
+                        className="px-3.5 py-2 rounded-xl bg-slate-950 border border-slate-800 hover:border-slate-700 text-slate-300 text-xs font-semibold transition"
+                      >
+                        View Profile
+                      </Link>
 
-                    {/* Expertise Tags */}
-                    <div className="flex flex-wrap gap-1.5">
-                      {mentor.expertise_tags.slice(0, 3).map((tag, i) => (
-                        <span
-                          key={i}
-                          className="px-2 py-0.5 rounded-md text-[10px] font-medium bg-slate-900 border border-slate-800 text-slate-300"
-                        >
-                          {tag}
-                        </span>
-                      ))}
+                      <button
+                        onClick={() => handleOpenBooking(mentor)}
+                        disabled={openSlotsCount === 0}
+                        className="px-4 py-2 rounded-xl bg-gradient-to-r from-indigo-600 to-violet-600 hover:from-indigo-500 hover:to-violet-500 text-white font-bold text-xs flex items-center gap-1.5 shadow-md shadow-indigo-500/25 disabled:opacity-40 disabled:cursor-not-allowed transition"
+                      >
+                        <Calendar className="w-3.5 h-3.5" />
+                        <span>{openSlotsCount > 0 ? `Book (${openSlotsCount})` : "No Open Slots"}</span>
+                      </button>
                     </div>
-                  </div>
-
-                  {/* Footer / Booking CTA */}
-                  <div className="pt-3 border-t border-slate-800/60 flex items-center justify-between gap-3">
-                    <div className="text-[11px] text-slate-400">
-                      <span className="text-emerald-400 font-semibold">{mentor.available_slots_count || 0} slots</span> open
-                    </div>
-
-                    <button
-                      onClick={() => handleOpenBooking(mentor)}
-                      disabled={(mentor.available_slots_count || 0) === 0}
-                      className="px-4 py-2 rounded-xl bg-gradient-to-r from-indigo-600 to-purple-600 hover:from-indigo-500 hover:to-purple-500 text-white font-semibold text-xs flex items-center gap-1.5 shadow-md shadow-indigo-500/20 disabled:opacity-40 disabled:cursor-not-allowed transition"
-                    >
-                      <Calendar className="w-3.5 h-3.5" /> Book Session
-                    </button>
-                  </div>
-                </motion.div>
-              ))}
+                  </motion.div>
+                );
+              })}
             </div>
           )}
         </div>
