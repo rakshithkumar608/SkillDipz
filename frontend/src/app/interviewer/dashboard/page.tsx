@@ -10,7 +10,8 @@ import {
   AssignedInterviewSession,
   DetailedRubric,
   fetchInterviewerInterviews,
-  submitInterviewerReview,
+  submitInterviewTeamFeedback,
+  type FeedbackScores,
 } from "@/lib/interviewApi";
 import {
   Users,
@@ -66,15 +67,18 @@ export default function InterviewerDashboardPage() {
 
   // Review Evaluation Modal State
   const [evaluatingSession, setEvaluatingSession] = useState<AssignedInterviewSession | null>(null);
-  const [overallScore, setOverallScore] = useState<number>(80);
-  const [feedback, setFeedback] = useState<string>("");
-  const [rubricScores, setRubricScores] = useState({
-    dsa: 80,
-    architecture: 75,
-    behavioral: 85,
-    codeQuality: 78,
-    communication: 82,
+  const [rubricScores, setRubricScores] = useState<FeedbackScores>({
+    communication: 85,
+    technical_knowledge: 80,
+    confidence: 85,
+    problem_solving: 80,
+    answer_quality: 85,
+    professionalism: 90,
   });
+  const [strengths, setStrengths] = useState("");
+  const [improvements, setImprovements] = useState("");
+  const [recommendations, setRecommendations] = useState("");
+  const [detailedFeedback, setDetailedFeedback] = useState("");
   const [submittingReview, setSubmittingReview] = useState(false);
 
   const loadInterviews = useCallback(async () => {
@@ -107,23 +111,27 @@ export default function InterviewerDashboardPage() {
 
   const handleOpenEvaluation = (session: AssignedInterviewSession) => {
     setEvaluatingSession(session);
-    setOverallScore(session.overall_score || 80);
-    setFeedback(session.interviewer_feedback || "");
+    setDetailedFeedback(session.interviewer_feedback || "");
+    setStrengths(session.rubric?.key_strengths?.join(", ") || "");
+    setImprovements(session.rubric?.improvement_areas?.join(", ") || "");
+    setRecommendations(session.rubric?.actionable_recommendations?.join(", ") || "");
     if (session.rubric) {
       setRubricScores({
-        dsa: session.rubric.dsa_problem_solving ?? 80,
-        architecture: session.rubric.system_architecture ?? 75,
-        behavioral: session.rubric.behavioral_culture_fit ?? 85,
-        codeQuality: session.rubric.code_quality ?? 78,
-        communication: session.rubric.communication_clarity ?? 82,
+        communication: session.rubric.communication_clarity ?? 85,
+        technical_knowledge: session.rubric.system_architecture ?? 80,
+        confidence: 85,
+        problem_solving: session.rubric.dsa_problem_solving ?? 80,
+        answer_quality: session.rubric.code_quality ?? 85,
+        professionalism: session.rubric.behavioral_culture_fit ?? 90,
       });
     } else {
       setRubricScores({
-        dsa: 80,
-        architecture: 75,
-        behavioral: 85,
-        codeQuality: 78,
-        communication: 82,
+        communication: 85,
+        technical_knowledge: 80,
+        confidence: 85,
+        problem_solving: 80,
+        answer_quality: 85,
+        professionalism: 90,
       });
     }
   };
@@ -132,38 +140,22 @@ export default function InterviewerDashboardPage() {
     e.preventDefault();
     if (!evaluatingSession) return;
 
-    if (!feedback.trim()) {
+    if (!detailedFeedback.trim()) {
       toast.error("Please provide detailed assessment feedback for the candidate.");
       return;
     }
 
     try {
       setSubmittingReview(true);
-      const computedRubric: DetailedRubric = {
-        dsa_problem_solving: rubricScores.dsa,
-        system_architecture: rubricScores.architecture,
-        behavioral_culture_fit: rubricScores.behavioral,
-        code_quality: rubricScores.codeQuality,
-        communication_clarity: rubricScores.communication,
-      };
-
-      // Auto compute overall score if not manually set
-      const avg = Math.round(
-        (rubricScores.dsa +
-          rubricScores.architecture +
-          rubricScores.behavioral +
-          rubricScores.codeQuality +
-          rubricScores.communication) /
-          5
-      );
-
-      const res = await submitInterviewerReview(evaluatingSession.session_id, {
-        overall_score: overallScore || avg,
-        feedback,
-        rubric: computedRubric,
+      const res = await submitInterviewTeamFeedback(evaluatingSession.session_id, {
+        scores: rubricScores,
+        strengths: strengths.trim(),
+        improvements: improvements.trim(),
+        recommendations: recommendations.trim(),
+        detailed_feedback: detailedFeedback.trim(),
       });
 
-      toast.success(res.message || "Evaluation submitted successfully!");
+      toast.success(res.message || "Official feedback submitted successfully!");
       setEvaluatingSession(null);
       loadInterviews();
     } catch (err: any) {
@@ -228,10 +220,10 @@ export default function InterviewerDashboardPage() {
           <div className="flex items-center gap-3">
             {/* Authenticated User Pill */}
             <div className="flex items-center gap-2.5 px-3 py-1.5 rounded-xl bg-slate-900 border border-slate-800">
-              <div className="w-6 h-6 rounded-full bg-gradient-to-tr from-indigo-500 to-purple-500 flex items-center justify-center text-white text-xs font-black">
+              <div className="w-6 h-6 rounded-full bg-linear-to-tr from-indigo-500 to-purple-500 flex items-center justify-center text-white text-xs font-black">
                 {user?.full_name ? user.full_name.charAt(0).toUpperCase() : "I"}
               </div>
-              <span className="text-xs font-bold text-slate-200 hidden sm:inline max-w-[120px] truncate">
+              <span className="text-xs font-bold text-slate-200 hidden sm:inline max-w-30 truncate">
                 {user?.full_name || "Interviewer"}
               </span>
             </div>
@@ -252,7 +244,7 @@ export default function InterviewerDashboardPage() {
       {/* Main Content */}
       <main className="max-w-7xl mx-auto px-4 sm:px-8 py-8 space-y-8 relative z-10">
         {/* Welcome & Stats Hero */}
-        <div className="p-8 sm:p-10 rounded-3xl bg-gradient-to-br from-indigo-950/40 via-slate-900/70 to-slate-950 border border-indigo-500/20 backdrop-blur-xl shadow-2xl space-y-6 relative overflow-hidden">
+        <div className="p-8 sm:p-10 rounded-3xl bg-linear-to-br from-indigo-950/40 via-slate-900/70 to-slate-950 border border-indigo-500/20 backdrop-blur-xl shadow-2xl space-y-6 relative overflow-hidden">
           <div className="absolute right-0 top-0 w-80 h-80 bg-indigo-500/10 rounded-full blur-3xl pointer-events-none" />
 
           <div className="flex flex-col md:flex-row md:items-center justify-between gap-6 relative z-10">
@@ -437,7 +429,7 @@ export default function InterviewerDashboardPage() {
                       className={`w-full py-2.5 rounded-xl font-bold text-xs flex items-center justify-center gap-2 shadow-lg transition ${
                         isReviewed
                           ? "bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700"
-                          : "bg-gradient-to-r from-indigo-600 to-purple-600 hover:from-indigo-500 hover:to-purple-500 text-white shadow-indigo-500/20"
+                          : "bg-linear-to-r from-indigo-600 to-purple-600 hover:from-indigo-500 hover:to-purple-500 text-white shadow-indigo-500/20"
                       }`}
                     >
                       <Sliders className="w-3.5 h-3.5" />
@@ -493,7 +485,7 @@ export default function InterviewerDashboardPage() {
                     <label className="text-xs font-bold text-slate-300 uppercase tracking-wider flex items-center gap-1.5">
                       <Film className="w-4 h-4 text-purple-400" /> Candidate Session Recording
                     </label>
-                    <div className="relative rounded-2xl overflow-hidden bg-black border border-slate-800 aspect-video max-h-[360px] flex items-center justify-center shadow-xl">
+                    <div className="relative rounded-2xl overflow-hidden bg-black border border-slate-800 aspect-video max-h-90 flex items-center justify-center shadow-xl">
                       <video
                         src={activeVideoUrl}
                         controls
@@ -509,83 +501,19 @@ export default function InterviewerDashboardPage() {
                   </div>
                 )}
 
-                {/* 5-Factor Competency Rubric Grading */}
+                {/* 6-Factor Competency Rubric Grading */}
                 <div className="space-y-4 p-5 rounded-2xl bg-slate-950/80 border border-slate-800">
                   <h3 className="text-xs font-bold text-white uppercase tracking-wider flex items-center gap-1.5">
                     <Award className="w-4 h-4 text-emerald-400" />
-                    5-Factor Competency Rubric (0 - 100)
+                    6 Core Competency Factors (0 - 100)
                   </h3>
 
-                  <div className="space-y-4">
-                    {/* DSA */}
-                    <div className="space-y-1.5">
-                      <div className="flex justify-between text-xs">
-                        <span className="font-semibold text-slate-300">1. DSA & Problem Solving</span>
-                        <span className="font-black text-sky-400">{rubricScores.dsa}%</span>
-                      </div>
-                      <input
-                        type="range"
-                        min={0}
-                        max={100}
-                        value={rubricScores.dsa}
-                        onChange={(e) => setRubricScores({ ...rubricScores, dsa: Number(e.target.value) })}
-                        className="w-full accent-sky-500 cursor-pointer"
-                      />
-                    </div>
-
-                    {/* Architecture */}
-                    <div className="space-y-1.5">
-                      <div className="flex justify-between text-xs">
-                        <span className="font-semibold text-slate-300">2. System Architecture & Design</span>
-                        <span className="font-black text-purple-400">{rubricScores.architecture}%</span>
-                      </div>
-                      <input
-                        type="range"
-                        min={0}
-                        max={100}
-                        value={rubricScores.architecture}
-                        onChange={(e) => setRubricScores({ ...rubricScores, architecture: Number(e.target.value) })}
-                        className="w-full accent-purple-500 cursor-pointer"
-                      />
-                    </div>
-
-                    {/* Behavioral */}
-                    <div className="space-y-1.5">
-                      <div className="flex justify-between text-xs">
-                        <span className="font-semibold text-slate-300">3. Behavioral & Culture Fit</span>
-                        <span className="font-black text-emerald-400">{rubricScores.behavioral}%</span>
-                      </div>
-                      <input
-                        type="range"
-                        min={0}
-                        max={100}
-                        value={rubricScores.behavioral}
-                        onChange={(e) => setRubricScores({ ...rubricScores, behavioral: Number(e.target.value) })}
-                        className="w-full accent-emerald-500 cursor-pointer"
-                      />
-                    </div>
-
-                    {/* Code Quality */}
-                    <div className="space-y-1.5">
-                      <div className="flex justify-between text-xs">
-                        <span className="font-semibold text-slate-300">4. Code Quality & Standards</span>
-                        <span className="font-black text-amber-400">{rubricScores.codeQuality}%</span>
-                      </div>
-                      <input
-                        type="range"
-                        min={0}
-                        max={100}
-                        value={rubricScores.codeQuality}
-                        onChange={(e) => setRubricScores({ ...rubricScores, codeQuality: Number(e.target.value) })}
-                        className="w-full accent-amber-500 cursor-pointer"
-                      />
-                    </div>
-
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                     {/* Communication */}
                     <div className="space-y-1.5">
                       <div className="flex justify-between text-xs">
-                        <span className="font-semibold text-slate-300">5. Communication Clarity</span>
-                        <span className="font-black text-rose-400">{rubricScores.communication}%</span>
+                        <span className="font-semibold text-slate-300">1. Communication</span>
+                        <span className="font-black text-sky-400">{rubricScores.communication}%</span>
                       </div>
                       <input
                         type="range"
@@ -593,39 +521,166 @@ export default function InterviewerDashboardPage() {
                         max={100}
                         value={rubricScores.communication}
                         onChange={(e) => setRubricScores({ ...rubricScores, communication: Number(e.target.value) })}
+                        className="w-full accent-sky-500 cursor-pointer"
+                      />
+                    </div>
+
+                    {/* Technical Knowledge */}
+                    <div className="space-y-1.5">
+                      <div className="flex justify-between text-xs">
+                        <span className="font-semibold text-slate-300">2. Technical Knowledge</span>
+                        <span className="font-black text-indigo-400">{rubricScores.technical_knowledge}%</span>
+                      </div>
+                      <input
+                        type="range"
+                        min={0}
+                        max={100}
+                        value={rubricScores.technical_knowledge}
+                        onChange={(e) => setRubricScores({ ...rubricScores, technical_knowledge: Number(e.target.value) })}
+                        className="w-full accent-indigo-500 cursor-pointer"
+                      />
+                    </div>
+
+                    {/* Confidence */}
+                    <div className="space-y-1.5">
+                      <div className="flex justify-between text-xs">
+                        <span className="font-semibold text-slate-300">3. Confidence</span>
+                        <span className="font-black text-purple-400">{rubricScores.confidence}%</span>
+                      </div>
+                      <input
+                        type="range"
+                        min={0}
+                        max={100}
+                        value={rubricScores.confidence}
+                        onChange={(e) => setRubricScores({ ...rubricScores, confidence: Number(e.target.value) })}
+                        className="w-full accent-purple-500 cursor-pointer"
+                      />
+                    </div>
+
+                    {/* Problem Solving */}
+                    <div className="space-y-1.5">
+                      <div className="flex justify-between text-xs">
+                        <span className="font-semibold text-slate-300">4. Problem Solving</span>
+                        <span className="font-black text-emerald-400">{rubricScores.problem_solving}%</span>
+                      </div>
+                      <input
+                        type="range"
+                        min={0}
+                        max={100}
+                        value={rubricScores.problem_solving}
+                        onChange={(e) => setRubricScores({ ...rubricScores, problem_solving: Number(e.target.value) })}
+                        className="w-full accent-emerald-500 cursor-pointer"
+                      />
+                    </div>
+
+                    {/* Answer Quality */}
+                    <div className="space-y-1.5">
+                      <div className="flex justify-between text-xs">
+                        <span className="font-semibold text-slate-300">5. Answer Quality</span>
+                        <span className="font-black text-amber-400">{rubricScores.answer_quality}%</span>
+                      </div>
+                      <input
+                        type="range"
+                        min={0}
+                        max={100}
+                        value={rubricScores.answer_quality}
+                        onChange={(e) => setRubricScores({ ...rubricScores, answer_quality: Number(e.target.value) })}
+                        className="w-full accent-amber-500 cursor-pointer"
+                      />
+                    </div>
+
+                    {/* Professionalism */}
+                    <div className="space-y-1.5">
+                      <div className="flex justify-between text-xs">
+                        <span className="font-semibold text-slate-300">6. Professionalism</span>
+                        <span className="font-black text-rose-400">{rubricScores.professionalism}%</span>
+                      </div>
+                      <input
+                        type="range"
+                        min={0}
+                        max={100}
+                        value={rubricScores.professionalism}
+                        onChange={(e) => setRubricScores({ ...rubricScores, professionalism: Number(e.target.value) })}
                         className="w-full accent-rose-500 cursor-pointer"
                       />
                     </div>
                   </div>
                 </div>
 
-                {/* Overall Score */}
+                {/* Overall Score Indicator */}
+                <div className="p-4 rounded-2xl bg-indigo-950/30 border border-indigo-500/20 flex items-center justify-between">
+                  <span className="text-xs font-bold text-indigo-300 flex items-center gap-1.5">
+                    <Award className="w-4 h-4 text-indigo-400" />
+                    Calculated Overall Score:
+                  </span>
+                  <span className="text-lg font-black text-white">
+                    {Math.round(
+                      (rubricScores.communication +
+                        rubricScores.technical_knowledge +
+                        rubricScores.confidence +
+                        rubricScores.problem_solving +
+                        rubricScores.answer_quality +
+                        rubricScores.professionalism) /
+                        6
+                    )}
+                    %
+                  </span>
+                </div>
+
+                {/* Strengths & Improvements */}
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                  <div className="space-y-1.5">
+                    <label className="text-xs font-bold text-emerald-400 uppercase tracking-wider block">
+                      Key Strengths Observed
+                    </label>
+                    <textarea
+                      rows={3}
+                      value={strengths}
+                      onChange={(e) => setStrengths(e.target.value)}
+                      placeholder="Candidate's standout strengths during the session..."
+                      className="w-full p-3.5 rounded-xl bg-slate-950 border border-slate-800 text-white text-xs leading-relaxed focus:outline-none focus:border-emerald-500 transition"
+                    />
+                  </div>
+
+                  <div className="space-y-1.5">
+                    <label className="text-xs font-bold text-amber-400 uppercase tracking-wider block">
+                      Areas to Improve
+                    </label>
+                    <textarea
+                      rows={3}
+                      value={improvements}
+                      onChange={(e) => setImprovements(e.target.value)}
+                      placeholder="Candidate's improvement areas or gaps..."
+                      className="w-full p-3.5 rounded-xl bg-slate-950 border border-slate-800 text-white text-xs leading-relaxed focus:outline-none focus:border-amber-500 transition"
+                    />
+                  </div>
+                </div>
+
+                {/* Recommendations */}
                 <div className="space-y-1.5">
-                  <label className="text-xs font-bold text-slate-300 uppercase tracking-wider block">
-                    Overall Candidate Score (%)
+                  <label className="text-xs font-bold text-indigo-400 uppercase tracking-wider block">
+                    Actionable Recommendations
                   </label>
-                  <input
-                    type="number"
-                    min={0}
-                    max={100}
-                    required
-                    value={overallScore}
-                    onChange={(e) => setOverallScore(Number(e.target.value))}
-                    className="w-full px-4 py-2.5 rounded-xl bg-slate-950 border border-slate-800 text-white font-bold text-sm"
+                  <textarea
+                    rows={2}
+                    value={recommendations}
+                    onChange={(e) => setRecommendations(e.target.value)}
+                    placeholder="Specific preparation steps or study suggestions..."
+                    className="w-full p-3.5 rounded-xl bg-slate-950 border border-slate-800 text-white text-xs leading-relaxed focus:outline-none focus:border-indigo-500 transition"
                   />
                 </div>
 
-                {/* Evaluator Written Feedback */}
+                {/* Evaluator Written Detailed Feedback */}
                 <div className="space-y-1.5">
                   <label className="text-xs font-bold text-slate-300 uppercase tracking-wider block">
-                    Interviewer Assessment & Recommendations *
+                    Detailed Interviewer Feedback *
                   </label>
                   <textarea
                     rows={4}
                     required
-                    value={feedback}
-                    onChange={(e) => setFeedback(e.target.value)}
-                    placeholder="Provide specific technical insights, strengths observed, and areas for improvement..."
+                    value={detailedFeedback}
+                    onChange={(e) => setDetailedFeedback(e.target.value)}
+                    placeholder="Comprehensive assessment of candidate answers and overall performance..."
                     className="w-full p-3.5 rounded-xl bg-slate-950 border border-slate-800 text-white text-xs leading-relaxed focus:outline-none focus:border-indigo-500 transition"
                   />
                 </div>
@@ -642,7 +697,7 @@ export default function InterviewerDashboardPage() {
                   <button
                     type="submit"
                     disabled={submittingReview}
-                    className="px-6 py-2.5 rounded-xl bg-gradient-to-r from-indigo-600 to-purple-600 hover:from-indigo-500 hover:to-purple-500 text-white font-bold text-xs flex items-center gap-2 shadow-lg shadow-indigo-500/25 transition disabled:opacity-50"
+                    className="px-6 py-2.5 rounded-xl bg-linear-to-r from-indigo-600 to-purple-600 hover:from-indigo-500 hover:to-purple-500 text-white font-bold text-xs flex items-center gap-2 shadow-lg shadow-indigo-500/25 transition disabled:opacity-50"
                   >
                     {submittingReview ? (
                       <>

@@ -17,7 +17,7 @@ from app.models.assessment import AssessmentResult
 from app.models.project import StudentProjectSubmission
 from app.models.user import User
 from app.models.company import Company
-from app.models.interview import InterviewSession
+from app.models.interview import InterviewSession, DetailedRubric
 from app.schemas.company_auth_schema import CompanyApprovalAction
 from app.core.redis_client import destroy_all_company_sessions
 from app.services.notification_service import send_notification

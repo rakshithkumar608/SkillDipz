@@ -68,12 +68,18 @@ export default function MentorshipTab({
   const companies = ["All", "Google", "Amazon", "Razorpay", "Flipkart", "Microsoft"];
 
   const filteredMentors = mentors.filter((m) => {
-    const matchesCompany = selectedCompany === "All" || m.company.toLowerCase() === selectedCompany.toLowerCase();
+    const mentorName = m.full_name || m.name || "";
+    const mentorCompany = m.company || "";
+    const mentorTitle = m.current_role || m.headline || m.title || "";
+    const mentorTags = m.expertise || m.skills || m.expertise_tags || [];
+
+    const matchesCompany = selectedCompany === "All" || mentorCompany.toLowerCase() === selectedCompany.toLowerCase();
+    const query = searchQuery.toLowerCase();
     const matchesSearch =
-      m.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      m.company.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      m.title.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      m.expertise_tags.some((t) => t.toLowerCase().includes(searchQuery.toLowerCase()));
+      mentorName.toLowerCase().includes(query) ||
+      mentorCompany.toLowerCase().includes(query) ||
+      mentorTitle.toLowerCase().includes(query) ||
+      mentorTags.some((t: string) => t.toLowerCase().includes(query));
     return matchesCompany && matchesSearch;
   });
 

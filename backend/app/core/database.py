@@ -19,6 +19,7 @@ from app.models.target_company import CompanyProfile, StudentTargetCompany
 from app.models.job_requirement import JobRequirement
 from app.models.job_application import JobApplication
 from app.models.interview import InterviewSession
+from app.models.interview_feedback import InterviewFeedback
 
 from app.models.project import (
     CompanyProject,
@@ -96,6 +97,7 @@ async def connect_db():
             CodingQuestion,
             CodingSolvedProblem,
             InterviewSession,
+            InterviewFeedback,
             DailyAssignment,
             CompanySponsoredChallenge,
             # Mentorship System
@@ -176,6 +178,12 @@ async def connect_db():
     await InterviewSession.get_motor_collection().create_index([("student_id", 1), ("status", 1), ("scheduled_at", -1)])
     await InterviewSession.get_motor_collection().create_index([("company_id", 1), ("status", 1)])
     await InterviewSession.get_motor_collection().create_index([("mentor_id", 1), ("status", 1)])
+
+    # Interview Feedback Indexes
+    await InterviewFeedback.get_motor_collection().create_index("feedback_id", unique=True)
+    await InterviewFeedback.get_motor_collection().create_index("interview_id", unique=True)
+    await InterviewFeedback.get_motor_collection().create_index([("student_id", 1), ("status", 1)])
+    await InterviewFeedback.get_motor_collection().create_index([("reviewer_id", 1), ("status", 1)])
 
     # Mentorship System Indexes
     await MentorProfile.get_motor_collection().create_index("mentor_id", unique=True)

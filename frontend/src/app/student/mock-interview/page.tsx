@@ -71,6 +71,7 @@ export default function MockInterviewPage() {
   // Detailed Report Modal State
   const [reportModalOpen, setReportModalOpen] = useState(false);
   const [selectedReportData, setSelectedReportData] = useState<{
+    sessionId?: string;
     overallScore: number;
     companyName: string;
     interviewType: string;
@@ -163,6 +164,7 @@ export default function MockInterviewPage() {
 
   const handleViewSessionReport = (session: InterviewSession) => {
     setSelectedReportData({
+      sessionId: session.session_id,
       overallScore: session.overall_score || 75,
       companyName: session.company_name || session.interviewer_name || "Interview Evaluation",
       interviewType: session.interview_type,
@@ -264,17 +266,17 @@ export default function MockInterviewPage() {
           onClick={() => setActiveTab("ai_arena")}
           className={`flex-1 py-2.5 rounded-xl text-xs sm:text-sm font-bold flex items-center justify-center gap-2 transition ${
             activeTab === "ai_arena"
-              ? "bg-gradient-to-r from-violet-600 to-indigo-600 text-white shadow-lg shadow-indigo-500/20"
+              ? "bg-linear-to-r from-violet-600 to-indigo-600 text-white shadow-lg shadow-indigo-500/20"
               : "text-slate-400 hover:text-white"
           }`}
         >
           <Bot className="w-4 h-4" /> AI Practice Arena
-        </button>
+        </button> 
         <button
           onClick={() => setActiveTab("mentorship")}
           className={`flex-1 py-2.5 rounded-xl text-xs sm:text-sm font-bold flex items-center justify-center gap-2 transition ${
             activeTab === "mentorship"
-              ? "bg-gradient-to-r from-indigo-600 to-purple-600 text-white shadow-lg shadow-purple-500/20"
+              ? "bg-linear-to-r from-indigo-600 to-purple-600 text-white shadow-lg shadow-purple-500/20"
               : "text-slate-400 hover:text-white"
           }`}
         >
@@ -284,7 +286,7 @@ export default function MockInterviewPage() {
           onClick={() => setActiveTab("history")}
           className={`flex-1 py-2.5 rounded-xl text-xs sm:text-sm font-bold flex items-center justify-center gap-2 transition ${
             activeTab === "history"
-              ? "bg-gradient-to-r from-sky-600 to-teal-600 text-white shadow-lg shadow-teal-500/20"
+              ? "bg-linear-to-r from-sky-600 to-teal-600 text-white shadow-lg shadow-teal-500/20"
               : "text-slate-400 hover:text-white"
           }`}
         >
@@ -552,7 +554,7 @@ export default function MockInterviewPage() {
               <button
                 onClick={handleStartAI}
                 disabled={startingAI}
-                className="w-full py-3.5 rounded-2xl bg-gradient-to-r from-violet-600 to-indigo-600 hover:from-violet-500 hover:to-indigo-500 text-white font-bold text-sm shadow-xl shadow-violet-500/20 transition flex items-center justify-center gap-2 disabled:opacity-50"
+                className="w-full py-3.5 rounded-2xl bg-linear-to-r from-violet-600 to-indigo-600 hover:from-violet-500 hover:to-indigo-500 text-white font-bold text-sm shadow-xl shadow-violet-500/20 transition flex items-center justify-center gap-2 disabled:opacity-50"
               >
                 {startingAI ? (
                   <>
@@ -574,6 +576,7 @@ export default function MockInterviewPage() {
         <FeedbackReportModal
           isOpen={reportModalOpen}
           onClose={() => setReportModalOpen(false)}
+          sessionId={selectedReportData.sessionId}
           overallScore={selectedReportData.overallScore}
           companyName={selectedReportData.companyName}
           interviewType={selectedReportData.interviewType}

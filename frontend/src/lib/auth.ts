@@ -54,7 +54,7 @@ export async function loginWithCredentials(
 
 export async function loginWithGoogle(
   googleIdToken: string,
-  role?: "STUDENT" | "COMPANY",
+  role?: "STUDENT" | "COMPANY" | "MENTOR",
 ): Promise<AuthResponse> {
   const { data } = await api.post<AuthResponse>("/auth/google", {
     id_token: googleIdToken,
