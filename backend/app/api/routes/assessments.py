@@ -4,7 +4,6 @@ import logging
 import json
 import html
 import httpx
-import re
 from typing import List, Optional
 from datetime import datetime, timezone, timedelta
 from fastapi import APIRouter, Depends, HTTPException, Query, UploadFile, File
@@ -244,7 +243,7 @@ def _clean_json_text(text: str) -> str:
         parts = text.split("```")
         if len(parts) >= 2:
             text = parts[1].strip()
-    
+
     start = text.find("{")
     end = text.rfind("}")
     if start != -1 and end != -1 and end > start:
@@ -328,9 +327,11 @@ JSON SCHEMA:
                         await asyncio.sleep(2.0 * (attempt + 1))
                         continue
                     if res.status_code != 200:
-                        logger.warning(f"Groq model '{model}' HTTP {res.status_code}: {res.text[:120]}")
+                        logger.warning(
+                            f"Groq model '{model}' HTTP {res.status_code}: {res.text[:120]}")
                         break
-                    content = res.json()["choices"][0]["message"]["content"].strip()
+                    content = res.json()[
+                        "choices"][0]["message"]["content"].strip()
                     cleaned = _clean_json_text(content)
                     parsed = json.loads(cleaned)
                     raw_qs = parsed.get("questions", [])
@@ -338,7 +339,8 @@ JSON SCHEMA:
                     out: List[MCQQuestion] = []
                     for item in raw_qs:
                         opts = [
-                            MCQOption(key=o["key"], text=str(o["text"]).strip())
+                            MCQOption(key=o["key"], text=str(
+                                o["text"]).strip())
                             for o in item.get("options", [])
                             if isinstance(o, dict) and "key" in o and "text" in o
                         ]
@@ -346,19 +348,23 @@ JSON SCHEMA:
                             out.append(
                                 MCQQuestion(
                                     question_id=f"groq_mcq_{uuid.uuid4().hex[:8]}",
-                                    question=str(item.get("question", "")).strip(),
+                                    question=str(
+                                        item.get("question", "")).strip(),
                                     options=opts,
                                     correct_key=item["correct_key"],
                                     explanation=item.get("explanation"),
-                                    skill_tag=item.get("skill_tag", skill_tags[0] if skill_tags else topic_title),
+                                    skill_tag=item.get(
+                                        "skill_tag", skill_tags[0] if skill_tags else topic_title),
                                     source="groq_ai",
                                 )
                             )
                     if out:
-                        logger.info(f"⚡ Groq model '{model}' generated {len(out)} MCQ questions for '{topic_title}'")
+                        logger.info(
+                            f"⚡ Groq model '{model}' generated {len(out)} MCQ questions for '{topic_title}'")
                         return out
             except Exception as e:
-                logger.warning(f"Groq model '{model}' attempt {attempt+1} failed: {e}")
+                logger.warning(
+                    f"Groq model '{model}' attempt {attempt+1} failed: {e}")
                 await asyncio.sleep(1.0)
 
     logger.error(f"All Groq models failed for topic '{topic_title}'")
@@ -385,16 +391,20 @@ async def ensure_comprehensive_question_bank(topic: AssessmentTopic) -> None:
 
     import asyncio
     clean_title = skill_name.strip()
-    logger.info(f"Generating comprehensive 60-70 question bank for '{clean_title}' ({topic.role})...")
+    logger.info(
+        f"Generating comprehensive 60-70 question bank for '{clean_title}' ({topic.role})...")
 
     # 3 comprehensive concept batches: Beginner (20), Intermediate (25), Advanced (20) = 65 questions
     batch_configs = [
         # Beginner Foundations (20 Qs)
-        {"diff": "Beginner", "count": 20, "subfocus": "core syntax, fundamental types, operators, standard library functions, and control flow"},
+        {"diff": "Beginner", "count": 20,
+            "subfocus": "core syntax, fundamental types, operators, standard library functions, and control flow"},
         # Intermediate Architecture & Patterns (25 Qs)
-        {"diff": "Intermediate", "count": 25, "subfocus": "data structures, OOP, functional patterns, API integration, database queries, and error handling"},
+        {"diff": "Intermediate", "count": 25,
+            "subfocus": "data structures, OOP, functional patterns, API integration, database queries, and error handling"},
         # Advanced Engineering & Optimization (20 Qs)
-        {"diff": "Advanced", "count": 20, "subfocus": "asynchronous concurrency, memory efficiency, profiling, security practices, and production architecture"},
+        {"diff": "Advanced", "count": 20,
+            "subfocus": "asynchronous concurrency, memory efficiency, profiling, security practices, and production architecture"},
     ]
 
     for cfg in batch_configs:
@@ -461,8 +471,10 @@ async def get_questions_for_topic(topic: AssessmentTopic) -> List[MCQQuestion]:
 
     if existing:
         # Match questions by difficulty if available, else sample from bank
-        diff_matched = [q for q in existing if q.difficulty.lower() == topic.difficulty.lower()]
-        pool = diff_matched if len(diff_matched) >= topic.question_count else existing
+        diff_matched = [
+            q for q in existing if q.difficulty.lower() == topic.difficulty.lower()]
+        pool = diff_matched if len(
+            diff_matched) >= topic.question_count else existing
         sample_size = min(len(pool), topic.question_count)
         chosen = random.sample(pool, sample_size)
         return [
@@ -487,8 +499,6 @@ async def get_questions_for_topic(topic: AssessmentTopic) -> List[MCQQuestion]:
     )
     return groq_qs[:topic.question_count] if groq_qs else []
 
-
-# ─── Endpoints ────────────────────────────────────────────────────────────────
 
 @router.get("/available")
 async def get_available_assessments(
@@ -522,11 +532,13 @@ async def get_available_assessments(
 
     if roadmap and roadmap.phases:
         for phase_idx, phase in enumerate(roadmap.phases):
-            phase_dict = phase if isinstance(phase, dict) else (phase.dict() if hasattr(phase, "dict") else {})
+            phase_dict = phase if isinstance(phase, dict) else (
+                phase.dict() if hasattr(phase, "dict") else {})
             phase_num = phase_idx + 1
             items = phase_dict.get("items") or phase_dict.get("skills") or []
 
-            diff_level = "Beginner" if phase_num == 1 else ("Intermediate" if phase_num == 2 else "Advanced")
+            diff_level = "Beginner" if phase_num == 1 else (
+                "Intermediate" if phase_num == 2 else "Advanced")
 
             for item_idx, item in enumerate(items):
                 skill_name = None
@@ -537,8 +549,10 @@ async def get_available_assessments(
                 if isinstance(item, dict):
                     if item.get("type") == "project" or "project" in str(item.get("skill", "")).lower():
                         continue
-                    skill_name = item.get("skill") or item.get("name") or item.get("title")
-                    subtopics = item.get("subtopics") or item.get("topics") or []
+                    skill_name = item.get("skill") or item.get(
+                        "name") or item.get("title")
+                    subtopics = item.get(
+                        "subtopics") or item.get("topics") or []
                     item_status = item.get("status", "locked")
                     progress_pct = item.get("progress_pct", 0)
                 elif isinstance(item, str):
@@ -552,8 +566,9 @@ async def get_available_assessments(
                     base_topic_id = f"roadmap-{base_slug}"
 
                     # Check video completion for this skill
-                    watched_list = roadmap.watched_videos.get(clean_skill.lower(), []) if roadmap.watched_videos else []
-                    
+                    watched_list = roadmap.watched_videos.get(
+                        clean_skill.lower(), []) if roadmap.watched_videos else []
+
                     # Skill-level unlock condition:
                     # 1. Very first concept in Phase 1
                     # 2. Or completed videos / progress >= 50%
@@ -567,11 +582,16 @@ async def get_available_assessments(
 
                     # 5 Progressive 10-Question Test Sets per SkillGap = 50 Questions total
                     set_definitions = [
-                        {"num": 1, "name": "Set 1: Core Fundamentals", "diff": "Beginner", "mins": 15},
-                        {"num": 2, "name": "Set 2: Data Handling & Logic", "diff": "Beginner", "mins": 15},
-                        {"num": 3, "name": "Set 3: Functions, OOP & Patterns", "diff": "Intermediate", "mins": 15},
-                        {"num": 4, "name": "Set 4: Database, APIs & Errors", "diff": "Intermediate", "mins": 15},
-                        {"num": 5, "name": "Set 5: Advanced Optimization & Concurrency", "diff": "Advanced", "mins": 15},
+                        {"num": 1, "name": "Set 1: Core Fundamentals",
+                            "diff": "Beginner", "mins": 15},
+                        {"num": 2, "name": "Set 2: Data Handling & Logic",
+                            "diff": "Beginner", "mins": 15},
+                        {"num": 3, "name": "Set 3: Functions, OOP & Patterns",
+                            "diff": "Intermediate", "mins": 15},
+                        {"num": 4, "name": "Set 4: Database, APIs & Errors",
+                            "diff": "Intermediate", "mins": 15},
+                        {"num": 5, "name": "Set 5: Advanced Optimization & Concurrency",
+                            "diff": "Advanced", "mins": 15},
                     ]
 
                     prev_set_attempted = True
@@ -591,7 +611,8 @@ async def get_available_assessments(
                             set_lock_reason = None
                         else:
                             req_progress = (s_def["num"] - 1) * 20
-                            set_is_unlocked = prev_set_attempted or (progress_pct >= req_progress)
+                            set_is_unlocked = prev_set_attempted or (
+                                progress_pct >= req_progress)
                             set_lock_reason = None if set_is_unlocked else f"Attempt Set {s_def['num'] - 1} for {clean_skill} to unlock {s_def['name']}."
 
                         # Ensure topic exists in DB with 10 questions & 15 mins
@@ -617,14 +638,14 @@ async def get_available_assessments(
                         last = result_map.get(set_topic_id)
                         attempts = attempt_counts.get(set_topic_id, 0)
                         prev_set_attempted = attempts > 0
-                        is_completed_100 = (last is not None and last.score_pct == 100.0)
 
                         can_retake = True
                         cooldown_until = None
-                        if last and not is_completed_100:
+                        if last:
                             retake_at = last.next_retake_allowed_at
                             if retake_at.tzinfo is None:
-                                retake_at = retake_at.replace(tzinfo=timezone.utc)
+                                retake_at = retake_at.replace(
+                                    tzinfo=timezone.utc)
                             if retake_at > now:
                                 can_retake = False
                                 cooldown_until = retake_at.isoformat()
@@ -639,7 +660,6 @@ async def get_available_assessments(
                             "time_limit_mins": s_def["mins"],
                             "last_score_pct": last.score_pct if last else None,
                             "last_taken_at": last.taken_at.isoformat() if last else None,
-                            "is_completed": is_completed_100,
                             "can_retake": can_retake,
                             "cooldown_until": cooldown_until,
                             "attempt_count": attempts,
@@ -722,7 +742,7 @@ async def start_assessment(
     topic_id: str,
     current_user: User = Depends(get_current_user),
 ):
-    
+
     student_id = str(current_user.id)
 
     topic = await AssessmentTopic.find_one(AssessmentTopic.topic_id == topic_id)
@@ -741,11 +761,14 @@ async def start_assessment(
             is_unlocked = False
 
             for phase_idx, phase in enumerate(roadmap.phases):
-                phase_dict = phase if isinstance(phase, dict) else (phase.dict() if hasattr(phase, "dict") else {})
-                items = phase_dict.get("items") or phase_dict.get("skills") or []
+                phase_dict = phase if isinstance(phase, dict) else (
+                    phase.dict() if hasattr(phase, "dict") else {})
+                items = phase_dict.get(
+                    "items") or phase_dict.get("skills") or []
                 for item_idx, item in enumerate(items):
                     if isinstance(item, dict):
-                        s_name = item.get("skill") or item.get("name") or item.get("title") or ""
+                        s_name = item.get("skill") or item.get(
+                            "name") or item.get("title") or ""
                         s_status = item.get("status", "locked")
                         s_pct = item.get("progress_pct", 0)
                     else:
@@ -755,7 +778,8 @@ async def start_assessment(
 
                     if s_name.strip().lower() == skill_clean.strip().lower() or topic_id.endswith(s_name.strip().lower().replace(" ", "-")):
                         item_found = True
-                        watched_list = roadmap.watched_videos.get(s_name.lower().strip(), []) if roadmap.watched_videos else []
+                        watched_list = roadmap.watched_videos.get(
+                            s_name.lower().strip(), []) if roadmap.watched_videos else []
                         if (phase_idx == 0 and item_idx == 0) or s_status == "completed" or s_pct >= 50 or len(watched_list) >= 1:
                             is_unlocked = True
                         break
@@ -843,7 +867,7 @@ async def get_active_session(
     topic_id: str = Query(...),
     current_user: User = Depends(get_current_user),
 ):
-   
+
     student_id = str(current_user.id)
     session = await AssessmentSession.find_one(
         AssessmentSession.student_id == student_id,
@@ -891,7 +915,7 @@ async def submit_assessment(
     body: dict,
     current_user: User = Depends(get_current_user),
 ):
-    
+
     student_id = str(current_user.id)
     session = await AssessmentSession.find_one(
         AssessmentSession.session_id == session_id,
@@ -949,9 +973,6 @@ async def submit_assessment(
     await session.save()
 
     # Persist permanent result
-    is_completed_100 = (score_pct == 100.0)
-    next_retake = now if is_completed_100 else (now + timedelta(hours=24))
-
     result = AssessmentResult(
         student_id=student_id,
         topic_id=session.topic_id,
@@ -963,33 +984,35 @@ async def submit_assessment(
         total_questions=total,
         skills_verified=list(skills_verified),
         skill_tags=list({q.skill_tag for q in session.questions}),
-        next_retake_allowed_at=next_retake,
+        next_retake_allowed_at=now + timedelta(hours=24),
     )
     await result.insert()
 
-    # Log to ActivityLog feed (counts toward streak heatmap)
+    # Log to activity feed (counts toward streak heatmap)
     try:
-        from app.models.activity_log import ActivityLog
-        from app.api.routes.students import sync_student_streak, compute_realtime_score
-        
-        if is_completed_100:
-            log_title = f"Completed 100%: {session.topic_title}"
-            log_detail = f"Perfect 100% Score · All {total}/{total} questions correct · Mastered skills: {', '.join(list(skills_verified)[:4])}"
-        else:
-            log_title = f"Attempted: {session.topic_title}"
-            log_detail = f"Scored {score_pct}% ({correct}/{total} correct) · 100% needed to pass · Next retake in 24h"
-
         await ActivityLog(
             student_id=student_id,
             type="assessment",
-            title=log_title,
-            detail=log_detail,
+            title=f"Completed: {session.topic_title}",
+            detail=f"{score_pct}% · {correct}/{total} correct · Skills: {', '.join(list(skills_verified)[:4])}",
         ).insert()
-
-        await sync_student_streak(student_id)
-        await compute_realtime_score(student_id)
     except Exception as e:
         logger.warning(f"Could not log assessment activity: {e}")
+
+    # Update EmployabilityScore skill_tests directly
+    try:
+        emp = await EmployabilityScore.get_or_create(student_id)
+        # Average across all taken assessment results
+        all_results = await AssessmentResult.find(AssessmentResult.student_id == student_id).to_list()
+        avg_tests = round(sum(r.score_pct for r in all_results) /
+                          len(all_results), 1) if all_results else score_pct
+        emp.components.skill_tests = avg_tests
+        emp.components.assessment_score = avg_tests
+        emp.overall_score = emp.compute_overall()
+        emp.last_updated = now
+        await emp.save()
+    except Exception as e:
+        logger.warning(f"Could not update employability score: {e}")
 
     # Publish event for other consumers (notifications, activity log etc.)
     await event_bus.publish("assessment.completed", {
@@ -1039,7 +1062,7 @@ async def get_assessment_history(
     ]
 
 
-# Admin Endpoints 
+# Admin Endpoints
 
 @router.post("/admin/upload-questions")
 async def admin_upload_questions(
@@ -1106,7 +1129,7 @@ async def admin_create_topic(
     body: dict,
     current_user: User = Depends(get_current_user),
 ):
-    
+
     if current_user.role != "admin":
         raise HTTPException(status_code=403, detail="Admin only.")
 
