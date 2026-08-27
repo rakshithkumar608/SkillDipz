@@ -7,7 +7,6 @@ from fastapi import APIRouter, Depends, HTTPException, status, Query
 from pydantic import BaseModel, Field
 
 from app.api.dependencies import get_current_student, get_current_mentor, get_current_admin
-from app.api.routes.auth import get_current_user
 from app.models.user import User
 from app.models.mentor import MentorProfile, MentorSlot, MentorshipBooking
 from app.models.interview import InterviewSession, DetailedRubric
@@ -21,21 +20,36 @@ router = APIRouter(prefix="/mentorship", tags=["1-to-1 Mentorship"])
 
 # ─── Pydantic Schemas ─────────────────────────────────────────────────────────
 
-class UpdateMentorProfileRequest(BaseModel):
-    title: str = Field(..., min_length=2, max_length=100)
-    company: str = Field(..., min_length=2, max_length=100)
-    years_experience: int = Field(..., ge=0, le=50)
-    expertise_tags: List[str] = Field(default_factory=list)
-    bio: str = Field(..., min_length=10, max_length=1000)
-    linkedin_url: Optional[str] = None
-    avatar_url: Optional[str] = None
-    hourly_rate_inr: Optional[int] = 0
-    is_active: bool = True
+class SaveMentorProfileRequest(BaseModel):
+    full_name: Optional[str] = None
+    profile_photo: Optional[str] = None
+    headline: Optional[str] = None
+    bio: Optional[str] = None
+    expertise: List[str] = Field(default_factory=list)
+    skills: List[str] = Field(default_factory=list)
+    experience_years: int = Field(default=0, ge=0, le=60)
+    current_role: Optional[str] = None
+    company: Optional[str] = None
+    education: Optional[str] = None
+    languages: List[str] = Field(default_factory=list)
+    mentoring_topics: List[str] = Field(default_factory=list)
+    profile_status: Literal["INCOMPLETE", "ACTIVE", "INACTIVE"] = "ACTIVE"
 
 
-class CreateSlotRequest(BaseModel):
+class CreateAvailabilitySlotRequest(BaseModel):
+    available_day: Optional[str] = None                # e.g. "2026-08-30" or "Friday"
     start_time: datetime
-    duration_mins: int = 45
+    end_time: Optional[datetime] = None
+    duration_mins: int = Field(default=45, ge=15, le=180)
+    is_enabled: bool = True
+
+
+class UpdateAvailabilitySlotRequest(BaseModel):
+    available_day: Optional[str] = None
+    start_time: Optional[datetime] = None
+    end_time: Optional[datetime] = None
+    duration_mins: Optional[int] = Field(None, ge=15, le=180)
+    is_enabled: Optional[bool] = None
 
 
 class BookMentorRequest(BaseModel):
@@ -59,44 +73,50 @@ class StudentReviewRequest(BaseModel):
     student_review: Optional[str] = None
 
 
-# ─── MENTOR ONBOARDING & PROFILE MANAGEMENT (Authenticated Mentor) ───────────
+# ─── MENTOR PROFILE MANAGEMENT (Authenticated Mentor) ────────────────────────
 
 @router.get("/profile/me")
 async def get_my_mentor_profile(
     current: dict = Depends(get_current_mentor),
 ):
-    """Retrieve the logged-in mentor's profile and active slots."""
+    """
+    Retrieve the authenticated mentor's own profile and availability slots from MongoDB.
+    If first login, creates an initial draft profile linked to their user_id.
+    """
     user = current["user"]
     user_id = str(user.id)
 
     profile = await MentorProfile.find_one(MentorProfile.user_id == user_id)
     if not profile:
-        # Create initial draft profile from User data
         profile = MentorProfile(
             user_id=user_id,
-            name=user.full_name,
+            full_name=user.full_name,
             email=user.email,
-            avatar_url=user.avatar_url,
-            is_active=False,
+            profile_photo=user.avatar_url,
+            profile_status="INCOMPLETE",
         )
         await profile.insert()
 
     slots = await MentorSlot.find(
-        MentorSlot.mentor_id == profile.mentor_id
-    ).sort(-MentorSlot.start_time).to_list(100)
+        MentorSlot.user_id == user_id
+    ).sort(MentorSlot.start_time).to_list(200)
 
     return {
         "profile": profile,
         "slots": slots,
+        "is_complete": profile.profile_status == "ACTIVE",
     }
 
 
 @router.post("/profile")
-async def save_mentor_profile(
-    body: UpdateMentorProfileRequest,
+async def save_my_mentor_profile(
+    body: SaveMentorProfileRequest,
     current: dict = Depends(get_current_mentor),
 ):
-    """Complete or update mentor onboarding profile. Saves real data to MongoDB."""
+    """
+    Save / update mentor profile for the authenticated user.
+    All data is persisted in MongoDB Atlas under MentorProfile.
+    """
     user = current["user"]
     user_id = str(user.id)
 
@@ -104,67 +124,100 @@ async def save_mentor_profile(
     if not profile:
         profile = MentorProfile(
             user_id=user_id,
-            name=user.full_name,
+            full_name=body.full_name or user.full_name,
             email=user.email,
-            avatar_url=body.avatar_url or user.avatar_url,
         )
 
-    profile.name = user.full_name
-    profile.email = user.email
-    if body.avatar_url:
-        profile.avatar_url = body.avatar_url
-        user.avatar_url = body.avatar_url
-        await user.save()
+    # Sync full name and photo if provided
+    if body.full_name:
+        profile.full_name = body.full_name.strip()
+        user.full_name = profile.full_name
+    else:
+        profile.full_name = user.full_name
 
-    profile.title = body.title
-    profile.company = body.company
-    profile.years_experience = body.years_experience
-    profile.expertise_tags = body.expertise_tags
-    profile.bio = body.bio
-    profile.linkedin_url = body.linkedin_url
-    profile.hourly_rate_inr = body.hourly_rate_inr or 0
-    profile.is_active = body.is_active
+    if body.profile_photo:
+        profile.profile_photo = body.profile_photo
+        user.avatar_url = body.profile_photo
+    await user.save()
+
+    profile.headline = (body.headline or "").strip()
+    profile.bio = (body.bio or "").strip()
+    profile.expertise = body.expertise
+    profile.skills = body.skills
+    profile.experience_years = body.experience_years
+    profile.current_role = (body.current_role or "").strip()
+    profile.company = (body.company or "").strip()
+    profile.education = (body.education or "").strip()
+    profile.languages = body.languages
+    profile.mentoring_topics = body.mentoring_topics
+    profile.profile_status = body.profile_status
+    profile.updated_at = datetime.now(timezone.utc)
+
+    # Validation: to be ACTIVE, must have minimal career info
+    if profile.profile_status == "ACTIVE":
+        if not profile.current_role or not profile.company or not profile.bio:
+            raise HTTPException(
+                status_code=400,
+                detail="Please provide your current role, company, and bio before activating your mentor profile.",
+            )
 
     await profile.save()
 
     return {
-        "message": "Mentor profile updated successfully",
+        "message": "Mentor profile saved successfully",
         "profile": profile,
+        "profile_status": profile.profile_status,
     }
 
 
-# ─── MENTOR AVAILABILITY SLOTS (Authenticated Mentor) ─────────────────────────
+# ─── MENTOR AVAILABILITY SYSTEM (Authenticated Mentor) ───────────────────────
 
 @router.post("/slots", status_code=201)
-async def create_mentor_slot(
-    body: CreateSlotRequest,
+async def create_availability_slot(
+    body: CreateAvailabilitySlotRequest,
     current: dict = Depends(get_current_mentor),
 ):
-    """Mentor adds a real availability slot to MongoDB."""
+    """
+    Authenticated mentor adds an availability time slot to MongoDB.
+    """
     user = current["user"]
     user_id = str(user.id)
 
     profile = await MentorProfile.find_one(MentorProfile.user_id == user_id)
-    if not profile or not profile.is_active:
+    if not profile:
         raise HTTPException(
             status_code=400,
-            detail="Please complete and activate your Mentor Profile before publishing availability slots.",
+            detail="Mentor profile not found. Please complete your profile first.",
         )
 
     now = datetime.now(timezone.utc)
-    slot_start = body.start_time
-    if slot_start.tzinfo is None:
-        slot_start = slot_start.replace(tzinfo=timezone.utc)
+    start = body.start_time
+    if start.tzinfo is None:
+        start = start.replace(tzinfo=timezone.utc)
 
-    if slot_start < now:
-        raise HTTPException(status_code=400, detail="Slot start time must be in the future.")
+    if start < now:
+        raise HTTPException(status_code=400, detail="Start time must be in the future.")
+
+    duration = body.duration_mins or 45
+    end = body.end_time or (start + timedelta(minutes=duration))
+    if end.tzinfo is None:
+        end = end.replace(tzinfo=timezone.utc)
+
+    if end <= start:
+        raise HTTPException(status_code=400, detail="End time must be after start time.")
+
+    # Determine day string if omitted
+    day_str = body.available_day or start.strftime("%Y-%m-%d")
 
     slot = MentorSlot(
         mentor_id=profile.mentor_id,
-        mentor_name=profile.name,
-        start_time=slot_start,
-        end_time=slot_start + timedelta(minutes=body.duration_mins),
-        duration_mins=body.duration_mins,
+        user_id=user_id,
+        mentor_name=profile.full_name or user.full_name,
+        available_day=day_str,
+        start_time=start,
+        end_time=end,
+        duration_mins=duration,
+        is_enabled=body.is_enabled,
         is_booked=False,
     )
     await slot.insert()
@@ -176,56 +229,136 @@ async def create_mentor_slot(
 
 
 @router.get("/slots/my")
-async def get_my_slots(
+async def get_my_availability_slots(
     current: dict = Depends(get_current_mentor),
 ):
-    """Retrieve all slots created by the logged-in mentor."""
+    """
+    Retrieve all availability slots for the authenticated mentor.
+    """
     user = current["user"]
     user_id = str(user.id)
-    profile = await MentorProfile.find_one(MentorProfile.user_id == user_id)
-    if not profile:
-        return {"slots": [], "total": 0}
 
     slots = await MentorSlot.find(
-        MentorSlot.mentor_id == profile.mentor_id
-    ).sort(MentorSlot.start_time).to_list(200)
+        MentorSlot.user_id == user_id
+    ).sort(MentorSlot.start_time).to_list(300)
 
     return {"slots": slots, "total": len(slots)}
 
 
-@router.delete("/slots/{slot_id}")
-async def delete_mentor_slot(
+@router.put("/slots/{slot_id}")
+async def update_availability_slot(
     slot_id: str,
+    body: UpdateAvailabilitySlotRequest,
     current: dict = Depends(get_current_mentor),
 ):
-    """Delete an unbooked availability slot."""
+    """
+    Edit an existing availability slot. Mentor can only modify their own unbooked slots.
+    """
     user = current["user"]
     user_id = str(user.id)
-    profile = await MentorProfile.find_one(MentorProfile.user_id == user_id)
-    if not profile:
-        raise HTTPException(status_code=404, detail="Mentor profile not found")
 
     slot = await MentorSlot.find_one(
         MentorSlot.slot_id == slot_id,
-        MentorSlot.mentor_id == profile.mentor_id,
+        MentorSlot.user_id == user_id,
     )
     if not slot:
-        raise HTTPException(status_code=404, detail="Slot not found")
+        raise HTTPException(status_code=404, detail="Slot not found or unauthorized.")
 
     if slot.is_booked:
-        raise HTTPException(status_code=400, detail="Cannot delete a slot that has already been booked.")
+        raise HTTPException(status_code=400, detail="Cannot modify an already booked slot.")
+
+    if body.available_day is not None:
+        slot.available_day = body.available_day
+
+    if body.duration_mins is not None:
+        slot.duration_mins = body.duration_mins
+
+    if body.start_time is not None:
+        start = body.start_time
+        if start.tzinfo is None:
+            start = start.replace(tzinfo=timezone.utc)
+        slot.start_time = start
+        slot.end_time = start + timedelta(minutes=slot.duration_mins)
+
+    if body.end_time is not None:
+        end = body.end_time
+        if end.tzinfo is None:
+            end = end.replace(tzinfo=timezone.utc)
+        if end <= slot.start_time:
+            raise HTTPException(status_code=400, detail="End time must be after start time.")
+        slot.end_time = end
+
+    if body.is_enabled is not None:
+        slot.is_enabled = body.is_enabled
+
+    slot.updated_at = datetime.now(timezone.utc)
+    await slot.save()
+
+    return {"message": "Availability slot updated successfully", "slot": slot}
+
+
+@router.patch("/slots/{slot_id}/toggle")
+async def toggle_availability_slot(
+    slot_id: str,
+    current: dict = Depends(get_current_mentor),
+):
+    """
+    Enable / disable an availability slot.
+    """
+    user = current["user"]
+    user_id = str(user.id)
+
+    slot = await MentorSlot.find_one(
+        MentorSlot.slot_id == slot_id,
+        MentorSlot.user_id == user_id,
+    )
+    if not slot:
+        raise HTTPException(status_code=404, detail="Slot not found or unauthorized.")
+
+    slot.is_enabled = not slot.is_enabled
+    slot.updated_at = datetime.now(timezone.utc)
+    await slot.save()
+
+    return {
+        "message": f"Slot {'enabled' if slot.is_enabled else 'disabled'}",
+        "is_enabled": slot.is_enabled,
+    }
+
+
+@router.delete("/slots/{slot_id}")
+async def delete_availability_slot(
+    slot_id: str,
+    current: dict = Depends(get_current_mentor),
+):
+    """
+    Delete an availability slot. Mentor can only delete their own unbooked slots.
+    """
+    user = current["user"]
+    user_id = str(user.id)
+
+    slot = await MentorSlot.find_one(
+        MentorSlot.slot_id == slot_id,
+        MentorSlot.user_id == user_id,
+    )
+    if not slot:
+        raise HTTPException(status_code=404, detail="Slot not found or unauthorized.")
+
+    if slot.is_booked:
+        raise HTTPException(status_code=400, detail="Cannot delete an already booked slot.")
 
     await slot.delete()
     return {"message": "Slot deleted successfully"}
 
 
-# ─── MENTOR BOOKINGS & SESSIONS (Authenticated Mentor) ────────────────────────
+# ─── MENTOR BOOKED SESSIONS & EVALUATION ─────────────────────────────────────
 
 @router.get("/bookings/mentor")
 async def get_mentor_bookings(
     current: dict = Depends(get_current_mentor),
 ):
-    """Retrieve all sessions booked with the logged-in mentor."""
+    """
+    Retrieve all sessions booked with the authenticated mentor.
+    """
     user = current["user"]
     user_id = str(user.id)
     profile = await MentorProfile.find_one(MentorProfile.user_id == user_id)
@@ -234,7 +367,7 @@ async def get_mentor_bookings(
 
     bookings = await MentorshipBooking.find(
         MentorshipBooking.mentor_id == profile.mentor_id
-    ).sort(-MentorshipBooking.scheduled_at).to_list(100)
+    ).sort(-MentorshipBooking.scheduled_at).to_list(150)
 
     return {"bookings": bookings, "total": len(bookings)}
 
@@ -245,7 +378,9 @@ async def submit_mentor_session_feedback(
     body: MentorFeedbackRequest,
     current: dict = Depends(get_current_mentor),
 ):
-    """Mentor grades student performance with real rubric and overall score."""
+    """
+    Mentor submits real evaluation and detailed rubric for a student session.
+    """
     user = current["user"]
     user_id = str(user.id)
     profile = await MentorProfile.find_one(MentorProfile.user_id == user_id)
@@ -280,11 +415,11 @@ async def submit_mentor_session_feedback(
             session.recording_url = body.recording_url
         await session.save()
 
-    # Increment mentor completed session counter
+    # Update mentor metrics
     profile.sessions_completed += 1
     await profile.save()
 
-    # Dispatch event bus trigger: awards XP, updates student score & pushes WS notification
+    # Award XP & broadcast live update
     await event_bus.publish("interview.completed", {
         "session_id": booking_id,
         "student_id": booking.student_id,
@@ -302,7 +437,7 @@ async def submit_mentor_session_feedback(
     }
 
 
-# ─── STUDENT DIRECTORY & BOOKING FLOW (Real MongoDB Queries) ──────────────────
+# ─── STUDENT DIRECTORY & BOOKING FLOW (Real MongoDB Queries Only) ─────────────
 
 @router.get("/mentors")
 async def list_mentors(
@@ -311,44 +446,52 @@ async def list_mentors(
     search: Optional[str] = Query(None),
 ):
     """
-    List only REAL, active mentors from MongoDB.
-    Returns an empty array if no mentors have registered yet.
+    List only ACTIVE mentors from MongoDB.
+    Mentors with status INCOMPLETE or INACTIVE are never returned.
     """
-    query: dict = {"is_active": True}
+    query: dict = {"profile_status": "ACTIVE"}
     if company and company.lower() != "all":
         query["company"] = {"$regex": company, "$options": "i"}
     if expertise:
-        query["expertise_tags"] = {"$in": [expertise]}
+        query["$or"] = [
+            {"expertise": {"$in": [expertise]}},
+            {"skills": {"$in": [expertise]}},
+        ]
     if search:
         query["$or"] = [
-            {"name": {"$regex": search, "$options": "i"}},
+            {"full_name": {"$regex": search, "$options": "i"}},
             {"company": {"$regex": search, "$options": "i"}},
-            {"title": {"$regex": search, "$options": "i"}},
-            {"expertise_tags": {"$elemMatch": {"$regex": search, "$options": "i"}}},
+            {"headline": {"$regex": search, "$options": "i"}},
+            {"current_role": {"$regex": search, "$options": "i"}},
+            {"expertise": {"$elemMatch": {"$regex": search, "$options": "i"}}},
+            {"skills": {"$elemMatch": {"$regex": search, "$options": "i"}}},
         ]
 
     mentors = await MentorProfile.find(query).sort(-MentorProfile.rating).to_list(50)
     if not mentors:
         return {"mentors": [], "total": 0}
 
-    # Fetch open, unbooked future slots for these active mentors
+    # Fetch open, enabled future slots for active mentors
     now = datetime.now(timezone.utc)
     mentor_ids = [m.mentor_id for m in mentors]
     open_slots = await MentorSlot.find(
         {
             "mentor_id": {"$in": mentor_ids},
             "is_booked": False,
+            "is_enabled": True,
             "start_time": {"$gte": now},
         }
-    ).sort(MentorSlot.start_time).to_list(200)
+    ).sort(MentorSlot.start_time).to_list(300)
 
     slots_by_mentor: dict = {}
     for s in open_slots:
         slots_by_mentor.setdefault(s.mentor_id, []).append({
             "slot_id": s.slot_id,
+            "available_day": s.available_day,
             "start_time": s.start_time.isoformat(),
             "end_time": s.end_time.isoformat(),
             "duration_mins": s.duration_mins,
+            "is_enabled": s.is_enabled,
         })
 
     result = []
@@ -356,14 +499,18 @@ async def list_mentors(
         m_slots = slots_by_mentor.get(m.mentor_id, [])
         result.append({
             "mentor_id": m.mentor_id,
-            "name": m.name,
-            "title": m.title,
+            "name": m.full_name,
+            "title": m.current_role or m.headline,
+            "headline": m.headline,
             "company": m.company,
-            "avatar_url": m.avatar_url,
-            "years_experience": m.years_experience,
-            "expertise_tags": m.expertise_tags,
+            "avatar_url": m.profile_photo,
+            "years_experience": m.experience_years,
+            "expertise_tags": m.expertise or m.skills,
+            "skills": m.skills,
             "bio": m.bio,
-            "linkedin_url": m.linkedin_url,
+            "education": m.education,
+            "languages": m.languages,
+            "mentoring_topics": m.mentoring_topics,
             "rating": m.rating,
             "total_reviews": m.total_reviews,
             "sessions_completed": m.sessions_completed,
@@ -377,19 +524,20 @@ async def list_mentors(
 
 @router.get("/mentors/{mentor_id}")
 async def get_mentor_detail(mentor_id: str):
-    """Retrieve full mentor profile and open calendar booking slots from MongoDB."""
+    """Retrieve full active mentor profile and open calendar slots."""
     mentor = await MentorProfile.find_one(
         MentorProfile.mentor_id == mentor_id,
-        MentorProfile.is_active == True,
+        MentorProfile.profile_status == "ACTIVE",
     )
     if not mentor:
-        raise HTTPException(status_code=404, detail="Mentor not found or inactive.")
+        raise HTTPException(status_code=404, detail="Mentor not found or not active.")
 
     now = datetime.now(timezone.utc)
     slots = await MentorSlot.find(
         {
             "mentor_id": mentor_id,
             "is_booked": False,
+            "is_enabled": True,
             "start_time": {"$gte": now},
         }
     ).sort(MentorSlot.start_time).to_list(50)
@@ -399,9 +547,11 @@ async def get_mentor_detail(mentor_id: str):
         "slots": [
             {
                 "slot_id": s.slot_id,
+                "available_day": s.available_day,
                 "start_time": s.start_time.isoformat(),
                 "end_time": s.end_time.isoformat(),
                 "duration_mins": s.duration_mins,
+                "is_enabled": s.is_enabled,
             }
             for s in slots
         ],
@@ -413,13 +563,13 @@ async def book_mentor_slot(
     body: BookMentorRequest,
     current_student: dict = Depends(get_current_student),
 ):
-    """Student books a real mentor slot in MongoDB."""
+    """Student books a real available mentor slot in MongoDB."""
     student_id = current_student["student_id"]
     user = current_student.get("user")
 
     mentor = await MentorProfile.find_one(
         MentorProfile.mentor_id == body.mentor_id,
-        MentorProfile.is_active == True,
+        MentorProfile.profile_status == "ACTIVE",
     )
     if not mentor:
         raise HTTPException(status_code=404, detail="Mentor not found or not active.")
@@ -428,7 +578,7 @@ async def book_mentor_slot(
         MentorSlot.slot_id == body.slot_id,
         MentorSlot.mentor_id == body.mentor_id,
     )
-    if not slot or slot.is_booked:
+    if not slot or slot.is_booked or not slot.is_enabled:
         raise HTTPException(status_code=400, detail="This time slot is no longer available.")
 
     student_name = user.full_name if user and user.full_name else "Student"
@@ -442,7 +592,7 @@ async def book_mentor_slot(
         student_name=student_name,
         student_email=student_email,
         mentor_id=mentor.mentor_id,
-        mentor_name=mentor.name,
+        mentor_name=mentor.full_name,
         mentor_company=mentor.company,
         slot_id=slot.slot_id,
         topic=body.topic or "1-on-1 Technical Mock Interview",
@@ -468,9 +618,9 @@ async def book_mentor_slot(
         mode="mentor",
         interview_type="mentor_1on1",
         company_name=mentor.company,
-        interviewer_name=mentor.name,
+        interviewer_name=mentor.full_name,
         mentor_id=mentor.mentor_id,
-        mentor_name=mentor.name,
+        mentor_name=mentor.full_name,
         booking_id=booking.booking_id,
         scheduled_at=slot.start_time,
         duration_mins=slot.duration_mins,
@@ -484,7 +634,7 @@ async def book_mentor_slot(
     sched_formatted = slot.start_time.strftime("%b %d, %I:%M %p UTC")
     await send_notification(
         student_id=student_id,
-        title=f"1-to-1 Mentorship Confirmed with {mentor.name}",
+        title=f"1-to-1 Mentorship Confirmed with {mentor.full_name}",
         body=f"Your session '{booking.topic}' is confirmed for {sched_formatted}.",
         action_url="/student/mock-interview",
         notification_type="mentorship_confirmed",
@@ -503,7 +653,7 @@ async def book_mentor_slot(
         "message": "Mentorship session successfully booked!",
         "booking_id": booking.booking_id,
         "scheduled_at": slot.start_time.isoformat(),
-        "mentor_name": mentor.name,
+        "mentor_name": mentor.full_name,
         "meeting_url": meeting_url,
     }
 
@@ -512,7 +662,7 @@ async def book_mentor_slot(
 async def get_my_bookings(
     current_student: dict = Depends(get_current_student),
 ):
-    """Retrieve student's real bookings from MongoDB."""
+    """Retrieve student's bookings from MongoDB."""
     student_id = current_student["student_id"]
     bookings = await MentorshipBooking.find(
         MentorshipBooking.student_id == student_id
@@ -540,7 +690,7 @@ async def review_mentor_session(
     booking.student_review = body.student_review
     await booking.save()
 
-    # Recalculate mentor rating in MongoDB
+    # Recalculate mentor rating
     mentor = await MentorProfile.find_one(MentorProfile.mentor_id == booking.mentor_id)
     if mentor:
         all_reviews = await MentorshipBooking.find(

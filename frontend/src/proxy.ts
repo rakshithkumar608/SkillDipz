@@ -7,13 +7,15 @@ const PUBLIC_ROUTES = [
   "/onboarding",
   "/verify-otp",
   "/company/auth",
+  "/mentor/login",
+  "/mentor/register",
   "/admin",
 ];
 
 export function proxy(req: NextRequest) {
   const { pathname } = req.nextUrl;
 
-  // Always allow root (loading intro page), static assets, admin, and company auth
+  // Always allow root (loading intro page), static assets, admin, company auth, and mentor auth
   if (
     pathname === "/" ||
     pathname.startsWith("/company/auth") ||
@@ -22,7 +24,13 @@ export function proxy(req: NextRequest) {
   ) {
     // If logged in and visiting login or register, redirect to respective portal
     const role = req.cookies.get("sd_role")?.value;
-    if (role && (pathname === "/login" || pathname === "/register")) {
+    if (
+      role &&
+      (pathname === "/login" ||
+        pathname === "/register" ||
+        pathname === "/mentor/login" ||
+        pathname === "/mentor/register")
+    ) {
       return NextResponse.redirect(new URL(getRedirectPath(role), req.url));
     }
     return NextResponse.next();

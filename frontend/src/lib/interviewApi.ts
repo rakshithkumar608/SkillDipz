@@ -85,32 +85,42 @@ export interface AIAnswerResponse {
 
 export interface MentorProfile {
   mentor_id: string;
-  user_id?: string;
-  name: string;
-  title: string;
-  company: string;
-  avatar_url?: string;
-  years_experience: number;
-  expertise_tags: string[];
+  user_id: string;
+  full_name: string;
+  email: string;
+  profile_photo?: string | null;
+  headline?: string;
   bio: string;
-  linkedin_url?: string;
+  expertise: string[];
+  skills: string[];
+  experience_years: number;
+  current_role: string;
+  company: string;
+  education?: string;
+  languages: string[];
+  mentoring_topics: string[];
+  profile_status: "INCOMPLETE" | "ACTIVE" | "INACTIVE";
   rating: number;
   total_reviews: number;
   sessions_completed: number;
   hourly_rate_inr?: number;
-  is_active: boolean;
   available_slots_count?: number;
   next_available_slot?: string | null;
   slots?: MentorSlot[];
+  created_at?: string;
+  updated_at?: string;
 }
 
 export interface MentorSlot {
   slot_id: string;
   mentor_id: string;
+  user_id: string;
   mentor_name?: string;
+  available_day?: string;
   start_time: string;
   end_time: string;
   duration_mins: number;
+  is_enabled: boolean;
   is_booked?: boolean;
   booking_id?: string | null;
 }
@@ -244,7 +254,7 @@ export async function fetchMentors(params?: {
   company?: string;
   expertise?: string;
   search?: string;
-}): Promise<{ mentors: MentorProfile[]; total: number }> {
+}): Promise<{ mentors: any[]; total: number }> {
   const { data } = await api.get("/mentorship/mentors", { params });
   return data;
 }
@@ -295,40 +305,64 @@ export async function reviewMentorSession(
 export async function fetchMyMentorProfile(): Promise<{
   profile: MentorProfile;
   slots: MentorSlot[];
+  is_complete: boolean;
 }> {
   const { data } = await api.get("/mentorship/profile/me");
   return data;
 }
 
 export async function saveMentorProfile(payload: {
-  title: string;
-  company: string;
-  years_experience: number;
-  expertise_tags: string[];
-  bio: string;
-  linkedin_url?: string;
-  avatar_url?: string;
-  hourly_rate_inr?: number;
-  is_active: boolean;
-}): Promise<{ message: string; profile: MentorProfile }> {
+  full_name?: string;
+  profile_photo?: string;
+  headline?: string;
+  bio?: string;
+  expertise?: string[];
+  skills?: string[];
+  experience_years?: number;
+  current_role?: string;
+  company?: string;
+  education?: string;
+  languages?: string[];
+  mentoring_topics?: string[];
+  profile_status?: "INCOMPLETE" | "ACTIVE" | "INACTIVE";
+}): Promise<{ message: string; profile: MentorProfile; profile_status: string }> {
   const { data } = await api.post("/mentorship/profile", payload);
   return data;
 }
 
-export async function createMentorSlot(payload: {
+export async function createAvailabilitySlot(payload: {
+  available_day?: string;
   start_time: string;
+  end_time?: string;
   duration_mins?: number;
+  is_enabled?: boolean;
 }): Promise<{ message: string; slot: MentorSlot }> {
   const { data } = await api.post("/mentorship/slots", payload);
   return data;
 }
 
-export async function fetchMyMentorSlots(): Promise<{ slots: MentorSlot[]; total: number }> {
-  const { data } = await api.get("/mentorship/slots/my");
+export async function updateAvailabilitySlot(
+  slotId: string,
+  payload: {
+    available_day?: string;
+    start_time?: string;
+    end_time?: string;
+    duration_mins?: number;
+    is_enabled?: boolean;
+  }
+): Promise<{ message: string; slot: MentorSlot }> {
+  const { data } = await api.put(`/mentorship/slots/${slotId}`, payload);
   return data;
 }
 
-export async function deleteMentorSlot(slotId: string): Promise<{ message: string }> {
+export async function toggleAvailabilitySlot(
+  slotId: string
+): Promise<{ message: string; is_enabled: boolean }> {
+  const { data } = await api.patch(`/mentorship/slots/${slotId}/toggle`);
+  return data;
+}
+
+export async function deleteAvailabilitySlot(slotId: string): Promise<{ message: string }> {
   const { data } = await api.delete(`/mentorship/slots/${slotId}`);
   return data;
 }
