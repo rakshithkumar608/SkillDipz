@@ -4,7 +4,9 @@ import React, { useEffect, useState, useRef } from "react";
 import { useRouter } from "next/navigation";
 import { motion, AnimatePresence } from "framer-motion";
 import { useAuthStore } from "@/store/authStore";
-import { getRedirectPath } from "@/lib/auth";
+import { useCompanyAuthStore } from "@/store/companyAuthStore";
+import { getRedirectPath, setRoleCookie } from "@/lib/auth";
+import { setCompanyRoleCookie } from "@/lib/companyAuth";
 import Image from "next/image";
 
 const PROGRESS_DURATION_MS = 3800;
@@ -20,7 +22,6 @@ const STATUS_MESSAGES = [
 
 export default function SkillDipzIntro() {
   const router = useRouter();
-  const { user, accessToken } = useAuthStore();
 
   const [progress, setProgress] = useState(0);
   const [isCompleted, setIsCompleted] = useState(false);
@@ -40,6 +41,69 @@ export default function SkillDipzIntro() {
     };
   }, []);
 
+  const handleDestinationRedirect = () => {
+    if (redirectedRef.current) return;
+    redirectedRef.current = true;
+
+    // 1. Check Student / User Auth Store
+    const authState = useAuthStore.getState();
+    const companyAuthState = useCompanyAuthStore.getState();
+
+    let targetRole: "STUDENT" | "COMPANY" | null = null;
+    let companyStatus: string | null = null;
+
+    if (authState.user && authState.accessToken) {
+      targetRole = authState.user.role;
+    } else if (companyAuthState.company) {
+      targetRole = "COMPANY";
+      companyStatus = companyAuthState.company.approval_status;
+    } else if (typeof window !== "undefined") {
+      // 2. Direct LocalStorage fallback (if zustand async rehydration hasn't finished)
+      try {
+        const rawAuth = localStorage.getItem("skilldipz-auth");
+        if (rawAuth) {
+          const parsed = JSON.parse(rawAuth);
+          if (parsed?.state?.accessToken && parsed?.state?.user) {
+            targetRole = parsed.state.user.role;
+            authState.setAuth(
+              parsed.state.user,
+              parsed.state.accessToken,
+              parsed.state.refreshToken
+            );
+          }
+        }
+      } catch {}
+
+      if (!targetRole) {
+        try {
+          const rawCompany = localStorage.getItem("skilldipz-company-auth");
+          if (rawCompany) {
+            const parsed = JSON.parse(rawCompany);
+            if (parsed?.state?.company) {
+              targetRole = "COMPANY";
+              companyStatus = parsed.state.company.approval_status;
+              companyAuthState.setCompany(parsed.state.company);
+            }
+          }
+        } catch {}
+      }
+    }
+
+    if (targetRole === "STUDENT") {
+      setRoleCookie("STUDENT");
+      router.push(getRedirectPath("STUDENT")); // -> /student/overview
+    } else if (targetRole === "COMPANY") {
+      setCompanyRoleCookie("COMPANY");
+      if (companyStatus === "pending") {
+        router.push("/company/auth/pending");
+      } else {
+        router.push(getRedirectPath("COMPANY")); // -> /company/dashboard
+      }
+    } else {
+      router.push("/onboarding");
+    }
+  };
+
   useEffect(() => {
     const tick = (ts: number) => {
       if (!startRef.current) startRef.current = ts;
@@ -51,16 +115,9 @@ export default function SkillDipzIntro() {
       if (elapsed >= TOTAL_DONE_MS) {
         setProgress(100);
         setIsCompleted(true);
-        if (!redirectedRef.current) {
-          redirectedRef.current = true;
-          setTimeout(() => {
-            if (accessToken && user) {
-              router.push(getRedirectPath(user.role));
-            } else {
-              router.push("/onboarding");
-            }
-          }, 600);
-        }
+        setTimeout(() => {
+          handleDestinationRedirect();
+        }, 500);
         return;
       }
 

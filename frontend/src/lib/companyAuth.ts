@@ -37,12 +37,12 @@ export interface VerifyEmailResponse {
 }
 
 // Cookie helper (middleware reads sd_role to protect routes)
-function setCompanyRoleCookie(role: string): void {
+export function setCompanyRoleCookie(role: string): void {
   if (typeof document === "undefined") return;
-  document.cookie = `sd_role=${role}; path=/; SameSite=Lax; max-age=${24 * 3600}`;
+  document.cookie = `sd_role=${role}; path=/; SameSite=Lax; max-age=${30 * 24 * 3600}`;
 }
 
-function clearCompanyRoleCookie(): void {
+export function clearCompanyRoleCookie(): void {
   if (typeof document === "undefined") return;
   document.cookie = `sd_role=; path=/; max-age=0`;
 }

@@ -13,14 +13,20 @@ const PUBLIC_ROUTES = [
 export function proxy(req: NextRequest) {
   const { pathname } = req.nextUrl;
 
-  // Always allow public routes, static assets, admin portal, and company auth pages through
-  const isPublic =
+  // Always allow root (loading intro page), static assets, admin, and company auth
+  if (
+    pathname === "/" ||
     pathname.startsWith("/company/auth") ||
     pathname.startsWith("/admin") ||
-    PUBLIC_ROUTES.some(
-      (r) => pathname === r || pathname.startsWith(r + "/")
-    );
-  if (isPublic) return NextResponse.next();
+    PUBLIC_ROUTES.some((r) => r !== "/" && (pathname === r || pathname.startsWith(r + "/")))
+  ) {
+    // If logged in and visiting login or register, redirect to respective portal
+    const role = req.cookies.get("sd_role")?.value;
+    if (role && (pathname === "/login" || pathname === "/register")) {
+      return NextResponse.redirect(new URL(getRedirectPath(role), req.url));
+    }
+    return NextResponse.next();
+  }
 
   // Read the role cookie written on login
   const role = req.cookies.get("sd_role")?.value;
@@ -32,11 +38,6 @@ export function proxy(req: NextRequest) {
       return NextResponse.redirect(new URL("/login", req.url));
     }
     return NextResponse.next();
-  }
-
-  // Logged in — redirect away from auth pages
-  if (pathname === "/login" || pathname === "/register") {
-    return NextResponse.redirect(new URL(getRedirectPath(role), req.url));
   }
 
   // Role based security guard:
@@ -55,9 +56,10 @@ export function proxy(req: NextRequest) {
 function getRedirectPath(role: string): string {
   if (role === "STUDENT") return "/student/overview";
   if (role === "COMPANY") return "/company/dashboard";
-  return "/";
+  return "/onboarding";
 }
 
 export const config = {
-  matcher: ["/((?!api|_next/static|_next/image|favicon.ico|images).*)"],
+  matcher: ["/((?!api|_next/static|_next/image|favicon.ico|images|lootie).*)"],
 };
+

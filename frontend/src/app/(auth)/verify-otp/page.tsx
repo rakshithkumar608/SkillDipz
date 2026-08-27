@@ -6,7 +6,7 @@ import Image from "next/image";
 import { Loader2, MailCheck, RefreshCw } from "lucide-react";
 import api from "@/lib/api";
 import { useAuthStore } from "@/store/authStore";
-import { getRedirectPath } from "@/lib/auth";
+import { getRedirectPath, setRoleCookie } from "@/lib/auth";
 import { toast } from "sonner";
 
 function VerifyOTPContent() {
@@ -74,6 +74,7 @@ function VerifyOTPContent() {
     try {
       const { data } = await api.post("/auth/verify-otp", { email, otp: code });
       useAuthStore.getState().setAuth(data.user, data.access_token, data.refresh_token);
+      setRoleCookie(data.user.role);
       toast.success("Email verified! Welcome to SkillDipz 🎉");
       router.push(getRedirectPath(data.user.role));
     } catch (err: unknown) {

@@ -51,12 +51,20 @@ export default function CompanyLayout({
   useEffect(() => {
     if (isAuthPage) return;
 
-    if (companyHydrated || userHydrated) {
+    if (companyHydrated && userHydrated) {
       // Check company auth store first, fallback to legacy authStore
       const activeCompany = company;
       const legacyCompany = user?.role === "COMPANY";
 
       if (!activeCompany && !legacyCompany) {
+        if (typeof window !== "undefined") {
+          try {
+            const rawCompany = localStorage.getItem("skilldipz-company-auth");
+            const rawAuth = localStorage.getItem("skilldipz-auth");
+            if (rawCompany && JSON.parse(rawCompany)?.state?.company) return;
+            if (rawAuth && JSON.parse(rawAuth)?.state?.user?.role === "COMPANY") return;
+          } catch {}
+        }
         router.push("/login");
         return;
       }

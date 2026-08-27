@@ -66,11 +66,19 @@ export default function EmployerDashboardPage() {
 
   // ── Load dashboard once store is hydrated & company is authenticated ──
   useEffect(() => {
-    const isHydrated = companyHydrated || userHydrated;
+    const isHydrated = companyHydrated && userHydrated;
     if (!isHydrated) return;
 
-    const isAuthed = !!(company || user);
+    const isAuthed = !!(company || (user && user.role === "COMPANY"));
     if (!isAuthed) {
+      if (typeof window !== "undefined") {
+        try {
+          const rawCompany = localStorage.getItem("skilldipz-company-auth");
+          const rawAuth = localStorage.getItem("skilldipz-auth");
+          if (rawCompany && JSON.parse(rawCompany)?.state?.company) return;
+          if (rawAuth && JSON.parse(rawAuth)?.state?.user?.role === "COMPANY") return;
+        } catch {}
+      }
       router.push("/login");
       return;
     }
@@ -136,7 +144,7 @@ export default function EmployerDashboardPage() {
   }, [setCandidateLoading, setSelectedCandidate]);
 
   // If waiting for hydration
-  const isHydrated = companyHydrated || userHydrated;
+  const isHydrated = companyHydrated && userHydrated;
   if (!isHydrated) {
     return (
       <div className="min-h-screen px-4 py-6 sm:px-6 sm:py-8 max-w-5xl mx-auto space-y-6">
