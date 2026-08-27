@@ -7,24 +7,31 @@ from app.models.interview import DetailedRubric
 
 
 class MentorProfile(Document):
-    user_id: str                                       # Real User._id as string
+    user_id: str                                       # Authenticated User._id as string
     mentor_id: str = Field(default_factory=lambda: str(uuid.uuid4()))
-    name: str
-    email: str
-    avatar_url: Optional[str] = None
-    title: str = ""                                    # e.g., "Staff Backend Architect"
-    company: str = ""                                  # e.g., "Amazon", "Razorpay"
-    company_logo: Optional[str] = None
-    years_experience: int = 0
-    expertise_tags: List[str] = []                     # e.g. ["System Design", "DSA", "Backend"]
+    full_name: str = ""
+    email: str = ""
+    profile_photo: Optional[str] = None
+    headline: str = ""                                 # e.g., "Senior Distributed Systems Engineer @ Google"
     bio: str = ""
-    linkedin_url: Optional[str] = None
+    expertise: List[str] = Field(default_factory=list) # e.g. ["System Design", "Distributed Systems", "Backend"]
+    skills: List[str] = Field(default_factory=list)    # e.g. ["Python", "Go", "Kubernetes", "Kafka", "PostgreSQL"]
+    experience_years: int = 0
+    current_role: str = ""                             # e.g., "Staff Software Engineer"
+    company: str = ""                                  # e.g., "Google", "Amazon", "Razorpay"
+    education: str = ""                                # e.g., "B.Tech Computer Science, IIT Bombay"
+    languages: List[str] = Field(default_factory=list) # e.g. ["English", "Hindi"]
+    mentoring_topics: List[str] = Field(default_factory=list) # e.g. ["System Design Mock", "DSA Coding Round", "Resume Review"]
+    
+    # Status & Metrics
+    profile_status: Literal["INCOMPLETE", "ACTIVE", "INACTIVE"] = "INCOMPLETE"
     rating: float = 5.0
     total_reviews: int = 0
     sessions_completed: int = 0
-    hourly_rate_inr: int = 0                           # 0 for platform sponsored / credits
-    is_active: bool = False                            # False until mentor completes onboarding
+    hourly_rate_inr: int = 0
+    
     created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+    updated_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
 
     class Settings:
         name = "mentor_profiles"
@@ -33,13 +40,19 @@ class MentorProfile(Document):
 class MentorSlot(Document):
     slot_id: str = Field(default_factory=lambda: str(uuid.uuid4()))
     mentor_id: str
+    user_id: str = ""
     mentor_name: str = ""
+    
+    available_day: str = ""                            # e.g. "2026-08-30" or "Monday"
     start_time: datetime
     end_time: datetime
     duration_mins: int = 45
+    is_enabled: bool = True                            # Enable / disable availability toggle
     is_booked: bool = False
     booking_id: Optional[str] = None
+    
     created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+    updated_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
 
     class Settings:
         name = "mentor_slots"

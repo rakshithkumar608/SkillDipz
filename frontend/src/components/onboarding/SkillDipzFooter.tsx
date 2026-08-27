@@ -350,26 +350,26 @@ export default function SkillDipzFooter() {
             </ul>
           </div>
 
-          {/* Links Col 3: Company */}
+          {/* Links Col 3: Company & Mentors */}
           <div className="col-span-2 sm:col-span-1">
             <h3 className="text-xs sm:text-sm font-bold text-gray-900 uppercase tracking-wider mb-3 sm:mb-4">
-              Company
+              Mentorship
             </h3>
             <ul className="flex flex-col gap-2.5 text-xs sm:text-sm text-gray-600">
               <li>
                 <Link
-                  href="#"
-                  className="hover:text-blue-600 transition-colors"
+                  href="/mentor/register"
+                  className="text-indigo-600 font-semibold hover:text-indigo-700 transition-colors"
                 >
-                  About Us
+                  Join as Mentor →
                 </Link>
               </li>
               <li>
                 <Link
-                  href="#"
+                  href="/mentor/login"
                   className="hover:text-blue-600 transition-colors"
                 >
-                  Privacy Policy
+                  Mentor Login
                 </Link>
               </li>
               <li>

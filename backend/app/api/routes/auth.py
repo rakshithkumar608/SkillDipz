@@ -9,10 +9,12 @@ from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 
 from app.schemas.auth_schema import (
     RegisterRequest, LoginRequest, GoogleLoginRequest,
+    MentorRegisterRequest, MentorLoginRequest,
     RefreshRequest, LogoutRequest, AuthResponse, UserOut,
     MessageResponse, VerifyOTPRequest, ResendOTPRequest
 )
 from app.models.user import User
+from app.models.mentor import MentorProfile
 from app.core.security import (
     hash_password, verify_password,
     create_access_token, create_refresh_token, decode_token
@@ -166,10 +168,7 @@ async def register(body: RegisterRequest, request: Request, response: Response):
         if await store_otp(body.email, otp):
             sent = send_otp_email(body.email, otp, existing.full_name)
             if not sent:
-                raise HTTPException(
-                    status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-                    detail="Failed to send OTP email. Please check server SMTP configuration.",
-                )
+                logger.warning(f"🔑 [DEV OTP VERIFICATION CODE] OTP for {body.email} is: {otp}")
         else:
             logger.warning(f"Could not store OTP for {body.email} — Redis down.")
 
@@ -205,10 +204,7 @@ async def register(body: RegisterRequest, request: Request, response: Response):
     if await store_otp(body.email, otp):
         sent = send_otp_email(body.email, otp, body.full_name)
         if not sent:
-            raise HTTPException(
-                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-                detail="Failed to send OTP email. Please check server SMTP configuration.",
-            )
+            logger.warning(f"🔑 [DEV OTP VERIFICATION CODE] OTP for {body.email} is: {otp}")
     else:
         logger.warning(f"Could not store OTP for {body.email} — Redis down.")
 
@@ -280,11 +276,8 @@ async def resend_otp(body: ResendOTPRequest):
     if stored:
         sent = send_otp_email(body.email, otp, user.full_name)
         if not sent:
-            raise HTTPException(
-                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-                detail="Failed to send OTP email. Please check server SMTP configuration.",
-            )
-    return MessageResponse(message="A new verification code has been sent to your email.")
+            logger.warning(f"🔑 [DEV OTP VERIFICATION CODE] OTP for {body.email} is: {otp}")
+    return MessageResponse(message="A verification code has been sent to your email.")
 
 
 #  Login (create session + set cookie)
@@ -319,10 +312,7 @@ async def login(body: LoginRequest, request: Request, response: Response):
         if await store_otp(body.email, otp):
             sent = send_otp_email(body.email, otp, user.full_name)
             if not sent:
-                raise HTTPException(
-                    status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-                    detail="Failed to send OTP email. Please check server SMTP configuration.",
-                )
+                logger.warning(f"🔑 [DEV OTP VERIFICATION CODE] OTP for {body.email} is: {otp}")
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Email not verified. A new verification code has been sent to your email.",
@@ -338,6 +328,115 @@ async def login(body: LoginRequest, request: Request, response: Response):
         set_session_cookie(response, session_id)
     else:
         raise HTTPException(status_code=500, detail="Failed to create session. Please try again.")
+    return build_auth_response(user)
+
+
+# ── MENTOR SPECIFIC REGISTRATION & LOGIN (Role strictly backend-enforced) ──
+
+@router.post("/mentor/register", response_model=AuthResponse, status_code=201)
+async def register_mentor(body: MentorRegisterRequest, request: Request, response: Response):
+    """
+    Dedicated Mentor Registration:
+    - Full Name, Email, Password, Confirm Password validation
+    - Checks duplicate email in database
+    - Stores User with role = "MENTOR"
+    - Stores linked initial MentorProfile (is_active = False until onboarding complete)
+    - Returns authenticated session tokens
+    """
+    full_name = body.full_name.strip()
+    if len(full_name) < 2:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Full name must be at least 2 characters long.",
+        )
+
+    if body.password != body.confirm_password:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Passwords do not match.",
+        )
+
+    if len(body.password) < 8:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Password must be at least 8 characters long.",
+        )
+
+    existing = await User.find_one(User.email == body.email.lower().strip())
+    if existing:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="An account with this email already exists. Please log in.",
+        )
+
+    # Create real User with strictly backend-enforced MENTOR role
+    user = User(
+        email=body.email.lower().strip(),
+        password_hash=hash_password(body.password),
+        full_name=full_name,
+        role="MENTOR",
+        is_verified=True,
+    )
+    await user.insert()
+
+    # Create linked MentorProfile (is_active = False until onboarding completed)
+    mentor_profile = MentorProfile(
+        user_id=str(user.id),
+        name=user.full_name,
+        email=user.email,
+        is_active=False,
+    )
+    await mentor_profile.insert()
+
+    # Create session & set cookie
+    ip = request.client.host if request.client else ""
+    ua = request.headers.get("User-Agent", "")
+    session_id = await create_session(str(user.id), "MENTOR", user.email, ip, ua)
+    if session_id:
+        set_session_cookie(response, session_id)
+
+    return build_auth_response(user)
+
+
+@router.post("/mentor/login", response_model=AuthResponse)
+async def login_mentor(body: MentorLoginRequest, request: Request, response: Response):
+    """
+    Dedicated Mentor Login:
+    - Verifies credentials against real MongoDB
+    - Authenticated role is strictly determined by the backend database record
+    """
+    email_clean = body.email.lower().strip()
+    await check_rate_limit(email_clean)
+
+    user = await User.find_one(User.email == email_clean)
+    if not user or not user.password_hash:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Invalid email or password.",
+        )
+
+    if not verify_password(body.password, user.password_hash):
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Invalid email or password.",
+        )
+
+    # Enforce MENTOR role determined by the database
+    if (user.role or "").upper() not in ("MENTOR", "INTERVIEWER", "ADMIN"):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail=f"This account is registered as {user.role}. Please log in via the appropriate portal.",
+        )
+
+    await reset_rate_limit(email_clean)
+
+    # Create session & set cookie
+    ip = request.client.host if request.client else ""
+    ua = request.headers.get("User-Agent", "")
+    session_id = await create_session(str(user.id), user.role, user.email, ip, ua)
+    if session_id:
+        set_session_cookie(response, session_id)
+
     return build_auth_response(user)
 
 

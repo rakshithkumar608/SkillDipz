@@ -71,13 +71,43 @@ export async function registerUser(payload: {
   full_name: string;
   email: string;
   password: string;
-  role: "STUDENT" | "COMPANY";
+  role: "STUDENT" | "COMPANY" | "MENTOR";
   college?: string;
   phone?: string;
   company_name?: string;
   industry?: string;
 }): Promise<AuthResponse> {
   const { data } = await api.post<AuthResponse>("/auth/register", payload);
+  return data;
+}
+
+export interface MentorRegisterPayload {
+  full_name: string;
+  email: string;
+  password: string;
+  confirm_password: string;
+}
+
+export interface MentorLoginPayload {
+  email: string;
+  password: string;
+}
+
+export async function registerMentor(payload: MentorRegisterPayload): Promise<AuthResponse> {
+  const { data } = await api.post<AuthResponse>("/auth/mentor/register", payload);
+  useAuthStore
+    .getState()
+    .setAuth(data.user, data.access_token, data.refresh_token);
+  setRoleCookie(data.user.role);
+  return data;
+}
+
+export async function loginMentor(payload: MentorLoginPayload): Promise<AuthResponse> {
+  const { data } = await api.post<AuthResponse>("/auth/mentor/login", payload);
+  useAuthStore
+    .getState()
+    .setAuth(data.user, data.access_token, data.refresh_token);
+  setRoleCookie(data.user.role);
   return data;
 }
 
