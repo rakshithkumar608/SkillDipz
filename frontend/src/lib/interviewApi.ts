@@ -146,7 +146,7 @@ export interface MentorshipBooking {
   scheduled_at: string;
   duration_mins: number;
   meeting_url?: string;
-  status: "confirmed" | "in_progress" | "completed" | "cancelled";
+  status: "confirmed" | "in_progress" | "completed" | "cancelled" | "pending";
   overall_score?: number | null;
   rubric?: DetailedRubric | null;
   mentor_feedback?: string | null;

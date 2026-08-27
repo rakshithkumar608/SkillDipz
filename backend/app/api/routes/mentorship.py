@@ -18,7 +18,7 @@ logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/mentorship", tags=["1-to-1 Mentorship"])
 
 
-# ─── Pydantic Schemas ─────────────────────────────────────────────────────────
+
 
 class SaveMentorProfileRequest(BaseModel):
     full_name: Optional[str] = None
@@ -581,6 +581,34 @@ async def book_mentor_slot(
     if not slot or slot.is_booked or not slot.is_enabled:
         raise HTTPException(status_code=400, detail="This time slot is no longer available.")
 
+    now = datetime.now(timezone.utc)
+    start_utc = slot.start_time if slot.start_time.tzinfo else slot.start_time.replace(tzinfo=timezone.utc)
+    if start_utc < now:
+        raise HTTPException(status_code=400, detail="Selected time slot has already passed and cannot be booked.")
+
+    # Prevent mentor double booking
+    existing_mentor_booking = await MentorshipBooking.find_one({
+        "mentor_id": mentor.mentor_id,
+        "scheduled_at": slot.start_time,
+        "status": {"$in": ["confirmed", "in_progress"]},
+    })
+    if existing_mentor_booking:
+        slot.is_booked = True
+        await slot.save()
+        raise HTTPException(status_code=400, detail="This mentor slot has already been booked.")
+
+    # Prevent student double booking
+    existing_student_booking = await MentorshipBooking.find_one({
+        "student_id": student_id,
+        "scheduled_at": slot.start_time,
+        "status": {"$in": ["confirmed", "in_progress"]},
+    })
+    if existing_student_booking:
+        raise HTTPException(
+            status_code=400,
+            detail="You already have a mentoring session booked at this exact time."
+        )
+
     student_name = user.full_name if user and user.full_name else "Student"
     student_email = user.email if user and user.email else ""
 
@@ -601,6 +629,7 @@ async def book_mentor_slot(
         student_notes=body.student_notes,
         scheduled_at=slot.start_time,
         duration_mins=slot.duration_mins,
+        duration=slot.duration_mins,
         meeting_url=meeting_url,
         status="confirmed",
     )

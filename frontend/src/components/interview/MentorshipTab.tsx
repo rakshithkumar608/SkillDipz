@@ -44,6 +44,7 @@ export default function MentorshipTab({
   const [selectedMentor, setSelectedMentor] = useState<MentorProfile | null>(null);
   const [bookingModalOpen, setBookingModalOpen] = useState(false);
   const [activeSubTab, setActiveSubTab] = useState<"directory" | "bookings">("directory");
+  const [bookingSubFilter, setBookingSubFilter] = useState<"all" | "upcoming" | "past" | "cancelled">("upcoming");
 
   const loadData = async () => {
     setLoading(true);
@@ -215,7 +216,7 @@ export default function MentorshipTab({
                               className="w-14 h-14 rounded-2xl object-cover border-2 border-indigo-500/30 shadow-md"
                             />
                           ) : (
-                            <div className="w-14 h-14 rounded-2xl bg-gradient-to-tr from-indigo-600 to-violet-600 flex items-center justify-center text-white font-black text-xl border border-indigo-400/30 shadow-md">
+                            <div className="w-14 h-14 rounded-2xl bg-linear-to-tr from-indigo-600 to-violet-600 flex items-center justify-center text-white font-black text-xl border border-indigo-400/30 shadow-md">
                               {name.charAt(0).toUpperCase()}
                             </div>
                           )}
@@ -318,7 +319,7 @@ export default function MentorshipTab({
                       <button
                         onClick={() => handleOpenBooking(mentor)}
                         disabled={openSlotsCount === 0}
-                        className="px-4 py-2 rounded-xl bg-gradient-to-r from-indigo-600 to-violet-600 hover:from-indigo-500 hover:to-violet-500 text-white font-bold text-xs flex items-center gap-1.5 shadow-md shadow-indigo-500/25 disabled:opacity-40 disabled:cursor-not-allowed transition"
+                        className="px-4 py-2 rounded-xl bg-linear-to-r from-indigo-600 to-violet-600 hover:from-indigo-500 hover:to-violet-500 text-white font-bold text-xs flex items-center gap-1.5 shadow-md shadow-indigo-500/25 disabled:opacity-40 disabled:cursor-not-allowed transition"
                       >
                         <Calendar className="w-3.5 h-3.5" />
                         <span>{openSlotsCount > 0 ? `Book (${openSlotsCount})` : "No Open Slots"}</span>
@@ -333,79 +334,121 @@ export default function MentorshipTab({
       ) : (
         /* My Mentorship Bookings */
         <div className="space-y-4">
+          {/* Subfilter header */}
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 p-3.5 rounded-2xl bg-slate-900/60 border border-slate-800">
+            <span className="text-xs font-bold text-slate-300 flex items-center gap-1.5">
+              <Calendar className="w-3.5 h-3.5 text-indigo-400" />
+              My 1-to-1 Mentorship Sessions ({myBookings.length})
+            </span>
+
+            <div className="flex items-center gap-1.5 overflow-x-auto">
+              {[
+                { id: "upcoming", label: "Upcoming Sessions", count: myBookings.filter(b => b.status === "confirmed" || b.status === "in_progress").length },
+                { id: "past", label: "Past Sessions", count: myBookings.filter(b => b.status === "completed").length },
+                { id: "cancelled", label: "Cancelled", count: myBookings.filter(b => b.status === "cancelled").length },
+                { id: "all", label: "All Sessions", count: myBookings.length },
+              ].map((sub) => (
+                <button
+                  key={sub.id}
+                  onClick={() => setBookingSubFilter(sub.id as any)}
+                  className={`px-3 py-1.5 rounded-xl text-xs font-semibold shrink-0 transition flex items-center gap-1.5 ${
+                    bookingSubFilter === sub.id
+                      ? "bg-indigo-600 text-white shadow-md shadow-indigo-500/20"
+                      : "bg-slate-950 text-slate-400 hover:text-white border border-slate-800"
+                  }`}
+                >
+                  <span>{sub.label}</span>
+                  <span className="text-[10px] px-1.5 py-0.2 rounded-full bg-black/30 font-bold">
+                    {sub.count}
+                  </span>
+                </button>
+              ))}
+            </div>
+          </div>
+
           {myBookings.length === 0 ? (
-            <div className="p-12 rounded-2xl bg-slate-900/40 border border-slate-800 text-center space-y-3">
-              <Users className="w-10 h-10 text-slate-600 mx-auto" />
-              <p className="text-sm font-semibold text-slate-300">No mentorship sessions booked yet.</p>
-              <p className="text-xs text-slate-500 max-w-sm mx-auto">
-                Select an expert mentor above to schedule your 1-on-1 mock interview with live rubric evaluation.
+            <div className="p-16 rounded-3xl bg-slate-900/40 border border-slate-800 text-center space-y-3 shadow-xl">
+              <Users className="w-12 h-12 text-slate-600 mx-auto" />
+              <h3 className="text-base font-bold text-white">You don&apos;t have any mentoring sessions yet.</h3>
+              <p className="text-xs text-slate-400 max-w-sm mx-auto leading-relaxed">
+                Select an expert mentor in the directory to schedule your 1-on-1 mock interview with live rubric evaluation.
               </p>
               <button
                 onClick={() => setActiveSubTab("directory")}
-                className="px-4 py-2 rounded-xl bg-indigo-600 text-white text-xs font-semibold inline-flex items-center gap-2"
+                className="px-4 py-2 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-bold inline-flex items-center gap-1.5 shadow-md shadow-indigo-500/20 transition"
               >
-                Browse Mentors <ChevronRight className="w-3.5 h-3.5" />
+                Find Mentors <ChevronRight className="w-3.5 h-3.5" />
               </button>
             </div>
           ) : (
             <div className="space-y-3">
-              {myBookings.map((booking) => {
-                const isCompleted = booking.status === "completed";
-                const isConfirmed = booking.status === "confirmed" || booking.status === "in_progress";
-                const schedDate = new Date(booking.scheduled_at).toLocaleDateString("en-US", {
-                  weekday: "short",
-                  month: "short",
-                  day: "numeric",
-                  hour: "numeric",
-                  minute: "2-digit",
-                });
+              {myBookings
+                .filter((b) => {
+                  if (bookingSubFilter === "upcoming") return b.status === "confirmed" || b.status === "in_progress";
+                  if (bookingSubFilter === "past") return b.status === "completed";
+                  if (bookingSubFilter === "cancelled") return b.status === "cancelled";
+                  return true;
+                })
+                .map((booking) => {
+                  const isCompleted = booking.status === "completed";
+                  const isConfirmed = booking.status === "confirmed" || booking.status === "in_progress";
+                  const isCancelled = booking.status === "cancelled";
+                  const schedDate = new Date(booking.scheduled_at).toLocaleDateString("en-US", {
+                    weekday: "short",
+                    month: "short",
+                    day: "numeric",
+                    hour: "numeric",
+                    minute: "2-digit",
+                  });
 
-                return (
-                  <div
-                    key={booking.booking_id}
-                    className="p-5 rounded-2xl bg-[#0b0f19]/90 border border-slate-800 flex flex-col md:flex-row md:items-center justify-between gap-4"
-                  >
-                    <div className="space-y-1">
-                      <div className="flex items-center gap-2">
-                        <span
-                          className={`px-2 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-wider ${
-                            isCompleted
-                              ? "bg-emerald-500/20 text-emerald-300 border border-emerald-500/30"
-                              : "bg-sky-500/20 text-sky-300 border border-sky-500/30"
-                          }`}
-                        >
-                          {booking.status}
-                        </span>
-                        <span className="text-xs text-slate-400">· {booking.duration_mins} Mins</span>
+                  return (
+                    <div
+                      key={booking.booking_id}
+                      className="p-5 rounded-2xl bg-[#0b0f19]/90 border border-slate-800 flex flex-col md:flex-row md:items-center justify-between gap-4 shadow-lg"
+                    >
+                      <div className="space-y-1">
+                        <div className="flex items-center gap-2">
+                          <span
+                            className={`px-2 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-wider ${
+                              isCompleted
+                                ? "bg-emerald-500/20 text-emerald-300 border border-emerald-500/30"
+                                : isCancelled
+                                ? "bg-rose-500/20 text-rose-300 border border-rose-500/30"
+                                : "bg-sky-500/20 text-sky-300 border border-sky-500/30"
+                            }`}
+                          >
+                            {booking.status}
+                          </span>
+                          <span className="text-xs text-slate-400">· {booking.duration_mins} Mins</span>
+                        </div>
+                        <h3 className="text-base font-bold text-white">{booking.topic}</h3>
+                        <p className="text-xs text-indigo-400 font-medium">
+                          Mentor: {booking.mentor_name} ({booking.mentor_company}) · {schedDate}
+                        </p>
                       </div>
-                      <h3 className="text-base font-bold text-white">{booking.topic}</h3>
-                      <p className="text-xs text-indigo-400 font-medium">
-                        Mentor: {booking.mentor_name} ({booking.mentor_company}) · {schedDate}
-                      </p>
-                    </div>
 
-                    <div className="flex items-center gap-3">
-                      {isConfirmed && booking.meeting_url && (
-                        <button
-                          onClick={() => onJoinMeeting(booking.meeting_url!, booking.booking_id)}
-                          className="px-4 py-2.5 rounded-xl bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 text-white text-xs font-bold flex items-center gap-1.5 shadow-lg shadow-emerald-500/20 transition"
-                        >
-                          <Video className="w-4 h-4" /> Enter Live Meeting Room
-                        </button>
-                      )}
+                      <div className="flex items-center gap-3">
+                        {isConfirmed && booking.meeting_url && (
+                          <button
+                            onClick={() => onJoinMeeting(booking.meeting_url!, booking.booking_id)}
+                            className="px-4 py-2.5 rounded-xl bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 text-white text-xs font-bold flex items-center gap-1.5 shadow-lg shadow-emerald-500/20 transition"
+                          >
+                            <Video className="w-4 h-4" /> Enter Live Meeting Room
+                          </button>
+                        )}
 
-                      {isCompleted && (
-                        <button
-                          onClick={() => onViewReport(booking)}
-                          className="px-4 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-sky-300 text-xs font-semibold flex items-center gap-1.5 border border-slate-700 transition"
-                        >
-                          <Award className="w-4 h-4 text-sky-400" /> View Rubric & Feedback ({Math.round(booking.overall_score || 85)}%)
-                        </button>
-                      )}
+                        {isCompleted && (
+                          <button
+                            onClick={() => onViewReport(booking)}
+                            className="px-4 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-sky-300 text-xs font-semibold flex items-center gap-1.5 border border-slate-700 transition"
+                          >
+                            <Award className="w-4 h-4 text-sky-400" /> View Rubric & Feedback ({Math.round(booking.overall_score || 85)}%)
+                          </button>
+                        )}
+                      </div>
                     </div>
-                  </div>
-                );
-              })}
+                  );
+                })}
             </div>
           )}
         </div>

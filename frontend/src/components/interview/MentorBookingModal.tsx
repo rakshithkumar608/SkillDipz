@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import {
   Calendar,
@@ -15,7 +15,7 @@ import {
   Video,
 } from "lucide-react";
 import { toast } from "sonner";
-import { MentorProfile, MentorSlot, bookMentorSlot } from "@/lib/interviewApi";
+import { MentorProfile, MentorSlot, bookMentorSlot, fetchMentorDetail } from "@/lib/interviewApi";
 
 interface MentorBookingModalProps {
   isOpen: boolean;
@@ -30,15 +30,40 @@ export default function MentorBookingModal({
   mentor,
   onBookingSuccess,
 }: MentorBookingModalProps) {
+  const [liveSlots, setLiveSlots] = useState<any[]>([]);
+  const [loadingSlots, setLoadingSlots] = useState<boolean>(false);
   const [selectedSlotId, setSelectedSlotId] = useState<string>("");
   const [topic, setTopic] = useState("1-on-1 Technical Mock Interview & Architecture Review");
   const [targetRole, setTargetRole] = useState("Software Development Engineer");
   const [studentNotes, setStudentNotes] = useState("");
   const [isSubmitting, setIsSubmitting] = useState(false);
 
+  useEffect(() => {
+    if (isOpen && mentor?.mentor_id) {
+      if (mentor.slots && mentor.slots.length > 0) {
+        setLiveSlots(mentor.slots);
+      } else {
+        setLoadingSlots(true);
+        fetchMentorDetail(mentor.mentor_id)
+          .then((res) => {
+            setLiveSlots(res.slots || []);
+          })
+          .catch(() => {
+            setLiveSlots([]);
+          })
+          .finally(() => {
+            setLoadingSlots(false);
+          });
+      }
+    } else {
+      setSelectedSlotId("");
+      setLiveSlots([]);
+    }
+  }, [isOpen, mentor]);
+
   if (!isOpen || !mentor) return null;
 
-  const slots = mentor.slots || [];
+  const slots = liveSlots.length > 0 ? liveSlots : mentor.slots || [];
 
   const handleBook = async () => {
     if (!selectedSlotId) {
