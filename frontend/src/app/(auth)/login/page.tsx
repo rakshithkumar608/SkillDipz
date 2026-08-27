@@ -11,11 +11,11 @@ import { useState } from "react";
 import { toast } from "sonner";
 import { useGoogleLogin } from "@react-oauth/google";
 import Image from "next/image";
-import { ArrowLeft, Building2, Eye, EyeOff, GraduationCap, Loader2 } from "lucide-react";
+import { ArrowLeft, Building2, Eye, EyeOff, GraduationCap, Loader2, UserCheck } from "lucide-react";
 import { FcGoogle } from "react-icons/fc";
 import Link from "next/link";
 
-type Tab = "STUDENT" | "COMPANY";
+type Tab = "STUDENT" | "MENTOR" | "COMPANY";
 
 export default function LoginScreen() {
   const router = useRouter();
@@ -111,14 +111,14 @@ export default function LoginScreen() {
 
           {/* Tab Switcher */}
           <div className="flex bg-white/5 rounded-2xl p-1 mb-6 border border-white/10">
-            {(["STUDENT", "COMPANY"] as Tab[]).map((t) => (
+            {(["STUDENT", "MENTOR", "COMPANY"] as Tab[]).map((t) => (
               <button
                 key={t}
                 onClick={() => {
                   setTab(t);
                   setError(null);
                 }}
-                className={`flex flex-1 items-center justify-center gap-2 rounded-xl py-3 text-sm font-semibold transition-all duration-300 ${
+                className={`flex flex-1 items-center justify-center gap-1.5 rounded-xl py-2.5 text-xs sm:text-sm font-semibold transition-all duration-300 ${
                   tab === t
                     ? "bg-violet-600 text-white shadow-lg shadow-violet-600/30"
                     : "text-neutral-400 hover:text-white"
@@ -126,12 +126,17 @@ export default function LoginScreen() {
               >
                 {t === "STUDENT" ? (
                   <>
-                    <GraduationCap size={18} />
+                    <GraduationCap size={16} />
                     <span>Student</span>
+                  </>
+                ) : t === "MENTOR" ? (
+                  <>
+                    <UserCheck size={16} />
+                    <span>Mentor</span>
                   </>
                 ) : (
                   <>
-                    <Building2 size={18} />
+                    <Building2 size={16} />
                     <span>Company</span>
                   </>
                 )}

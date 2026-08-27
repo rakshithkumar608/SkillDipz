@@ -277,6 +277,69 @@ def get_level_info(total_xp: int) -> dict:
     }
 
 
+def get_career_tier(overall_score: float, total_xp: int) -> dict:
+    """
+    Calculates unified Career Readiness Tier based on Employability Score and Total XP.
+    """
+    lvl_info = get_level_info(total_xp)
+    level = lvl_info["level"]
+
+    if overall_score >= 90.0 and total_xp >= 7000:
+        tier_name = "Top 1% Elite Engineer"
+        badge = "👑"
+        color = "from-amber-400 to-yellow-500"
+        border_color = "border-amber-400/40"
+        tier_level = 5
+        min_score = 90
+        next_target = "Max Level Achieved - Top Corporate Priority Placement"
+    elif overall_score >= 75.0 and total_xp >= 3500:
+        tier_name = "Industry Ready Pro"
+        badge = "💎"
+        color = "from-emerald-400 to-teal-500"
+        border_color = "border-emerald-400/40"
+        tier_level = 4
+        min_score = 75
+        next_target = "Aim for 90+ Score & 7,000 XP for Top 1% Elite Tier"
+    elif overall_score >= 60.0 and total_xp >= 1500:
+        tier_name = "Skilled Practitioner"
+        badge = "⚡"
+        color = "from-sky-400 to-indigo-500"
+        border_color = "border-sky-400/40"
+        tier_level = 3
+        min_score = 60
+        next_target = "Aim for 75+ Score & 3,500 XP for Industry Ready Tier"
+    elif overall_score >= 40.0 and total_xp >= 500:
+        tier_name = "Emerging Talent"
+        badge = "🚀"
+        color = "from-violet-400 to-purple-500"
+        border_color = "border-violet-400/40"
+        tier_level = 2
+        min_score = 40
+        next_target = "Aim for 60+ Score & 1,500 XP for Skilled Practitioner Tier"
+    else:
+        tier_name = "Novice Explorer"
+        badge = "🌱"
+        color = "from-slate-400 to-slate-500"
+        border_color = "border-slate-500/40"
+        tier_level = 1
+        min_score = 0
+        next_target = "Aim for 40+ Score & 500 XP to reach Emerging Talent"
+
+    return {
+        "tier_name": tier_name,
+        "tier_level": tier_level,
+        "badge": badge,
+        "color": color,
+        "border_color": border_color,
+        "level": level,
+        "total_xp": total_xp,
+        "overall_score": overall_score,
+        "min_score": min_score,
+        "next_target": next_target,
+        "level_info": lvl_info,
+    }
+
+
 def calculate_speed_bonus(elapsed_ms: int, time_limit_s: int) -> int:
     """
     Returns speed bonus XP (0–15) for legacy MCQ game types.

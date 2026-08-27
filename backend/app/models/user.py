@@ -6,7 +6,7 @@ from datetime import datetime, timezone
 class User(Document):
     email: EmailStr
     password_hash: Optional[str] = None          # None for Google-only accounts
-    role: Literal["STUDENT", "COMPANY"] = "STUDENT"
+    role: Literal["STUDENT", "COMPANY", "MENTOR", "INTERVIEWER", "ADMIN"] = "STUDENT"
     full_name: str
     avatar_url: Optional[str] = None
     is_verified: bool = False

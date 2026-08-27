@@ -326,6 +326,79 @@ export default function OverviewPage() {
         </div>
       )}
 
+      {/* ── Dynamic Career Readiness Tier & Student Level Banner (100% Real Database Data) ── */}
+      {(() => {
+        const overall = score?.overall_score ?? 0;
+        let tier = { title: "Level 1: Novice Explorer", badge: "🌱", border: "border-slate-500/30", text: "text-slate-300", target: "Reach 40% Score to achieve Emerging Talent tier." };
+        if (overall >= 90) tier = { title: "Level 5: Top 1% Elite Engineer", badge: "👑", border: "border-amber-400/30", text: "text-amber-300", target: "Max Tier Achieved · Top Placement Priority." };
+        else if (overall >= 75) tier = { title: "Level 4: Industry Ready Pro", badge: "💎", border: "border-emerald-400/30", text: "text-emerald-300", target: "Reach 90% Score to achieve Top 1% Elite tier." };
+        else if (overall >= 60) tier = { title: "Level 3: Skilled Practitioner", badge: "⚡", border: "border-sky-400/30", text: "text-sky-300", target: "Reach 75% Score to achieve Industry Ready tier." };
+        else if (overall >= 40) tier = { title: "Level 2: Emerging Talent", badge: "🚀", border: "border-violet-400/30", text: "text-violet-300", target: "Reach 60% Score to achieve Skilled Practitioner tier." };
+
+        const interviewDone = (score?.components?.interview_readiness ?? 0) > 0;
+        const resumeDone = (score?.components?.resume_quality ?? 0) > 0;
+        const practiceDone = (score?.components?.skill_tests ?? 0) > 0;
+        const streakDone = (streak?.current_streak ?? 0) > 0;
+
+        return (
+          <div className="relative rounded-2xl bg-gradient-to-r from-slate-900 via-indigo-950/40 to-slate-900 border border-indigo-500/20 p-5 sm:p-6 shadow-2xl overflow-hidden">
+            <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-6">
+              <div className="space-y-2">
+                <div className="flex items-center gap-2.5 flex-wrap">
+                  <span className={`px-3 py-1 rounded-full text-xs font-bold bg-indigo-500/20 ${tier.text} border ${tier.border} flex items-center gap-1.5`}>
+                    <span>{tier.badge}</span> {tier.title}
+                  </span>
+                  <span className="px-2.5 py-0.5 rounded-full text-[11px] font-semibold bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">
+                    Real-Time Index: {Math.round(overall)}%
+                  </span>
+                </div>
+                <h2 className="text-lg sm:text-xl font-bold text-white tracking-tight">
+                  FAANG Career Readiness & Placement Velocity
+                </h2>
+                <p className="text-xs sm:text-sm text-slate-300 max-w-2xl leading-relaxed">
+                  {tier.target} Complete real mock simulations, verify your resume, and book mentor audits to elevate your index.
+                </p>
+              </div>
+
+              <div className="flex items-center gap-3 shrink-0 flex-wrap sm:flex-nowrap">
+                <Link
+                  href="/student/mock-interview"
+                  className="px-4 py-2.5 rounded-xl bg-gradient-to-r from-violet-600 to-indigo-600 hover:from-violet-500 hover:to-indigo-500 text-white text-xs sm:text-sm font-bold shadow-lg shadow-indigo-500/20 flex items-center gap-2 transition"
+                >
+                  <Mic className="w-4 h-4" /> Launch Mock Interview
+                </Link>
+                <Link
+                  href="/student/mock-interview"
+                  className="px-4 py-2.5 rounded-xl bg-slate-800/80 hover:bg-slate-700 text-slate-200 text-xs sm:text-sm font-semibold border border-slate-700 transition flex items-center gap-2"
+                >
+                  <UserCircle className="w-4 h-4 text-indigo-400" /> Book 1-on-1 Mentor
+                </Link>
+              </div>
+            </div>
+
+            {/* Real Database Milestones */}
+            <div className="mt-5 pt-4 border-t border-slate-800/80 grid grid-cols-2 sm:grid-cols-4 gap-3 text-xs">
+              <div className={`flex items-center gap-2 font-medium ${interviewDone ? "text-emerald-400" : "text-slate-500"}`}>
+                {interviewDone ? <CheckCircle2 className="w-4 h-4 shrink-0" /> : <Circle className="w-4 h-4 shrink-0" />}
+                <span className={interviewDone ? "text-slate-300" : "text-slate-500"}>Mock Interview Solved</span>
+              </div>
+              <div className={`flex items-center gap-2 font-medium ${resumeDone ? "text-emerald-400" : "text-slate-500"}`}>
+                {resumeDone ? <CheckCircle2 className="w-4 h-4 shrink-0" /> : <Circle className="w-4 h-4 shrink-0" />}
+                <span className={resumeDone ? "text-slate-300" : "text-slate-500"}>Resume NLP Parsed</span>
+              </div>
+              <div className={`flex items-center gap-2 font-medium ${practiceDone ? "text-emerald-400" : "text-slate-500"}`}>
+                {practiceDone ? <CheckCircle2 className="w-4 h-4 shrink-0" /> : <Circle className="w-4 h-4 shrink-0" />}
+                <span className={practiceDone ? "text-slate-300" : "text-slate-500"}>Skill Tests & Arena Solves</span>
+              </div>
+              <div className={`flex items-center gap-2 font-medium ${streakDone ? "text-emerald-400" : "text-slate-500"}`}>
+                {streakDone ? <CheckCircle2 className="w-4 h-4 shrink-0" /> : <Circle className="w-4 h-4 shrink-0" />}
+                <span className={streakDone ? "text-slate-300" : "text-slate-500"}>Active Streak Active</span>
+              </div>
+            </div>
+          </div>
+        );
+      })()}
+
       {/* ── Top Metric Cards Grid (100% Real-Time Backend Data) ──────────── */}
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
         
