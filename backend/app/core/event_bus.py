@@ -346,12 +346,26 @@ async def _handle_interview_completed(payload: Dict[str, Any]) -> None:
     score_doc = await EmployabilityScore.get_or_create(student_id)
     new_readiness = min(100.0, max(score_doc.components.interview_readiness, float(overall_score)))
     score_doc.components.interview_readiness = new_readiness
+    # Also boost skill_tests and activity consistency
+    score_doc.components.activity_consistency = min(100.0, score_doc.components.activity_consistency + 5.0)
     new_overall = score_doc.compute_overall()
     score_doc.overall_score = new_overall
     score_doc.last_updated = datetime.now(timezone.utc)
     score_doc.history.append(ScoreHistory(score=new_overall))
     score_doc.history = score_doc.history[-7:]
     await score_doc.save()
+
+    # Award +150 XP in ArenaUserStats
+    try:
+        from app.models.arena import ArenaUserStats, get_career_tier
+        arena_stats = await ArenaUserStats.get_or_create(student_id)
+        arena_stats.total_xp += 150
+        arena_stats.weekly_xp += 150
+        await arena_stats.save()
+        career_tier = get_career_tier(new_overall, arena_stats.total_xp)
+    except Exception as e:
+        logger.warning(f"Could not award interview XP: {e}")
+        career_tier = None
 
     await ws_manager.broadcast(
         student_id,
@@ -360,11 +374,12 @@ async def _handle_interview_completed(payload: Dict[str, Any]) -> None:
             "overall_score": new_overall,
             "components": score_doc.components.model_dump(),
             "last_updated": score_doc.last_updated.isoformat(),
+            "career_tier": career_tier,
         },
     )
 
     score_display = f"{overall_score:.0f}" if overall_score else "N/A"
-    mode_label = "AI Practice" if mode == "ai" else "Company"
+    mode_label = "1-to-1 Mentor" if mode == "mentor" else ("AI Practice" if mode == "ai" else "Company")
 
     try:
         from app.models.activity_log import ActivityLog
@@ -372,14 +387,14 @@ async def _handle_interview_completed(payload: Dict[str, Any]) -> None:
             student_id=student_id,
             type="interview",
             title=f"Completed {mode_label} Mock Interview",
-            detail=f"{company_name} · Score: {score_display}/100",
+            detail=f"{company_name} · Score: {score_display}/100 (+150 XP)",
         ).insert()
     except Exception as e:
         logger.warning(f"Could not log interview activity: {e}")
 
     await send_notification(
         student_id=student_id,
-        title=f"Mock Interview Result: {score_display}/100",
+        title=f"Mock Interview Result: {score_display}/100 (+150 XP)",
         body=f"Your {mode_label} interview with {company_name} scored {score_display}/100. {feedback[:120]}",
         action_url="/student/mock-interview",
         notification_type="interview_result",

@@ -49,11 +49,11 @@ export default function SkillDipzIntro() {
     const authState = useAuthStore.getState();
     const companyAuthState = useCompanyAuthStore.getState();
 
-    let targetRole: "STUDENT" | "COMPANY" | null = null;
+    let targetRole: "STUDENT" | "MENTOR" | "INTERVIEWER" | "ADMIN" | "COMPANY" | null = null;
     let companyStatus: string | null = null;
 
     if (authState.user && authState.accessToken) {
-      targetRole = authState.user.role;
+      targetRole = authState.user.role as any;
     } else if (companyAuthState.company) {
       targetRole = "COMPANY";
       companyStatus = companyAuthState.company.approval_status;
@@ -92,6 +92,9 @@ export default function SkillDipzIntro() {
     if (targetRole === "STUDENT") {
       setRoleCookie("STUDENT");
       router.push(getRedirectPath("STUDENT")); // -> /student/overview
+    } else if (targetRole === "MENTOR" || targetRole === "INTERVIEWER") {
+      setRoleCookie(targetRole);
+      router.push("/mentor/dashboard");
     } else if (targetRole === "COMPANY") {
       setCompanyRoleCookie("COMPANY");
       if (companyStatus === "pending") {

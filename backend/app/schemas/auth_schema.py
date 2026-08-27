@@ -8,7 +8,7 @@ class RegisterRequest(BaseModel):
     email: EmailStr
     password: str
     full_name: str
-    role: Literal["STUDENT", "COMPANY"] = "STUDENT"
+    role: Literal["STUDENT", "COMPANY", "MENTOR", "INTERVIEWER", "ADMIN"] = "STUDENT"
     # Student
     college: Optional[str] = None
     phone: Optional[str] = None
@@ -16,14 +16,24 @@ class RegisterRequest(BaseModel):
     company_name: Optional[str] = None
     industry: Optional[str] = None
 
+class MentorRegisterRequest(BaseModel):
+    full_name: str
+    email: EmailStr
+    password: str
+    confirm_password: str
+
+class MentorLoginRequest(BaseModel):
+    email: EmailStr
+    password: str
+
 class LoginRequest(BaseModel):
     email: EmailStr
     password: str
-    role: Optional[Literal["STUDENT", "COMPANY"]] = None  # Optional filter
+    role: Optional[Literal["STUDENT", "COMPANY", "MENTOR", "INTERVIEWER", "ADMIN"]] = None  # Optional filter
 
 class GoogleLoginRequest(BaseModel):
     id_token: str   # Google access token or id_token
-    role: Optional[Literal["STUDENT", "COMPANY"]] = "STUDENT"
+    role: Optional[Literal["STUDENT", "COMPANY", "MENTOR", "INTERVIEWER", "ADMIN"]] = "STUDENT"
 
 class RefreshRequest(BaseModel):
     refresh_token: str

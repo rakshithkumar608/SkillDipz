@@ -1,17 +1,17 @@
-import { AuthUser, useAuthStore } from "@/store/authStore";
+import { AuthUser, UserRole, useAuthStore } from "@/store/authStore";
 import api from "./api";
 
 export interface LoginPayload {
   email: string;
   password: string;
-  role: "STUDENT" | "COMPANY";
+  role?: UserRole;
 }
 
 export interface RegisterPayload {
   email: string;
   password: string;
   full_name: string;
-  role: "STUDENT" | "COMPANY";
+  role: UserRole;
   college?: string;
   company_name?: string;
   industry?: string;
@@ -100,5 +100,6 @@ export async function logout(): Promise<void> {
 export function getRedirectPath(role: string): string {
   if (role === "STUDENT") return "/student/overview";
   if (role === "COMPANY") return "/company/dashboard";
+  if (role === "MENTOR" || role === "INTERVIEWER") return "/mentor/dashboard";
   return "/";
 }

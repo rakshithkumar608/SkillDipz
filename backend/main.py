@@ -34,6 +34,7 @@ from app.api.routes.interviews import (
     ai_router as ai_interview_router,
     company_router as company_interview_router,
 )
+from app.api.routes.mentorship import router as mentorship_router
 
 from app.api.routes.leaderboard import router as leaderboard_router
 
@@ -48,6 +49,7 @@ UPLOAD_DIR = settings.UPLOAD_DIR
 (UPLOAD_DIR / "photos").mkdir(parents=True, exist_ok=True)
 (UPLOAD_DIR / "resumes").mkdir(parents=True, exist_ok=True)
 (UPLOAD_DIR / "project_specs").mkdir(parents=True, exist_ok=True)
+(UPLOAD_DIR / "recordings").mkdir(parents=True, exist_ok=True)
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
@@ -55,6 +57,7 @@ async def lifespan(app: FastAPI):
     (UPLOAD_DIR / "photos").mkdir(parents=True, exist_ok=True)
     (UPLOAD_DIR / "resumes").mkdir(parents=True, exist_ok=True)
     (UPLOAD_DIR / "project_specs").mkdir(parents=True, exist_ok=True)
+    (UPLOAD_DIR / "recordings").mkdir(parents=True, exist_ok=True)
     await connect_db()
     await connect_redis()
     register_target_company_handlers()
@@ -120,6 +123,8 @@ app.include_router(daily_assignments_stats_router, prefix="/v1")
 app.include_router(interviews_router, prefix="/v1")
 app.include_router(ai_interview_router, prefix="/v1")
 app.include_router(company_interview_router, prefix="/v1")
+# 1-to-1 Mentorship
+app.include_router(mentorship_router, prefix="/v1")
 # Leaderboard
 app.include_router(leaderboard_router, prefix="/v1")
 # Game Arena
