@@ -64,6 +64,7 @@ export default function MentorDashboardPage() {
 
   // Navigation tab
   const [activeTab, setActiveTab] = useState<"profile" | "availability" | "sessions">("profile");
+  const [sessionSubFilter, setSessionSubFilter] = useState<"all" | "upcoming" | "pending" | "completed" | "students">("upcoming");
 
   // Profile Form State (Starts completely blank — mentor adds all data themselves)
   const [profileForm, setProfileForm] = useState({
@@ -1109,66 +1110,148 @@ export default function MentorDashboardPage() {
         {/* TAB 3: BOOKED SESSIONS */}
         {activeTab === "sessions" && (
           <div className="space-y-6 max-w-5xl">
-            {bookings.length === 0 ? (
-              <div className="p-12 rounded-3xl bg-slate-900/40 border border-slate-800 text-center space-y-3">
-                <div className="w-12 h-12 rounded-2xl bg-indigo-500/10 border border-indigo-500/20 flex items-center justify-center mx-auto text-indigo-400">
-                  <Video className="w-6 h-6" />
-                </div>
-                <p className="text-sm font-bold text-white">No student sessions booked yet</p>
-                <p className="text-xs text-slate-400 max-w-md mx-auto leading-relaxed">
-                  As soon as students book your published availability slots, their mock rounds will appear here with instant room access.
+            {/* Header & Sub-filters */}
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 p-4 rounded-2xl bg-slate-900/60 border border-slate-800">
+              <div>
+                <h3 className="text-base font-bold text-white flex items-center gap-2">
+                  <Calendar className="w-4 h-4 text-indigo-400" />
+                  Mentoring Sessions & Candidate Evaluations
+                </h3>
+                <p className="text-xs text-slate-400">
+                  Real bookings scheduled by authenticated candidates.
                 </p>
               </div>
-            ) : (
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                {bookings.map((b) => (
-                  <div
-                    key={b.booking_id}
-                    className="p-6 rounded-3xl bg-slate-900/70 border border-slate-800/80 backdrop-blur-xl space-y-4 hover:border-indigo-500/30 transition shadow-xl"
+
+              {/* Sub-filter tabs */}
+              <div className="flex items-center gap-1.5 overflow-x-auto pb-1 sm:pb-0">
+                {[
+                  { id: "upcoming", label: "Upcoming", count: bookings.filter(b => b.status === "confirmed" || b.status === "in_progress").length },
+                  { id: "pending", label: "Pending Requests", count: bookings.filter(b => b.status === "pending").length },
+                  { id: "completed", label: "Completed", count: bookings.filter(b => b.status === "completed").length },
+                  { id: "students", label: "Students", count: Array.from(new Set(bookings.map(b => b.student_id))).length },
+                  { id: "all", label: "All Sessions", count: bookings.length },
+                ].map((tab) => (
+                  <button
+                    key={tab.id}
+                    onClick={() => setSessionSubFilter(tab.id as any)}
+                    className={`px-3 py-1.5 rounded-xl text-xs font-semibold shrink-0 transition flex items-center gap-1.5 ${
+                      sessionSubFilter === tab.id
+                        ? "bg-indigo-600 text-white shadow-md shadow-indigo-500/20"
+                        : "bg-slate-950 text-slate-400 hover:text-white border border-slate-800"
+                    }`}
                   >
-                    <div className="flex items-start justify-between">
-                      <div>
-                        <span className="px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-indigo-500/20 text-indigo-300 border border-indigo-500/30 uppercase">
-                          {b.status}
-                        </span>
-                        <h3 className="text-base font-bold text-white mt-1.5">{b.student_name}</h3>
-                        <p className="text-xs text-slate-400">{b.student_email}</p>
-                      </div>
-                      {b.overall_score && (
-                        <div className="text-right">
-                          <span className="text-[10px] text-slate-500 block uppercase font-bold">Graded Score</span>
-                          <span className="text-xl font-black text-emerald-400">{b.overall_score}%</span>
-                        </div>
-                      )}
-                    </div>
-
-                    <div className="p-3.5 rounded-2xl bg-slate-950/80 border border-slate-800 text-xs space-y-1.5">
-                      <p className="text-indigo-300 font-bold">{b.topic}</p>
-                      <p className="text-slate-400">Target Role: <strong className="text-slate-200">{b.target_role || "Software Engineer"}</strong></p>
-                      <p className="text-slate-400 flex items-center gap-1.5">
-                        <Clock className="w-3.5 h-3.5 text-indigo-400" />
-                        {new Date(b.scheduled_at).toLocaleString()} ({b.duration_mins} mins)
-                      </p>
-                    </div>
-
-                    <div className="flex items-center gap-2 pt-2 border-t border-slate-800/80">
-                      <button
-                        onClick={() => setSelectedBooking(b)}
-                        className="px-4 py-2 rounded-xl bg-gradient-to-r from-indigo-600 to-violet-600 hover:from-indigo-500 hover:to-violet-500 text-white font-bold text-xs flex items-center gap-1.5 shadow-md shadow-indigo-500/20 transition"
-                      >
-                        <Award className="w-3.5 h-3.5" /> Grade & Rubric
-                      </button>
-                      {b.meeting_url && (
-                        <a
-                          href={b.meeting_url}
-                          className="px-4 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-200 font-semibold text-xs flex items-center gap-1.5 transition"
-                        >
-                          <Video className="w-3.5 h-3.5 text-indigo-400" /> Join Room
-                        </a>
-                      )}
-                    </div>
-                  </div>
+                    <span>{tab.label}</span>
+                    <span className="text-[10px] px-1.5 py-0.2 rounded-full bg-black/30 font-bold">
+                      {tab.count}
+                    </span>
+                  </button>
                 ))}
+              </div>
+            </div>
+
+            {bookings.length === 0 ? (
+              <div className="p-16 rounded-3xl bg-slate-900/40 border border-slate-800 text-center space-y-3 shadow-xl">
+                <div className="w-14 h-14 rounded-2xl bg-indigo-500/10 border border-indigo-500/20 flex items-center justify-center mx-auto text-indigo-400">
+                  <Users className="w-7 h-7" />
+                </div>
+                <h3 className="text-base font-bold text-white">You don&apos;t have any mentoring sessions yet.</h3>
+                <p className="text-xs text-slate-400 max-w-md mx-auto leading-relaxed">
+                  As soon as candidates book one of your available calendar slots, their session details, target company goals, and meeting room links will appear here.
+                </p>
+              </div>
+            ) : sessionSubFilter === "students" ? (
+              /* Unique Students View */
+              <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-4">
+                {Array.from(new Set(bookings.map((b) => b.student_id))).map((stId) => {
+                  const studentBookings = bookings.filter((b) => b.student_id === stId);
+                  const firstB = studentBookings[0];
+                  return (
+                    <div
+                      key={stId}
+                      className="p-5 rounded-3xl bg-slate-900/70 border border-slate-800 backdrop-blur-xl space-y-3 shadow-xl"
+                    >
+                      <div className="flex items-center gap-3">
+                        <div className="w-11 h-11 rounded-2xl bg-gradient-to-br from-indigo-500 to-purple-600 flex items-center justify-center text-white font-bold text-sm shadow-md">
+                          {firstB.student_name ? firstB.student_name.charAt(0).toUpperCase() : "S"}
+                        </div>
+                        <div className="min-w-0">
+                          <h4 className="text-sm font-bold text-white truncate">{firstB.student_name}</h4>
+                          <p className="text-[11px] text-slate-400 truncate">{firstB.student_email}</p>
+                        </div>
+                      </div>
+
+                      <div className="pt-2 border-t border-slate-800/80 flex items-center justify-between text-xs text-slate-400">
+                        <span>Sessions Booked:</span>
+                        <strong className="text-white font-black">{studentBookings.length}</strong>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            ) : (
+              /* Bookings Cards List */
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                {bookings
+                  .filter((b) => {
+                    if (sessionSubFilter === "upcoming") return b.status === "confirmed" || b.status === "in_progress";
+                    if (sessionSubFilter === "pending") return b.status === "pending";
+                    if (sessionSubFilter === "completed") return b.status === "completed";
+                    return true;
+                  })
+                  .map((b) => (
+                    <div
+                      key={b.booking_id}
+                      className="p-6 rounded-3xl bg-slate-900/70 border border-slate-800/80 backdrop-blur-xl space-y-4 hover:border-indigo-500/30 transition shadow-xl"
+                    >
+                      <div className="flex items-start justify-between">
+                        <div>
+                          <span
+                            className={`px-2.5 py-0.5 rounded-full text-[10px] font-bold uppercase ${
+                              b.status === "completed"
+                                ? "bg-emerald-500/20 text-emerald-300 border border-emerald-500/30"
+                                : "bg-indigo-500/20 text-indigo-300 border border-indigo-500/30"
+                            }`}
+                          >
+                            {b.status}
+                          </span>
+                          <h3 className="text-base font-bold text-white mt-1.5">{b.student_name}</h3>
+                          <p className="text-xs text-slate-400">{b.student_email}</p>
+                        </div>
+                        {b.overall_score && (
+                          <div className="text-right">
+                            <span className="text-[10px] text-slate-500 block uppercase font-bold">Graded Score</span>
+                            <span className="text-xl font-black text-emerald-400">{b.overall_score}%</span>
+                          </div>
+                        )}
+                      </div>
+
+                      <div className="p-3.5 rounded-2xl bg-slate-950/80 border border-slate-800 text-xs space-y-1.5">
+                        <p className="text-indigo-300 font-bold">{b.topic}</p>
+                        <p className="text-slate-400">Target Role: <strong className="text-slate-200">{b.target_role || "Software Engineer"}</strong></p>
+                        <p className="text-slate-400 flex items-center gap-1.5">
+                          <Clock className="w-3.5 h-3.5 text-indigo-400" />
+                          {new Date(b.scheduled_at).toLocaleString()} ({b.duration_mins} mins)
+                        </p>
+                      </div>
+
+                      <div className="flex items-center gap-2 pt-2 border-t border-slate-800/80">
+                        <button
+                          onClick={() => setSelectedBooking(b)}
+                          className="px-4 py-2 rounded-xl bg-gradient-to-r from-indigo-600 to-violet-600 hover:from-indigo-500 hover:to-violet-500 text-white font-bold text-xs flex items-center gap-1.5 shadow-md shadow-indigo-500/20 transition"
+                        >
+                          <Award className="w-3.5 h-3.5" /> Grade & Rubric
+                        </button>
+                        {b.meeting_url && (
+                          <a
+                            href={b.meeting_url}
+                            className="px-4 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-200 font-semibold text-xs flex items-center gap-1.5 transition"
+                          >
+                            <Video className="w-3.5 h-3.5 text-indigo-400" /> Join Room
+                          </a>
+                        )}
+                      </div>
+                    </div>
+                  ))}
               </div>
             )}
           </div>

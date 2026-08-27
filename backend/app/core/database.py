@@ -193,12 +193,15 @@ async def connect_db():
 
     # Mentorship System Indexes
     await MentorProfile.get_motor_collection().create_index("mentor_id", unique=True)
-    await MentorProfile.get_motor_collection().create_index([("is_active", 1), ("rating", -1)])
+    await MentorProfile.get_motor_collection().create_index("user_id", unique=True, sparse=True)
+    await MentorProfile.get_motor_collection().create_index([("profile_status", 1), ("rating", -1)])
     await MentorSlot.get_motor_collection().create_index("slot_id", unique=True)
     await MentorSlot.get_motor_collection().create_index([("mentor_id", 1), ("is_booked", 1), ("start_time", 1)])
+    await MentorSlot.get_motor_collection().create_index([("mentor_id", 1), ("start_time", 1)])
     await MentorshipBooking.get_motor_collection().create_index("booking_id", unique=True)
     await MentorshipBooking.get_motor_collection().create_index([("student_id", 1), ("status", 1), ("scheduled_at", -1)])
     await MentorshipBooking.get_motor_collection().create_index([("mentor_id", 1), ("status", 1), ("scheduled_at", -1)])
+    await MentorshipBooking.get_motor_collection().create_index([("student_id", 1), ("scheduled_at", 1)])
 
     # Arena — Game Arena indexes
     await ArenaQuestion.get_motor_collection().create_index([("game_type", 1), ("is_active", 1)])

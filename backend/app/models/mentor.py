@@ -76,9 +76,10 @@ class MentorshipBooking(Document):
     
     scheduled_at: datetime
     duration_mins: int = 45
+    duration: int = 45                                 # In minutes
     meeting_url: Optional[str] = None
     
-    status: Literal["confirmed", "in_progress", "completed", "cancelled"] = "confirmed"
+    status: Literal["confirmed", "in_progress", "completed", "cancelled", "pending"] = "confirmed"
     
     # Post-Session Feedback & Recording
     overall_score: Optional[float] = None
@@ -90,6 +91,7 @@ class MentorshipBooking(Document):
     recording_file_path: Optional[str] = None
     
     created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+    updated_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
     completed_at: Optional[datetime] = None
 
     class Settings:
