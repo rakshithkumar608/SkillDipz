@@ -441,6 +441,7 @@ export default function MockInterviewPage() {
                   key={session.session_id}
                   session={session}
                   onJoin={() => handleJoinCompanyInterview(session)}
+                  onViewResult={() => handleViewSessionReport(session)}
                   onViewFeedback={() => handleViewSessionReport(session)}
                 />
               ))}

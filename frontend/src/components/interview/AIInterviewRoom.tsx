@@ -183,10 +183,12 @@ export default function AIInterviewRoom({
           let uploadedUrl = "";
           if (blob) {
             try {
-              const recRes = await uploadInterviewRecording(sessionId, blob);
+              const recRes = await uploadInterviewRecording(sessionId, blob, recordingDuration);
               uploadedUrl = recRes.recording_url;
+              toast.success("Interview session recording securely uploaded and saved.");
             } catch (recErr) {
               console.warn("Could not upload recording:", recErr);
+              toast.error("Failed to upload session recording to storage.");
             }
           }
 

@@ -405,6 +405,14 @@ export interface CompanyInterviewSession {
   status: string;
   overall_score?: number | null;
   feedback?: string | null;
+  rubric?: DetailedRubric | null;
+  recording_url?: string | null;
+  storage_key?: string | null;
+  mime_type?: string | null;
+  recording_duration_sec?: number | null;
+  recording_file_size?: number | null;
+  recorded_at?: string | null;
+  recording_status?: string | null;
   tab_switch_count: number;
   fullscreen_exit_count: number;
   created_at: string;
