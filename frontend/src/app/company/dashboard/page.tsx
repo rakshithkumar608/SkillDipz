@@ -21,6 +21,7 @@ import {
   Star,
   Users,
   Zap,
+  Film,
 } from "lucide-react";
 
 
@@ -249,6 +250,33 @@ export default function EmployerDashboardPage() {
               />
             </>
         }
+      </div>
+
+      {/* Recorded Videos Quick Access Card */}
+      <div className="p-4 sm:p-5 rounded-2xl sm:rounded-3xl bg-gradient-to-r from-purple-950/40 via-slate-900 to-indigo-950/40 border border-purple-500/20 backdrop-blur-xl flex flex-col sm:flex-row sm:items-center justify-between gap-4 shadow-xl">
+        <div className="flex items-center gap-3.5">
+          <div className="w-10 h-10 rounded-2xl bg-purple-500/10 border border-purple-500/20 flex items-center justify-center text-purple-400 shrink-0 shadow-md">
+            <Film className="w-5 h-5" />
+          </div>
+          <div>
+            <h3 className="text-xs sm:text-sm font-bold text-white flex items-center gap-1.5">
+              <span>Candidate Proctored Interview Recordings</span>
+              <span className="px-2 py-0.5 rounded-full text-[10px] font-extrabold bg-purple-500/20 text-purple-300 border border-purple-500/30">
+                Live Studio
+              </span>
+            </h3>
+            <p className="text-[11px] sm:text-xs text-slate-400 mt-0.5">
+              Review video/audio recordings, 5-factor competency rubrics, and proctoring metrics for all candidate rounds.
+            </p>
+          </div>
+        </div>
+        <button
+          onClick={() => router.push("/company/interviews")}
+          className="px-4 py-2 rounded-xl bg-purple-600 hover:bg-purple-500 text-white text-xs font-bold flex items-center gap-1.5 shadow-lg shadow-purple-500/25 transition shrink-0 self-start sm:self-auto"
+        >
+          <span>Open Interview Studio</span>
+          <ArrowRight className="w-3.5 h-3.5" />
+        </button>
       </div>
 
       {/* Talent Pool Section */}

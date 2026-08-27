@@ -485,7 +485,7 @@ async def complete_interview(
 async def upload_interview_recording(
     session_id: str,
     file: UploadFile = File(...),
-    duration_sec: Optional[int] = Form(None),
+    duration_sec: Optional[float] = Form(None),
     current_student: dict = Depends(get_current_student),
 ):
     student_id = current_student["student_id"]
@@ -497,23 +497,39 @@ async def upload_interview_recording(
     recordings_dir.mkdir(parents=True, exist_ok=True)
 
     timestamp = int(datetime.now(timezone.utc).timestamp())
-    filename = f"{session_id}_{timestamp}_{file.filename or 'interview_recording.webm'}"
-    file_path = recordings_dir / filename
+    clean_filename = file.filename.replace(" ", "_") if file.filename else "interview_recording.webm"
+    storage_key = f"rec_{session_id}_{timestamp}_{clean_filename}"
+    file_path = recordings_dir / storage_key
 
     content = await file.read()
+    file_size = len(content)
+    if file_size == 0:
+        raise HTTPException(status_code=400, detail="Empty recording file")
+
     file_path.write_bytes(content)
 
-    public_url = f"/v1/uploads/recordings/{filename}"
+    public_url = f"/v1/uploads/recordings/{storage_key}"
     session.recording_url = public_url
+    session.storage_key = storage_key
     session.recording_file_path = str(file_path)
-    if duration_sec:
-        session.recording_duration_sec = duration_sec
+    session.mime_type = file.content_type or "video/webm"
+    session.recording_duration_sec = duration_sec
+    session.recording_file_size = file_size
+    session.recorded_at = datetime.now(timezone.utc)
+    session.recording_status = "ready"
     await session.save()
 
     return {
-        "message": "Recording uploaded successfully",
+        "message": "Recording uploaded successfully and metadata persisted to database",
+        "session_id": session_id,
+        "student_id": student_id,
         "recording_url": public_url,
-        "duration_sec": session.recording_duration_sec,
+        "storage_key": storage_key,
+        "mime_type": session.mime_type,
+        "duration": duration_sec,
+        "file_size": file_size,
+        "recorded_at": session.recorded_at.isoformat(),
+        "status": session.recording_status,
     }
 
 

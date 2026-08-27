@@ -65,10 +65,15 @@ class InterviewSession(Document):
     tab_switch_count: int = 0
     fullscreen_exit_count: int = 0
 
-    # Video Recording Storage
+    # Real Video / Audio Recording Storage & Metadata
     recording_url: Optional[str] = None
+    storage_key: Optional[str] = None
     recording_file_path: Optional[str] = None
-    recording_duration_sec: Optional[int] = None
+    mime_type: Optional[str] = "video/webm"
+    recording_duration_sec: Optional[float] = None
+    recording_file_size: Optional[int] = None
+    recorded_at: Optional[datetime] = None
+    recording_status: Literal["none", "recording", "processing", "ready", "failed"] = "none"
 
     # AI Interview (Mode B)
     company_key: Optional[str] = None        # e.g. "razorpay"

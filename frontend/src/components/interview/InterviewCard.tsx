@@ -17,14 +17,16 @@ import {
 
 interface InterviewCardProps {
   session: InterviewSession;
-  onJoin: (session: InterviewSession) => void;
-  onViewResult: (session: InterviewSession) => void;
+  onJoin?: (session: InterviewSession) => void;
+  onViewResult?: (session: InterviewSession) => void;
+  onViewFeedback?: (session: InterviewSession) => void;
 }
 
 export default function InterviewCard({
   session,
   onJoin,
   onViewResult,
+  onViewFeedback,
 }: InterviewCardProps) {
   const isAI = session.mode === "ai";
   const isCompleted = session.status === "completed";
@@ -160,7 +162,10 @@ export default function InterviewCard({
       <div className="pt-2 border-t border-white/5 flex items-center justify-end">
         {isCompleted && (
           <button
-            onClick={() => onViewResult(session)}
+            onClick={() => {
+              if (onViewResult) onViewResult(session);
+              else if (onViewFeedback) onViewFeedback(session);
+            }}
             className="w-full sm:w-auto px-4 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-white font-medium text-xs flex items-center justify-center gap-2 border border-white/10 transition-all"
           >
             <FileText className="w-3.5 h-3.5 text-violet-400" /> View Feedback & Transcript
@@ -169,8 +174,8 @@ export default function InterviewCard({
 
         {!isAI && isJoinable && (
           <button
-            onClick={() => onJoin(session)}
-            className="w-full sm:w-auto px-4 py-2 rounded-xl bg-linear-to-r from-sky-500 to-blue-600 hover:from-sky-400 hover:to-blue-500 text-white font-bold text-xs flex items-center justify-center gap-2 shadow-lg shadow-sky-500/20 transition-all"
+            onClick={() => onJoin && onJoin(session)}
+            className="w-full sm:w-auto px-4 py-2 rounded-xl bg-gradient-to-r from-sky-500 to-blue-600 hover:from-sky-400 hover:to-blue-500 text-white font-bold text-xs flex items-center justify-center gap-2 shadow-lg shadow-sky-500/20 transition-all"
           >
             <Play className="w-3.5 h-3.5 fill-current" /> Join Interview Call
           </button>
