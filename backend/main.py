@@ -35,6 +35,7 @@ from app.api.routes.interviews import (
     company_router as company_interview_router,
 )
 from app.api.routes.mentorship import router as mentorship_router
+from app.api.routes.interviewer import router as interviewer_router, admin_interviewer_router
 
 from app.api.routes.leaderboard import router as leaderboard_router
 
@@ -125,6 +126,9 @@ app.include_router(ai_interview_router, prefix="/v1")
 app.include_router(company_interview_router, prefix="/v1")
 # 1-to-1 Mentorship
 app.include_router(mentorship_router, prefix="/v1")
+# Interviewer Portal & Admin Assignment
+app.include_router(interviewer_router, prefix="/v1")
+app.include_router(admin_interviewer_router, prefix="/v1")
 # Leaderboard
 app.include_router(leaderboard_router, prefix="/v1")
 # Game Arena

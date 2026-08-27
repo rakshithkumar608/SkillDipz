@@ -61,11 +61,9 @@ export default function AdminCompaniesDashboardPage() {
   // Filtered Companies
   const filteredCompanies = useMemo(() => {
     return companies.filter((c) => {
-      // Tab filter
       if (activeTab !== "all" && c.approval_status !== activeTab) {
         return false;
       }
-      // Search filter
       if (searchQuery.trim()) {
         const q = searchQuery.toLowerCase();
         const nameMatch = c.company_name?.toLowerCase().includes(q);
@@ -79,12 +77,13 @@ export default function AdminCompaniesDashboardPage() {
     });
   }, [companies, activeTab, searchQuery]);
 
-  // Counts
   const counts = useMemo(() => {
-    const pending = companies.filter((c) => c.approval_status === "pending").length;
-    const approved = companies.filter((c) => c.approval_status === "approved").length;
-    const rejected = companies.filter((c) => c.approval_status === "rejected").length;
-    return { pending, approved, rejected, total: companies.length };
+    return {
+      all: companies.length,
+      pending: companies.filter((c) => c.approval_status === "pending").length,
+      approved: companies.filter((c) => c.approval_status === "approved").length,
+      rejected: companies.filter((c) => c.approval_status === "rejected").length,
+    };
   }, [companies]);
 
   // Handle Approve
@@ -95,8 +94,7 @@ export default function AdminCompaniesDashboardPage() {
     setActionLoadingId(companyId);
     try {
       await approveCompany(companyId);
-      toast.success(`Approved ${company.company_name}! The company can now access the portal.`);
-      // Update local state instantly
+      toast.success(`Approved ${company.company_name} for recruitment access!`);
       setCompanies((prev) =>
         prev.map((c) =>
           (c.id === companyId || (c as { _id?: string })._id === companyId)
@@ -162,7 +160,7 @@ export default function AdminCompaniesDashboardPage() {
             Company Verification & Approval Queue
           </h1>
           <p className="text-xs sm:text-sm text-slate-400 mt-1">
-            Review corporate credentials, GSTIN/CIN records, and grant employer access to SkillDipz.
+            Review corporate credentials, GSTIN/CIN records, and grant employer recruitment access to SkillDipz.
           </p>
         </div>
 
@@ -234,10 +232,10 @@ export default function AdminCompaniesDashboardPage() {
             </div>
           </div>
           <p className="text-3xl font-black text-white mt-3">{counts.rejected}</p>
-          <p className="text-[11px] text-slate-400 mt-1">Declined applications</p>
+          <p className="text-[11px] text-slate-400 mt-1">Denied applications</p>
         </div>
 
-        {/* Total Card */}
+        {/* All Card */}
         <div
           onClick={() => setActiveTab("all")}
           className={`p-5 rounded-2xl border transition-all cursor-pointer ${
@@ -247,255 +245,133 @@ export default function AdminCompaniesDashboardPage() {
           }`}
         >
           <div className="flex items-center justify-between">
-            <span className="text-xs font-bold uppercase tracking-wider text-sky-400">Total Registered</span>
+            <span className="text-xs font-bold uppercase tracking-wider text-sky-400">Total Applicants</span>
             <div className="w-8 h-8 rounded-lg bg-sky-500/20 flex items-center justify-center text-sky-400">
-              <Building className="w-4 h-4" />
+              <Users className="w-4 h-4" />
             </div>
           </div>
-          <p className="text-3xl font-black text-white mt-3">{counts.total}</p>
-          <p className="text-[11px] text-slate-400 mt-1">All organizations</p>
+          <p className="text-3xl font-black text-white mt-3">{counts.all}</p>
+          <p className="text-[11px] text-slate-400 mt-1">Cumulative records</p>
         </div>
       </div>
 
       {/* Filter Tabs & Search Bar */}
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 bg-slate-900/60 p-3 rounded-2xl border border-white/5 backdrop-blur-md">
-        {/* Tabs */}
-        <div className="flex items-center gap-1 overflow-x-auto pb-1 sm:pb-0">
-          {[
-            { id: "pending", label: "Pending Approvals", count: counts.pending, color: "text-amber-400" },
-            { id: "approved", label: "Approved", count: counts.approved, color: "text-emerald-400" },
-            { id: "rejected", label: "Rejected", count: counts.rejected, color: "text-rose-400" },
-            { id: "all", label: "All Companies", count: counts.total, color: "text-slate-400" },
-          ].map((tab) => (
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 p-4 rounded-2xl bg-slate-900/70 border border-slate-800 shadow-xl backdrop-blur-xl">
+        <div className="flex items-center gap-1.5 p-1 bg-slate-950/80 rounded-xl border border-slate-800 w-fit">
+          {(["pending", "approved", "rejected", "all"] as const).map((tab) => (
             <button
-              key={tab.id}
-              onClick={() => setActiveTab(tab.id as typeof activeTab)}
-              className={`flex items-center gap-2 px-3.5 py-2 rounded-xl text-xs font-bold transition-all whitespace-nowrap cursor-pointer ${
-                activeTab === tab.id
-                  ? "bg-slate-800 text-white shadow-md border border-white/10"
-                  : "text-slate-400 hover:text-slate-200"
+              key={tab}
+              onClick={() => setActiveTab(tab)}
+              className={`px-3.5 py-1.5 rounded-lg text-xs font-bold capitalize transition ${
+                activeTab === tab
+                  ? "bg-emerald-600 text-white shadow-md shadow-emerald-500/20"
+                  : "text-slate-400 hover:text-white"
               }`}
             >
-              <span>{tab.label}</span>
-              <span
-                className={`text-[10px] px-1.5 py-0.5 rounded-full bg-slate-950/80 font-mono font-black ${
-                  activeTab === tab.id ? tab.color : "text-slate-400"
-                }`}
-              >
-                {tab.count}
-              </span>
+              {tab} ({counts[tab]})
             </button>
           ))}
         </div>
 
-        {/* Search */}
-        <div className="relative w-full sm:w-72">
-          <Search className="w-4 h-4 text-slate-500 absolute left-3.5 top-3" />
+        <div className="relative w-full sm:w-80">
+          <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-500" />
           <input
             type="text"
-            placeholder="Search company, email, GSTIN..."
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
-            className="w-full bg-slate-950/80 border border-white/10 rounded-xl pl-10 pr-4 py-2 text-xs text-white placeholder-slate-500 focus:outline-none focus:border-emerald-500/70 transition-colors"
+            placeholder="Search by company, contact, email, GSTIN..."
+            className="w-full pl-10 pr-4 py-2 rounded-xl bg-slate-950/80 border border-slate-800 text-white text-xs placeholder:text-slate-500 focus:outline-none focus:border-emerald-500 transition"
           />
         </div>
       </div>
 
-      {/* Companies List / Table */}
+      {/* Companies List */}
       {loading ? (
-        <div className="py-20 flex flex-col items-center justify-center gap-3 text-slate-400">
-          <RefreshCw className="w-8 h-8 animate-spin text-emerald-400" />
-          <p className="text-xs font-semibold">Loading organization approvals…</p>
+        <div className="py-20 flex flex-col items-center justify-center gap-3">
+          <RefreshCw className="w-8 h-8 text-emerald-400 animate-spin" />
+          <p className="text-xs text-slate-400">Loading company records from database...</p>
         </div>
       ) : filteredCompanies.length === 0 ? (
-        <div className="py-16 text-center bg-slate-900/40 rounded-2xl border border-white/5 space-y-3">
-          <div className="w-12 h-12 rounded-2xl bg-slate-800 flex items-center justify-center mx-auto text-slate-500">
-            <Building2 className="w-6 h-6" />
-          </div>
-          <h3 className="text-base font-bold text-slate-300">No organizations found</h3>
-          <p className="text-xs text-slate-500 max-w-sm mx-auto">
-            {searchQuery
-              ? `No companies matching "${searchQuery}" in ${activeTab} queue.`
-              : `No companies currently in the ${activeTab} queue.`}
-          </p>
+        <div className="p-16 rounded-3xl bg-slate-900/40 border border-slate-800 text-center space-y-3 max-w-xl mx-auto shadow-2xl">
+          <Building2 className="w-10 h-10 text-slate-600 mx-auto" />
+          <h3 className="text-base font-bold text-white">No companies found.</h3>
+          <p className="text-xs text-slate-400">There are no employer applications matching the selected criteria.</p>
         </div>
       ) : (
         <div className="grid grid-cols-1 gap-4">
-          {filteredCompanies.map((c) => {
-            const companyId = c.id || (c as { _id?: string })._id || "";
-            const isPending = c.approval_status === "pending";
-            const isApproved = c.approval_status === "approved";
-            const isRejected = c.approval_status === "rejected";
-            const isActionLoading = actionLoadingId === companyId;
+          {filteredCompanies.map((company) => {
+            const companyId = company.id || (company as { _id?: string })._id;
+            const isPending = company.approval_status === "pending";
+            const isApproved = company.approval_status === "approved";
+            const isRejected = company.approval_status === "rejected";
 
             return (
               <motion.div
                 key={companyId}
                 layout
-                initial={{ opacity: 0, y: 10 }}
-                animate={{ opacity: 1, y: 0 }}
-                className="bg-slate-900/80 backdrop-blur-xl border border-white/10 rounded-2xl p-5 sm:p-6 shadow-xl hover:border-white/20 transition-all space-y-4"
+                className="p-6 rounded-2xl bg-slate-900/80 border border-white/10 hover:border-emerald-500/30 transition shadow-xl backdrop-blur-xl flex flex-col md:flex-row md:items-center justify-between gap-6"
               >
-                {/* Card Top Row */}
-                <div className="flex flex-col sm:flex-row sm:items-start justify-between gap-3">
-                  <div className="flex items-start gap-3.5">
-                    <div className="w-12 h-12 rounded-xl bg-gradient-to-br from-slate-800 to-slate-900 border border-white/10 flex items-center justify-center text-emerald-400 font-black text-lg shrink-0">
-                      {c.company_name?.[0]?.toUpperCase() || "C"}
-                    </div>
-                    <div>
-                      <div className="flex items-center gap-2.5 flex-wrap">
-                        <h2 className="text-lg font-bold text-white tracking-tight">{c.company_name}</h2>
-                        {/* Status Badge */}
-                        {isPending && (
-                          <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full bg-amber-500/10 border border-amber-500/25 text-amber-400 text-[11px] font-bold">
-                            <Clock className="w-3 h-3 animate-pulse" />
-                            Pending Admin Review
-                          </span>
-                        )}
-                        {isApproved && (
-                          <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full bg-emerald-500/10 border border-emerald-500/25 text-emerald-400 text-[11px] font-bold">
-                            <CheckCircle2 className="w-3 h-3" />
-                            Approved & Verified
-                          </span>
-                        )}
-                        {isRejected && (
-                          <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full bg-rose-500/10 border border-rose-500/25 text-rose-400 text-[11px] font-bold">
-                            <XCircle className="w-3 h-3" />
-                            Rejected
-                          </span>
-                        )}
-                      </div>
-                      <p className="text-xs text-slate-400 mt-0.5 flex items-center gap-2">
-                        <span>{c.industry || "Technology & Services"}</span>
-                        <span>•</span>
-                        <span className="font-mono text-slate-500">
-                          Applied: {c.created_at ? new Date(c.created_at).toLocaleDateString() : "Recent"}
-                        </span>
-                      </p>
-                    </div>
+                <div className="space-y-2 min-w-0 flex-1">
+                  <div className="flex items-center gap-3">
+                    <h3 className="text-base font-bold text-white truncate">{company.company_name}</h3>
+                    <span
+                      className={`px-2.5 py-0.5 rounded-full text-[10px] font-extrabold uppercase tracking-wider border ${
+                        isApproved
+                          ? "bg-emerald-500/10 text-emerald-300 border-emerald-500/20"
+                          : isRejected
+                          ? "bg-rose-500/10 text-rose-300 border-rose-500/20"
+                          : "bg-amber-500/10 text-amber-300 border-amber-500/20 animate-pulse"
+                      }`}
+                    >
+                      {company.approval_status}
+                    </span>
                   </div>
 
-                  {/* Actions Header on Pending */}
-                  <div className="flex items-center gap-2 shrink-0">
-                    {isPending && (
-                      <>
-                        <button
-                          onClick={() => handleApprove(c)}
-                          disabled={isActionLoading}
-                          className="flex items-center gap-1.5 px-4 py-2 rounded-xl bg-gradient-to-r from-emerald-500 to-teal-600 hover:from-emerald-400 hover:to-teal-500 text-slate-950 font-black text-xs shadow-lg shadow-emerald-500/20 active:scale-95 transition-all cursor-pointer disabled:opacity-50"
-                        >
-                          <Check className="w-3.5 h-3.5" />
-                          <span>Approve Company</span>
-                        </button>
-                        <button
-                          onClick={() => openRejectModal(c)}
-                          disabled={isActionLoading}
-                          className="flex items-center gap-1.5 px-3 py-2 rounded-xl bg-rose-500/10 hover:bg-rose-500/20 text-rose-400 border border-rose-500/20 font-bold text-xs active:scale-95 transition-all cursor-pointer disabled:opacity-50"
-                        >
-                          <X className="w-3.5 h-3.5" />
-                          <span>Reject</span>
-                        </button>
-                      </>
-                    )}
-                    {isApproved && (
-                      <button
-                        onClick={() => openRejectModal(c)}
-                        disabled={isActionLoading}
-                        className="flex items-center gap-1 px-3 py-1.5 rounded-xl bg-slate-800 hover:bg-rose-950/40 text-slate-400 hover:text-rose-300 border border-white/10 hover:border-rose-500/30 text-xs font-semibold transition-all cursor-pointer"
-                      >
-                        <span>Revoke Access</span>
-                      </button>
-                    )}
-                    {isRejected && (
-                      <button
-                        onClick={() => handleApprove(c)}
-                        disabled={isActionLoading}
-                        className="flex items-center gap-1 px-3 py-1.5 rounded-xl bg-slate-800 hover:bg-emerald-950/40 text-slate-400 hover:text-emerald-300 border border-white/10 hover:border-emerald-500/30 text-xs font-semibold transition-all cursor-pointer"
-                      >
-                        <span>Re-Approve</span>
-                      </button>
+                  <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2 text-xs text-slate-400">
+                    <p className="flex items-center gap-1.5 truncate">
+                      <Mail className="w-3.5 h-3.5 text-slate-500" />
+                      <span>{company.email}</span>
+                    </p>
+                    <p className="flex items-center gap-1.5 truncate">
+                      <Briefcase className="w-3.5 h-3.5 text-slate-500" />
+                      <span>{company.industry || "Technology & Software"}</span>
+                    </p>
+                    {company.gstin_or_cin && (
+                      <p className="flex items-center gap-1.5 truncate">
+                        <FileText className="w-3.5 h-3.5 text-slate-500" />
+                        <span>GSTIN/CIN: {company.gstin_or_cin}</span>
+                      </p>
                     )}
                   </div>
                 </div>
 
-                {/* Details Grid */}
-                <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-3 bg-slate-950/60 p-4 rounded-xl border border-white/5 text-xs">
-                  {/* Contact Person */}
-                  <div>
-                    <span className="text-[10px] font-bold text-slate-500 uppercase tracking-wider block mb-1">
-                      Contact Person
+                {/* Actions */}
+                <div className="flex items-center gap-2 shrink-0">
+                  {isPending && (
+                    <>
+                      <button
+                        onClick={() => handleApprove(company)}
+                        disabled={actionLoadingId === companyId}
+                        className="px-4 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold flex items-center gap-1.5 shadow-lg shadow-emerald-600/20 transition disabled:opacity-50"
+                      >
+                        <Check className="w-3.5 h-3.5" />
+                        <span>Approve Access</span>
+                      </button>
+                      <button
+                        onClick={() => openRejectModal(company)}
+                        disabled={actionLoadingId === companyId}
+                        className="px-4 py-2 rounded-xl bg-rose-600/20 hover:bg-rose-600/30 text-rose-300 border border-rose-500/30 text-xs font-bold flex items-center gap-1.5 transition disabled:opacity-50"
+                      >
+                        <X className="w-3.5 h-3.5" />
+                        <span>Reject</span>
+                      </button>
+                    </>
+                  )}
+                  {isApproved && (
+                    <span className="text-xs text-emerald-400 font-semibold flex items-center gap-1">
+                      <CheckCircle2 className="w-4 h-4" /> Active Employer
                     </span>
-                    <p className="font-semibold text-slate-200 flex items-center gap-1.5">
-                      <User className="w-3.5 h-3.5 text-slate-400" />
-                      <span>{c.contact_name || "N/A"}</span>
-                    </p>
-                    <p className="text-[11px] text-slate-400 font-mono flex items-center gap-1 mt-0.5">
-                      <Mail className="w-3 h-3 text-slate-500" />
-                      <span>{c.email}</span>
-                    </p>
-                  </div>
-
-                  {/* GSTIN / CIN */}
-                  <div>
-                    <span className="text-[10px] font-bold text-slate-500 uppercase tracking-wider block mb-1">
-                      GSTIN / CIN Record
-                    </span>
-                    <p className="font-mono font-bold text-emerald-400 text-xs flex items-center gap-1">
-                      <FileText className="w-3.5 h-3.5 text-emerald-400" />
-                      <span>{c.gstin_or_cin || "Not Provided"}</span>
-                    </p>
-                    <span className="text-[10px] text-slate-500 block mt-0.5">
-                      {c.gstin_or_cin?.length === 15 ? "15-Digit GSTIN" : "21-Digit CIN"}
-                    </span>
-                  </div>
-
-                  {/* LinkedIn & Web */}
-                  <div>
-                    <span className="text-[10px] font-bold text-slate-500 uppercase tracking-wider block mb-1">
-                      Corporate Social & Web
-                    </span>
-                    <div className="space-y-1">
-                      {c.linkedin_company_url && (
-                        <a
-                          href={c.linkedin_company_url}
-                          target="_blank"
-                          rel="noopener noreferrer"
-                          className="inline-flex items-center gap-1 text-sky-400 hover:text-sky-300 font-medium truncate max-w-full"
-                        >
-                          <Globe className="w-3 h-3 shrink-0" />
-                          <span className="truncate">LinkedIn Page</span>
-                          <ExternalLink className="w-2.5 h-2.5 shrink-0" />
-                        </a>
-                      )}
-                      {c.company_website && (
-                        <a
-                          href={c.company_website}
-                          target="_blank"
-                          rel="noopener noreferrer"
-                          className="inline-flex items-center gap-1 text-slate-300 hover:text-white font-medium truncate max-w-full block"
-                        >
-                          <Globe className="w-3 h-3 shrink-0 text-slate-400" />
-                          <span className="truncate">{c.company_website.replace(/^https?:\/\//, "")}</span>
-                        </a>
-                      )}
-                    </div>
-                  </div>
-
-                  {/* Size & Review Metadata */}
-                  <div>
-                    <span className="text-[10px] font-bold text-slate-500 uppercase tracking-wider block mb-1">
-                      Company Size & Review
-                    </span>
-                    <p className="text-slate-300 flex items-center gap-1.5">
-                      <Users className="w-3.5 h-3.5 text-slate-400" />
-                      <span>{c.company_size || "11-50"} Employees</span>
-                    </p>
-                    {c.approval_note && (
-                      <p className="text-[11px] text-rose-400 mt-1 truncate" title={c.approval_note}>
-                        Note: {c.approval_note}
-                      </p>
-                    )}
-                  </div>
+                  )}
                 </div>
               </motion.div>
             );
@@ -522,7 +398,7 @@ export default function AdminCompaniesDashboardPage() {
                     Reject {selectedCompanyForReject.company_name}?
                   </h3>
                   <p className="text-xs text-slate-400">
-                    This will block employer access and revoke any active sessions.
+                    This will block employer access and revoke any active recruitment sessions.
                   </p>
                 </div>
               </div>
@@ -536,7 +412,7 @@ export default function AdminCompaniesDashboardPage() {
                   value={rejectReason}
                   onChange={(e) => setRejectReason(e.target.value)}
                   className="w-full bg-slate-950 border border-white/10 rounded-xl p-3 text-xs text-white placeholder-slate-500 focus:outline-none focus:border-rose-500"
-                  placeholder="e.g. Invalid GSTIN number or personal LinkedIn profile provided."
+                  placeholder="e.g. Invalid GSTIN number or non-corporate email provided."
                 />
               </div>
 

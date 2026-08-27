@@ -1478,6 +1478,40 @@ async def schedule_company_interview_endpoint(
     }
 
 
+class EvaluateCompanyInterviewBody(BaseModel):
+    overall_score: float = Field(..., ge=0, le=100)
+    feedback: str
+    rubric: Optional[DetailedRubric] = None
+
+
+@router.post("/interviews/{session_id}/evaluate")
+async def evaluate_company_interview_endpoint(
+    session_id: str,
+    body: EvaluateCompanyInterviewBody,
+    current_company: dict = Depends(get_current_company),
+):
+    session = await InterviewSession.find_one(InterviewSession.session_id == session_id)
+    if not session:
+        raise HTTPException(status_code=404, detail="Interview session not found")
+
+    session.overall_score = body.overall_score
+    session.feedback = body.feedback
+    if body.rubric:
+        session.rubric = body.rubric
+    session.reviewed_at = datetime.now(timezone.utc)
+    session.review_status = "reviewed"
+    session.status = "completed"
+    await session.save()
+
+    return {
+        "message": "Candidate interview evaluation saved successfully.",
+        "session_id": session_id,
+        "overall_score": session.overall_score,
+        "rubric": session.rubric.model_dump() if session.rubric else None,
+    }
+
+
+
 #  Admin router 
 
 admin_router = APIRouter(prefix="/admin/companies", tags=["Admin"])

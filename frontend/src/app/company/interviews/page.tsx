@@ -6,7 +6,9 @@ import { useAuthStore } from "@/store/authStore";
 import { useCompanyAuthStore } from "@/store/companyAuthStore";
 import {
   getCompanyInterviews,
+  evaluateCompanyInterview,
   type CompanyInterviewSession,
+  type DetailedRubric,
 } from "@/lib/interviewApi";
 import {
   Calendar,
@@ -29,6 +31,8 @@ import {
   Sparkles,
   X,
   FileVideo,
+  Sliders,
+  Check,
 } from "lucide-react";
 import Link from "next/link";
 import { motion, AnimatePresence } from "framer-motion";
@@ -86,9 +90,43 @@ export default function CompanyInterviewsPage() {
   >("all");
   const [searchQuery, setSearchQuery] = useState("");
 
-  // Video Recording Playback Modal State
+  // Video Recording Playback & Grading Modal State
   const [selectedVideoSession, setSelectedVideoSession] = useState<CompanyInterviewSession | null>(null);
   const [playbackRate, setPlaybackRate] = useState<number>(1);
+  const [showGrading, setShowGrading] = useState(false);
+  const [evalScore, setEvalScore] = useState<number>(85);
+  const [evalFeedback, setEvalFeedback] = useState("");
+  const [rubricScores, setRubricScores] = useState({
+    dsa: 85,
+    architecture: 80,
+    behavioral: 85,
+    codeQuality: 80,
+    communication: 85,
+  });
+  const [savingEvaluation, setSavingEvaluation] = useState(false);
+
+  const handleOpenVideoModal = (session: CompanyInterviewSession) => {
+    setSelectedVideoSession(session);
+    setEvalScore(session.overall_score || 85);
+    setEvalFeedback(session.feedback || "");
+    if (session.rubric) {
+      setRubricScores({
+        dsa: session.rubric.dsa_problem_solving ?? 85,
+        architecture: session.rubric.system_architecture ?? 80,
+        behavioral: session.rubric.behavioral_culture_fit ?? 85,
+        codeQuality: session.rubric.code_quality ?? 80,
+        communication: session.rubric.communication_clarity ?? 85,
+      });
+    } else {
+      setRubricScores({
+        dsa: 85,
+        architecture: 80,
+        behavioral: 85,
+        codeQuality: 80,
+        communication: 85,
+      });
+    }
+  };
 
   const loadInterviews = useCallback(async () => {
     setLoading(true);
@@ -401,7 +439,7 @@ export default function CompanyInterviewsPage() {
                     {hasRecording ? (
                       <button
                         type="button"
-                        onClick={() => setSelectedVideoSession(session)}
+                        onClick={() => handleOpenVideoModal(session)}
                         className="px-3.5 py-1.5 rounded-xl bg-gradient-to-r from-purple-600 to-indigo-600 hover:from-purple-500 hover:to-indigo-500 text-white text-xs font-bold flex items-center gap-1.5 shadow-md shadow-purple-500/20 transition"
                       >
                         <Play className="w-3.5 h-3.5 fill-current" />
@@ -520,65 +558,224 @@ export default function CompanyInterviewsPage() {
                   </div>
                 </div>
 
-                {/* Candidate Assessment & Rubric */}
-                {selectedVideoSession.rubric && (
-                  <div className="space-y-3 p-5 rounded-2xl bg-slate-900/60 border border-white/10">
+                {/* Candidate Assessment & Rubric / Grading Form */}
+                <div className="space-y-4 p-5 rounded-2xl bg-slate-900/60 border border-white/10">
+                  <div className="flex items-center justify-between">
                     <h3 className="text-xs font-bold text-slate-300 uppercase tracking-wider flex items-center gap-1.5">
                       <Award className="w-4 h-4 text-emerald-400" />
-                      5-Factor Competency Rubric Scores
+                      5-Factor Competency Rubric & Evaluation
                     </h3>
+                    <button
+                      type="button"
+                      onClick={() => setShowGrading(!showGrading)}
+                      className="px-3 py-1 rounded-lg bg-indigo-600/20 hover:bg-indigo-600/30 text-indigo-300 border border-indigo-500/30 text-xs font-bold flex items-center gap-1.5 transition"
+                    >
+                      <Sliders className="w-3 h-3" />
+                      <span>{showGrading ? "View Summary" : "Grade Candidate / Edit Rubric"}</span>
+                    </button>
+                  </div>
 
-                    <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
-                      {selectedVideoSession.rubric.dsa_problem_solving != null && (
+                  {showGrading ? (
+                    <form
+                      onSubmit={async (e) => {
+                        e.preventDefault();
+                        if (!selectedVideoSession) return;
+                        try {
+                          setSavingEvaluation(true);
+                          const computedRubric: DetailedRubric = {
+                            dsa_problem_solving: rubricScores.dsa,
+                            system_architecture: rubricScores.architecture,
+                            behavioral_culture_fit: rubricScores.behavioral,
+                            code_quality: rubricScores.codeQuality,
+                            communication_clarity: rubricScores.communication,
+                          };
+                          await evaluateCompanyInterview(selectedVideoSession.session_id, {
+                            overall_score: evalScore,
+                            feedback: evalFeedback,
+                            rubric: computedRubric,
+                          });
+                          toast.success("Candidate evaluation and rubric saved successfully!");
+                          setShowGrading(false);
+                          loadInterviews();
+                        } catch (err: any) {
+                          toast.error(err?.response?.data?.detail || "Failed to save evaluation.");
+                        } finally {
+                          setSavingEvaluation(false);
+                        }
+                      }}
+                      className="space-y-4 pt-2"
+                    >
+                      <div className="space-y-3">
+                        <div className="space-y-1">
+                          <div className="flex justify-between text-xs">
+                            <span className="font-semibold text-slate-300">1. DSA & Problem Solving</span>
+                            <span className="font-black text-sky-400">{rubricScores.dsa}%</span>
+                          </div>
+                          <input
+                            type="range"
+                            min={0}
+                            max={100}
+                            value={rubricScores.dsa}
+                            onChange={(e) => setRubricScores({ ...rubricScores, dsa: Number(e.target.value) })}
+                            className="w-full accent-sky-500 cursor-pointer"
+                          />
+                        </div>
+
+                        <div className="space-y-1">
+                          <div className="flex justify-between text-xs">
+                            <span className="font-semibold text-slate-300">2. System Architecture & Design</span>
+                            <span className="font-black text-purple-400">{rubricScores.architecture}%</span>
+                          </div>
+                          <input
+                            type="range"
+                            min={0}
+                            max={100}
+                            value={rubricScores.architecture}
+                            onChange={(e) => setRubricScores({ ...rubricScores, architecture: Number(e.target.value) })}
+                            className="w-full accent-purple-500 cursor-pointer"
+                          />
+                        </div>
+
+                        <div className="space-y-1">
+                          <div className="flex justify-between text-xs">
+                            <span className="font-semibold text-slate-300">3. Behavioral & Culture Fit</span>
+                            <span className="font-black text-emerald-400">{rubricScores.behavioral}%</span>
+                          </div>
+                          <input
+                            type="range"
+                            min={0}
+                            max={100}
+                            value={rubricScores.behavioral}
+                            onChange={(e) => setRubricScores({ ...rubricScores, behavioral: Number(e.target.value) })}
+                            className="w-full accent-emerald-500 cursor-pointer"
+                          />
+                        </div>
+
+                        <div className="space-y-1">
+                          <div className="flex justify-between text-xs">
+                            <span className="font-semibold text-slate-300">4. Code Quality & Standards</span>
+                            <span className="font-black text-amber-400">{rubricScores.codeQuality}%</span>
+                          </div>
+                          <input
+                            type="range"
+                            min={0}
+                            max={100}
+                            value={rubricScores.codeQuality}
+                            onChange={(e) => setRubricScores({ ...rubricScores, codeQuality: Number(e.target.value) })}
+                            className="w-full accent-amber-500 cursor-pointer"
+                          />
+                        </div>
+
+                        <div className="space-y-1">
+                          <div className="flex justify-between text-xs">
+                            <span className="font-semibold text-slate-300">5. Communication Clarity</span>
+                            <span className="font-black text-rose-400">{rubricScores.communication}%</span>
+                          </div>
+                          <input
+                            type="range"
+                            min={0}
+                            max={100}
+                            value={rubricScores.communication}
+                            onChange={(e) => setRubricScores({ ...rubricScores, communication: Number(e.target.value) })}
+                            className="w-full accent-rose-500 cursor-pointer"
+                          />
+                        </div>
+                      </div>
+
+                      <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                        <div>
+                          <label className="text-[11px] font-bold text-slate-400 uppercase block mb-1">
+                            Overall Score (%)
+                          </label>
+                          <input
+                            type="number"
+                            min={0}
+                            max={100}
+                            value={evalScore}
+                            onChange={(e) => setEvalScore(Number(e.target.value))}
+                            className="w-full px-3 py-2 rounded-xl bg-slate-950 border border-white/10 text-white font-bold text-xs"
+                          />
+                        </div>
+                        <div className="sm:col-span-2">
+                          <label className="text-[11px] font-bold text-slate-400 uppercase block mb-1">
+                            Evaluator Written Feedback
+                          </label>
+                          <input
+                            type="text"
+                            value={evalFeedback}
+                            onChange={(e) => setEvalFeedback(e.target.value)}
+                            placeholder="Enter notes on candidate performance..."
+                            className="w-full px-3 py-2 rounded-xl bg-slate-950 border border-white/10 text-white text-xs"
+                          />
+                        </div>
+                      </div>
+
+                      <div className="flex justify-end gap-2 pt-2 border-t border-white/5">
+                        <button
+                          type="button"
+                          onClick={() => setShowGrading(false)}
+                          className="px-3 py-1.5 rounded-lg bg-slate-800 text-slate-300 text-xs font-semibold"
+                        >
+                          Cancel
+                        </button>
+                        <button
+                          type="submit"
+                          disabled={savingEvaluation}
+                          className="px-4 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold flex items-center gap-1.5 shadow-md transition disabled:opacity-50"
+                        >
+                          {savingEvaluation ? (
+                            <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                          ) : (
+                            <Check className="w-3.5 h-3.5" />
+                          )}
+                          <span>Save Evaluation</span>
+                        </button>
+                      </div>
+                    </form>
+                  ) : (
+                    <>
+                      <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
                         <div className="p-3 rounded-xl bg-slate-950/80 border border-white/5">
                           <span className="text-[10px] text-slate-400 block font-semibold">DSA & Problem Solving</span>
                           <span className="text-base font-black text-sky-400">
-                            {Math.round(selectedVideoSession.rubric.dsa_problem_solving)}%
+                            {Math.round(selectedVideoSession.rubric?.dsa_problem_solving ?? rubricScores.dsa)}%
                           </span>
                         </div>
-                      )}
-                      {selectedVideoSession.rubric.system_architecture != null && (
                         <div className="p-3 rounded-xl bg-slate-950/80 border border-white/5">
                           <span className="text-[10px] text-slate-400 block font-semibold">System Architecture</span>
                           <span className="text-base font-black text-purple-400">
-                            {Math.round(selectedVideoSession.rubric.system_architecture)}%
+                            {Math.round(selectedVideoSession.rubric?.system_architecture ?? rubricScores.architecture)}%
                           </span>
                         </div>
-                      )}
-                      {selectedVideoSession.rubric.behavioral_culture_fit != null && (
                         <div className="p-3 rounded-xl bg-slate-950/80 border border-white/5">
                           <span className="text-[10px] text-slate-400 block font-semibold">Behavioral & Culture Fit</span>
                           <span className="text-base font-black text-emerald-400">
-                            {Math.round(selectedVideoSession.rubric.behavioral_culture_fit)}%
+                            {Math.round(selectedVideoSession.rubric?.behavioral_culture_fit ?? rubricScores.behavioral)}%
                           </span>
                         </div>
-                      )}
-                      {selectedVideoSession.rubric.code_quality != null && (
                         <div className="p-3 rounded-xl bg-slate-950/80 border border-white/5">
                           <span className="text-[10px] text-slate-400 block font-semibold">Code Quality</span>
                           <span className="text-base font-black text-amber-400">
-                            {Math.round(selectedVideoSession.rubric.code_quality)}%
+                            {Math.round(selectedVideoSession.rubric?.code_quality ?? rubricScores.codeQuality)}%
                           </span>
                         </div>
-                      )}
-                      {selectedVideoSession.rubric.communication_clarity != null && (
                         <div className="p-3 rounded-xl bg-slate-950/80 border border-white/5">
                           <span className="text-[10px] text-slate-400 block font-semibold">Communication Clarity</span>
                           <span className="text-base font-black text-rose-400">
-                            {Math.round(selectedVideoSession.rubric.communication_clarity)}%
+                            {Math.round(selectedVideoSession.rubric?.communication_clarity ?? rubricScores.communication)}%
                           </span>
                         </div>
-                      )}
-                    </div>
-
-                    {selectedVideoSession.feedback && (
-                      <div className="pt-3 border-t border-white/5">
-                        <span className="text-[10px] text-slate-400 block font-semibold uppercase">Evaluator Feedback</span>
-                        <p className="text-xs text-slate-300 mt-1 leading-relaxed">{selectedVideoSession.feedback}</p>
                       </div>
-                    )}
-                  </div>
-                )}
+
+                      {selectedVideoSession.feedback && (
+                        <div className="pt-3 border-t border-white/5">
+                          <span className="text-[10px] text-slate-400 block font-semibold uppercase">Evaluator Feedback</span>
+                          <p className="text-xs text-slate-300 mt-1 leading-relaxed">{selectedVideoSession.feedback}</p>
+                        </div>
+                      )}
+                    </>
+                  )}
+                </div>
               </div>
             </motion.div>
           </div>

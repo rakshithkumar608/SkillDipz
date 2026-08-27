@@ -73,10 +73,19 @@ export default function CompanyInterviewRoom({
     setInputText("");
   };
 
+  const [isEnding, setIsEnding] = useState(false);
+
   const handleEndInterview = async () => {
-    await completeInterview(sessionId);
-    streamRef.current?.getTracks().forEach((t) => t.stop());
-    onLeave();
+    if (isEnding) return;
+    setIsEnding(true);
+    try {
+      await completeInterview(sessionId);
+    } catch (err) {
+      console.warn("Complete interview notice:", err);
+    } finally {
+      streamRef.current?.getTracks().forEach((t) => t.stop());
+      onLeave();
+    }
   };
 
   return (

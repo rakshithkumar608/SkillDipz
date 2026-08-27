@@ -94,6 +94,17 @@ class InterviewSession(Document):
     joined_at: Optional[datetime] = None
     ended_at: Optional[datetime] = None
 
+    # Real Interviewer Assignment & Review
+    assigned_interviewer_id: Optional[str] = None
+    assigned_interviewer_name: Optional[str] = None
+    assigned_interviewer_email: Optional[str] = None
+    assigned_at: Optional[datetime] = None
+    review_status: Literal["unassigned", "assigned", "review_in_progress", "reviewed"] = "unassigned"
+    interviewer_feedback: Optional[str] = None
+    interviewer_rubric: Optional[DetailedRubric] = None
+    interviewer_score: Optional[float] = None
+    reviewed_at: Optional[datetime] = None
+
     # Results & Structured Rubric
     technical_score: Optional[float] = None
     communication_score: Optional[float] = None
