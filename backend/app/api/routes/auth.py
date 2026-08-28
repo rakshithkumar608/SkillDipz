@@ -9,12 +9,13 @@ from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 
 from app.schemas.auth_schema import (
     RegisterRequest, LoginRequest, GoogleLoginRequest,
-    MentorRegisterRequest, MentorLoginRequest,
     RefreshRequest, LogoutRequest, AuthResponse, UserOut,
-    MessageResponse, VerifyOTPRequest, ResendOTPRequest
+    MessageResponse, VerifyOTPRequest, ResendOTPRequest,
+    MentorRegisterRequest, MentorLoginRequest
 )
 from app.models.user import User
 from app.models.mentor import MentorProfile
+from app.models.consent import ConsentRecord
 from app.core.security import (
     hash_password, verify_password,
     create_access_token, create_refresh_token, decode_token
@@ -142,8 +143,49 @@ async def get_current_user(request: Request) -> User:
 
 # Registration Endpoint with Guest Migration
 
+async def _log_registration_consent(user: User, body: RegisterRequest, request: Request) -> None:
+    """Writes one ConsentRecord per purpose captured on the register form.
+    Best-effort: a Mongo write failure here must not block account creation,
+    so errors are logged, not raised."""
+    ip = request.client.host if request.client else None
+    ua = request.headers.get("user-agent")
+    try:
+        await ConsentRecord(
+            user_id=str(user.id),
+            purpose="account_essential",
+            granted=True,
+            source="register_form",
+            ip_address=ip,
+            user_agent=ua,
+        ).insert()
+        await ConsentRecord(
+            user_id=str(user.id),
+            purpose="profile_data_processing",
+            granted=body.consent_data_processing,
+            source="register_form",
+            ip_address=ip,
+            user_agent=ua,
+        ).insert()
+        await ConsentRecord(
+            user_id=str(user.id),
+            purpose="marketing_communications",
+            granted=body.consent_marketing,
+            source="register_form",
+            ip_address=ip,
+            user_agent=ua,
+        ).insert()
+    except Exception as e:
+        logger.warning(f"Failed to log registration consent for {user.email}: {e}")
+
+
 @router.post("/register", response_model=AuthResponse, status_code=201)
 async def register(body: RegisterRequest, request: Request, response: Response):
+    if not body.consent_data_processing:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="You must consent to data processing to create an account.",
+        )
+
     existing = await User.find_one(User.email == body.email)
 
     if existing:
@@ -163,6 +205,8 @@ async def register(body: RegisterRequest, request: Request, response: Response):
         existing.company_name = body.company_name
         existing.industry = body.industry
         await existing.save()
+
+        await _log_registration_consent(existing, body, request)
 
         otp = generate_otp()
         if await store_otp(body.email, otp):
@@ -192,6 +236,8 @@ async def register(body: RegisterRequest, request: Request, response: Response):
         is_verified=False,
     )
     await user.insert()
+
+    await _log_registration_consent(user, body, request)
 
     # Migrate guest data if visitor explored before registering
     guest_id = request.cookies.get("guest_session_id")

@@ -42,12 +42,13 @@ from app.models.assessment import (
 )
 
 from app.models.daily_assignment import DailyAssignment, CompanySponsoredChallenge
-
 from app.models.mentor import (
     MentorProfile,
     MentorSlot,
     MentorshipBooking,
 )
+from app.models.consent import ConsentRecord
+from app.models.data_rights_request import DataRightsRequest
 
 from app.models.arena import (
     ArenaQuestion,
@@ -105,6 +106,9 @@ async def connect_db():
             MentorProfile,
             MentorSlot,
             MentorshipBooking,
+            # DPDP Act compliance
+            ConsentRecord,
+            DataRightsRequest,
             # Arena — Game Arena
             ArenaQuestion,
             ArenaSession,

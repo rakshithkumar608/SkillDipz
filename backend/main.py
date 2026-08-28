@@ -42,6 +42,8 @@ from app.api.routes.leaderboard import router as leaderboard_router
 from app.api.routes.arena import router as arena_router
 from app.api.routes.arena_admin import router as arena_admin_router
 from app.api.routes.company_auth import router as company_auth_router
+from app.api.routes.consent import router as consent_router
+from app.api.routes.data_rights import router as data_rights_router
 
 from app.core.event_bus import register_target_company_handlers
 
@@ -136,6 +138,10 @@ app.include_router(arena_router, prefix="/v1")
 app.include_router(arena_admin_router, prefix="/v1")
 # Company Auth (session-based, separate from student JWT auth)
 app.include_router(company_auth_router, prefix="/v1")
+
+# DPDP Act compliance
+app.include_router(consent_router, prefix="/v1")
+app.include_router(data_rights_router, prefix="/v1")
 
 # Serve uploaded files (photos, resumes, project specs) as static
 app.mount("/v1/uploads", StaticFiles(directory=str(UPLOAD_DIR)), name="uploads_v1")
