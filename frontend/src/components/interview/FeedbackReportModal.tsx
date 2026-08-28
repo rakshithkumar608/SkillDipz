@@ -495,7 +495,7 @@ export default function FeedbackReportModal({
           ) : activeTab === "recording" && videoSrc ? (
             /* Tab 2: Recording Playback with Interactive Timestamps */
             <div className="space-y-6">
-              <div className="relative rounded-2xl overflow-hidden bg-black border border-slate-800 shadow-2xl aspect-video max-h-[420px] flex items-center justify-center">
+              <div className="relative rounded-2xl overflow-hidden bg-black border border-slate-800 shadow-2xl aspect-video max-h-105 flex items-center justify-center">
                 <video
                   ref={videoRef}
                   src={videoSrc}

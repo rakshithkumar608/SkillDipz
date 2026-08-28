@@ -400,7 +400,9 @@ export default function SkillDipzFooter() {
                 strokeWidth="2"
               />
             </svg>
-            <span className="font-semibold text-gray-800">Know Your Skills</span>
+            <span className="font-semibold text-gray-800">
+              Know Your Skills
+            </span>
           </div>
           <div className="hidden sm:block w-1.5 h-1.5 bg-gray-300 rounded-full" />
           <div className="flex items-center gap-2">
@@ -417,7 +419,9 @@ export default function SkillDipzFooter() {
                 strokeWidth="2"
               />
             </svg>
-            <span className="font-semibold text-gray-800">Follow Your Path</span>
+            <span className="font-semibold text-gray-800">
+              Follow Your Path
+            </span>
           </div>
           <div className="hidden sm:block w-1.5 h-1.5 bg-gray-300 rounded-full" />
           <div className="flex items-center gap-2">
@@ -437,35 +441,6 @@ export default function SkillDipzFooter() {
             <span className="font-semibold text-gray-800">
               Become Career-Ready
             </span>
-          </div>
-        </div>
-
-        {/* 5. Final Bottom Bar */}
-        <div className="flex flex-col sm:flex-row justify-between items-center gap-4 text-xs sm:text-sm text-gray-500 text-center sm:text-left">
-          <p>© 2026 SkillDipz EdTech. All rights reserved.</p>
-          <div className="flex flex-wrap justify-center items-center gap-4 sm:gap-6">
-            <Link href="#" className="hover:text-blue-600 transition-colors">
-              Privacy Policy
-            </Link>
-            <Link href="#" className="hover:text-blue-600 transition-colors">
-              Terms of Service
-            </Link>
-            <div className="flex items-center gap-1.5 cursor-pointer hover:text-blue-600 transition-colors">
-              <svg
-                className="w-4 h-4"
-                fill="none"
-                stroke="currentColor"
-                viewBox="0 0 24 24"
-              >
-                <path
-                  d="M21 12a9 9 0 01-9 9m9-9a9 9 0 00-9-9m9 9H3m9 9a9 9 0 01-9-9m9 9c1.657 0 3-4.03 3-9s-1.343-9-3-9m0 18c-1.657 0-3-4.03-3-9s1.343-9 3-9m-9 9a9 9 0 019-9"
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                  strokeWidth="2"
-                />
-              </svg>
-              <span>English</span>
-            </div>
           </div>
         </div>
       </div>
