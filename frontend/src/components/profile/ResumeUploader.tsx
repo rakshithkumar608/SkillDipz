@@ -1,4 +1,6 @@
 import { ProfileData, ResumeAnalysisResult, uploadResume } from "@/lib/profile";
+import api from "@/lib/api";
+import ConsentCheckbox, { PrivacyPolicyLink } from "@/components/common/ConsentCheckbox";
 import {
   Badge,
   CheckCircle2,
@@ -25,8 +27,15 @@ export function ResumeUploader({
     null,
   );
   const [dragOver, setDragOver] = useState(false);
+  // DPDP: resume parsing is a distinct purpose from account signup consent —
+  // unticked by default, required before we accept a file.
+  const [resumeConsent, setResumeConsent] = useState(false);
 
   const handleFile = async (file: File) => {
+    if (!resumeConsent) {
+      toast.error("Please agree to resume processing below before uploading.");
+      return;
+    }
     const allowed = [
       "application/pdf",
       "application/msword",
@@ -45,6 +54,13 @@ export function ResumeUploader({
       const result = await uploadResume(file);
       setLastResult(result);
       onUploaded(result);
+      // Best-effort consent log — must not block the upload if it fails.
+      api
+        .post("/consent", {
+          consents: [{ purpose: "resume_parsing", granted: true }],
+          source: "resume_uploader",
+        })
+        .catch(() => {});
       toast.success(
         `Resume analyzed! ${result.skills_extracted.length} skills extracted.`,
       );
@@ -57,6 +73,19 @@ export function ResumeUploader({
 
   return (
     <div className="space-y-4">
+      <ConsentCheckbox
+        id="consent-resume-parsing"
+        checked={resumeConsent}
+        onChange={setResumeConsent}
+        required
+        label={
+          <>
+            I consent to SkillDipz storing my resume and extracting skills
+            from it to build my profile, per the{" "}
+            <PrivacyPolicyLink />.
+          </>
+        }
+      />
       <div
         onDragOver={(e) => {
           e.preventDefault();
@@ -69,9 +98,10 @@ export function ResumeUploader({
           const f = e.dataTransfer.files[0];
           if (f) handleFile(f);
         }}
-        onClick={() => !uploading && inputRef.current?.click()}
+        onClick={() => !uploading && resumeConsent && inputRef.current?.click()}
         className={`relative border-2 border-dashed rounded-2xl p-7 text-center
-          cursor-pointer transition-all duration-200 group
+          transition-all duration-200 group
+          ${!resumeConsent ? "opacity-50 cursor-not-allowed" : "cursor-pointer"}
           ${
             dragOver
               ? "border-sky-400 bg-sky-500/10"
@@ -83,6 +113,7 @@ export function ResumeUploader({
           type="file"
           className="hidden sr-only"
           accept=".pdf,.doc,.docx"
+          disabled={!resumeConsent}
           onChange={(e) => {
             const f = e.target.files?.[0];
             if (f) handleFile(f);

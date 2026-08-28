@@ -3,6 +3,8 @@ import { Inter, Outfit } from "next/font/google";
 import "./globals.css";
 import Providers from "./providers";
 import { Toaster } from "sonner";
+import Footer from "@/components/common/Footer";
+import TrackerConsentBanner from "@/components/common/TrackerConsentBanner";
 
 const inter = Inter({
   subsets: ["latin"],
@@ -35,6 +37,8 @@ export default function RootLayout({
       <body suppressHydrationWarning className="font-sans antialiased bg-white selection:bg-emerald-500/30 selection:text-white">
         <Providers>
           {children}
+          <Footer />
+          <TrackerConsentBanner />
           <Toaster richColors position="top-right" />
         </Providers>
       </body>

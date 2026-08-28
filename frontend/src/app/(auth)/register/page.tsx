@@ -6,12 +6,13 @@ import { registerUser, loginWithGoogle, getRedirectPath } from "@/lib/auth";
 import { toast } from "sonner";
 import { useGoogleLogin } from "@react-oauth/google";
 import Image from "next/image";
-import { ArrowLeft, Building2, Eye, EyeOff, GraduationCap, Loader2, UserCheck } from "lucide-react";
+import { ArrowLeft, Building2, Eye, EyeOff, GraduationCap, Loader2 } from "lucide-react";
 import { FcGoogle } from "react-icons/fc";
 import Link from "next/link";
+import ConsentCheckbox, { PrivacyPolicyLink } from "@/components/common/ConsentCheckbox";
 
 
-type Tab = "STUDENT" | "MENTOR" | "COMPANY";
+type Tab = "STUDENT" | "COMPANY";
 
 export default function RegisterScreen() {
   const router = useRouter();
@@ -29,6 +30,9 @@ export default function RegisterScreen() {
   const [loading, setLoading] = useState(false);
   const [googleLoading, setGoogleLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  // DPDP consent — both start unticked; data-processing consent is mandatory
+  const [consentDataProcessing, setConsentDataProcessing] = useState(false);
+  const [consentMarketing, setConsentMarketing] = useState(false);
 
   const update = (field: string, value: string) =>
     setForm((f) => ({ ...f, [field]: value }));
@@ -36,6 +40,10 @@ export default function RegisterScreen() {
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setError(null);
+    if (!consentDataProcessing) {
+      setError("Please agree to the Privacy Notice to create an account.");
+      return;
+    }
     setLoading(true);
     try {
       const payload =
@@ -47,14 +55,8 @@ export default function RegisterScreen() {
               role: "STUDENT" as const,
               college: form.college,
               phone: form.phone,
-            }
-          : tab === "MENTOR"
-          ? {
-              email: form.email,
-              password: form.password,
-              full_name: form.full_name,
-              role: "MENTOR" as const,
-              company_name: form.company_name,
+              consent_data_processing: consentDataProcessing,
+              consent_marketing: consentMarketing,
             }
           : {
               email: form.email,
@@ -63,6 +65,8 @@ export default function RegisterScreen() {
               role: "COMPANY" as const,
               company_name: form.company_name,
               industry: form.industry,
+              consent_data_processing: consentDataProcessing,
+              consent_marketing: consentMarketing,
             };
       const data = await registerUser(payload);
       if (data.needs_verification) {
@@ -144,38 +148,23 @@ export default function RegisterScreen() {
                 setTab("STUDENT");
                 setError(null);
               }}
-              className={`flex flex-1 items-center justify-center gap-1.5 rounded-xl py-2.5 text-xs sm:text-sm font-semibold transition-all duration-300 ${
+              className={`flex flex-1 items-center justify-center gap-2 rounded-xl py-3 text-sm font-semibold transition-all duration-300 ${
                 tab === "STUDENT"
                   ? "bg-violet-600 text-white shadow-lg shadow-violet-600/30"
                   : "text-neutral-400 hover:text-white"
               }`}
             >
-              <GraduationCap size={16} />
+              <GraduationCap size={18} />
               <span>Student</span>
-            </button>
-
-            <button
-              onClick={() => {
-                setTab("MENTOR");
-                setError(null);
-              }}
-              className={`flex flex-1 items-center justify-center gap-1.5 rounded-xl py-2.5 text-xs sm:text-sm font-semibold transition-all duration-300 ${
-                tab === "MENTOR"
-                  ? "bg-violet-600 text-white shadow-lg shadow-violet-600/30"
-                  : "text-neutral-400 hover:text-white"
-              }`}
-            >
-              <UserCheck size={16} />
-              <span>Mentor</span>
             </button>
 
             <button
               onClick={() => {
                 router.push("/company/auth/signup");
               }}
-              className="flex flex-1 items-center justify-center gap-1.5 rounded-xl py-2.5 text-xs sm:text-sm font-semibold text-neutral-400 hover:text-white transition-all duration-300 cursor-pointer"
+              className="flex flex-1 items-center justify-center gap-2 rounded-xl py-3 text-sm font-semibold text-neutral-400 hover:text-white transition-all duration-300 cursor-pointer"
             >
-              <Building2 size={16} />
+              <Building2 size={18} />
               <span>Company</span>
             </button>
           </div>
@@ -273,19 +262,6 @@ export default function RegisterScreen() {
               </>
             )}
 
-            {/* Mentor-only fields */}
-            {tab === "MENTOR" && (
-              <input
-                id="register-mentor-company"
-                type="text"
-                required
-                value={form.company_name}
-                onChange={(e) => update("company_name", e.target.value)}
-                placeholder="Current Company (e.g. Google, Microsoft, Amazon)"
-                className="w-full bg-white/5 border border-white/10 rounded-xl px-4 py-3 text-sm text-white placeholder-neutral-500 focus:outline-none focus:border-violet-500 focus:ring-1 focus:ring-violet-500/50 transition-all"
-              />
-            )}
-
             {/* Company-only fields */}
             {tab === "COMPANY" && (
               <>
@@ -322,10 +298,33 @@ export default function RegisterScreen() {
               </div>
             )}
 
+            <div className="space-y-3 pt-1">
+              <ConsentCheckbox
+                id="consent-data-processing"
+                checked={consentDataProcessing}
+                onChange={setConsentDataProcessing}
+                required
+                label={
+                  <>
+                    I have read and agree to the{" "}
+                    <PrivacyPolicyLink />, and consent to SkillDipz processing
+                    my {tab === "STUDENT" ? "profile, resume and skill" : "company"}{" "}
+                    data to provide this service. (Required)
+                  </>
+                }
+              />
+              <ConsentCheckbox
+                id="consent-marketing"
+                checked={consentMarketing}
+                onChange={setConsentMarketing}
+                label="Send me product updates and career tips by email. (Optional)"
+              />
+            </div>
+
             <button
               id="register-submit"
               type="submit"
-              disabled={loading}
+              disabled={loading || !consentDataProcessing}
               className="w-full py-3 rounded-xl bg-violet-600 hover:bg-violet-500 font-semibold text-sm transition-all disabled:opacity-50 flex items-center justify-center gap-2 shadow-lg shadow-violet-500/20"
             >
               {loading ? <Loader2 className="w-4 h-4 animate-spin" /> : null}

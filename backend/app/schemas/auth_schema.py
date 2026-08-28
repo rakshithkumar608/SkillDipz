@@ -2,7 +2,7 @@ from pydantic import BaseModel, EmailStr
 from typing import Optional, Literal
 from datetime import datetime
 
-# ── Requests ──────────────────────────────────────────────────
+
 
 class RegisterRequest(BaseModel):
     email: EmailStr
@@ -15,6 +15,12 @@ class RegisterRequest(BaseModel):
     # Company
     company_name: Optional[str] = None
     industry: Optional[str] = None
+    # DPDP Act consent — checkboxes are unticked by default on the frontend,
+    # so these must arrive explicitly. consent_data_processing is mandatory
+    # (it covers the processing needed to run the account/service itself);
+    # consent_marketing is optional.
+    consent_data_processing: bool = False
+    consent_marketing: bool = False
 
 class MentorRegisterRequest(BaseModel):
     full_name: str

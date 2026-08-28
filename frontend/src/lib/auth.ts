@@ -15,6 +15,8 @@ export interface RegisterPayload {
   college?: string;
   company_name?: string;
   industry?: string;
+  consent_data_processing: boolean;
+  consent_marketing?: boolean;
 }
 
 export interface AuthResponse {
@@ -58,7 +60,7 @@ export async function loginWithGoogle(
 ): Promise<AuthResponse> {
   const { data } = await api.post<AuthResponse>("/auth/google", {
     id_token: googleIdToken,
-    role: role || "STUDENT",
+    role: (role as "STUDENT" | "COMPANY") || "STUDENT",
   });
   useAuthStore
     .getState()
@@ -76,6 +78,8 @@ export async function registerUser(payload: {
   phone?: string;
   company_name?: string;
   industry?: string;
+  consent_data_processing: boolean;
+  consent_marketing?: boolean;
 }): Promise<AuthResponse> {
   const { data } = await api.post<AuthResponse>("/auth/register", payload);
   return data;
