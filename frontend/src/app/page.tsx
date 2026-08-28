@@ -138,7 +138,7 @@ export default function SkillDipzIntro() {
 
   return (
     <div
-      className="fixed inset-0 z-[9999] overflow-hidden flex flex-col"
+      className="fixed inset-0 z-9999 overflow-hidden flex flex-col"
       style={{ backgroundColor: "#ffffff" }}
     >
       {/* Counter top-right */}
@@ -198,7 +198,7 @@ export default function SkillDipzIntro() {
 
         {/* Progress bar */}
         <div className="w-full max-w-xs flex flex-col gap-2">
-          <div className="w-full h-[3px] bg-slate-100 rounded-full overflow-hidden">
+          <div className="w-full h-0.75 bg-slate-100 rounded-full overflow-hidden">
             <motion.div
               className="h-full bg-blue-600 rounded-full relative overflow-hidden"
               style={{ width: `${progress}%` }}
@@ -206,7 +206,7 @@ export default function SkillDipzIntro() {
             >
               {!isCompleted && (
                 <motion.div
-                  className="absolute inset-0 bg-gradient-to-r from-transparent via-white/40 to-transparent"
+                  className="absolute inset-0 bg-linear-to-r from-transparent via-white/40 to-transparent"
                   animate={{ x: ["-100%", "200%"] }}
                   transition={{ repeat: Infinity, duration: 1.1, ease: "linear" }}
                 />
